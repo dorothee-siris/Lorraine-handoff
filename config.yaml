@@ -1,0 +1,256 @@
+# Lorraine Explorer v2 — single source of truth.
+# Every pipeline step reads this file and nothing else for its parameters.
+# Rulings referenced as D1..D32 live in docs/v2_execution_plan.md (§2 locked, §2bis kickoff).
+
+project:
+  name: lorraine-explorer
+  version: v2
+  # Snapshot id names the active dated directory under paths.snapshot_root (D7/D22).
+  # Set this to roll back: point at an older id and re-run 60_deploy.py only.
+  # The active snapshot. 2026-08-11 is canonical: it is the first with raw archived (D38).
+  # 2026-08-10 is the first test run, kept for the snapshot-diff demo but has no raw/.
+  # Change this line to roll back, then re-run 60_deploy.py only.
+  snapshot_id: "2026-08-11"
+  snapshot_retention: 3        # keep the last 3 FULL snapshots; manifests/summaries kept forever (D22)
+
+paths:
+  # Outside OneDrive and outside git on purpose (D22): raw pulls must never sync or be committed.
+  snapshot_root: "C:/siris-data/lorraine-explorer/snapshots"
+  project_root: "."
+  manual_inputs: "inputs/manual"
+  derived: "data"
+  reports: "reports"
+  deploy_target: "Streamlit/data"
+
+secrets:
+  # Read from ~/.siris/.env — never inlined here.
+  env_file: "~/.siris/.env"
+  required: [OPENALEX_API_KEY, OPENALEX_MAILTO, OPENAIRE_TOKEN]
+
+openalex:
+  base_url: "https://api.openalex.org"
+  # Funded key as a Bearer HEADER + mailto as a QUERY PARAM. Never the keyless pool
+  # (it presents as a hang via Retry-After).
+  auth_mode: bearer_header
+  send_mailto: true
+  per_page: 200
+  max_requests_per_second: 20   # funded key tolerates more; raise only with a measured reason
+  retry:
+    attempts: 5
+    backoff_base_seconds: 2
+    retry_on: [429, 500, 502, 503, 504]
+
+window:
+  year_from: 2019               # D1 — identical to v1; a newer window is a separate run
+  year_to: 2023
+
+perimeter:
+  # Canonical perimeter = union of query A and query B, per-work provenance flags (D2).
+  ul_openalex_id: I90183372
+  ul_ror: "04vfs2w97"
+  query_a_lineage_filter: "authorships.institutions.lineage:I90183372"   # bare lineage: is HTTP 400
+  query_b_source: manual_lab_list                                        # union of UL + curated lab ids
+  provenance_flags: [via_lineage, via_lab_ror, via_ul_direct]            # non-exclusive booleans
+  # D33 (G1, measured 2026-08-10): B is a STRICT SUBSET of A (|B\A| = 0), so the union is A.
+  # Pull A only; derive the provenance flags from the authorships already in the payload.
+  pull_strategy: lineage_only_with_subset_guard
+  subset_guard:
+    enabled: true          # one per_page=1 count on query B per run
+    # Breaks only if a client edit adds a structure OpenAlex does not place under UL lineage.
+    on_failure: crawl_query_b_in_full
+  expected_works_a: 46404  # snapshot-dated expectation; drift beyond the §10 band is investigated
+  # D20 — the client's list is kept byte-identical; dead ids are repaired HERE, auditably.
+  openalex_id_repairs:
+    # Jardins botaniques. I4413695923 returns HTTP 404 (probe 2026-08-10);
+    # its unchanged ROR 05kxdq627 resolves to I4405261636.
+    I4413695923: I4405261636
+  # Structures OpenAlex places under UL that the manual list does not carry (probe 2026-08-10, 22 of them).
+  # v2 does NOT invent rows for them: it reports them, the client rules at the workshop (D20).
+  report_unmapped_descendants: true
+  # Labs from the client's list that legitimately have ZERO works in the window. Declared here so the
+  # audit REPORTS them, while an UNDECLARED empty lab still fails loudly (risk R3: a stale list must
+  # never make a lab vanish silently).
+  known_empty_labs:
+    # The dead-id lab (D20). Its repaired id I4405261636 has 0 works all-time in OpenAlex, so this is
+    # a fact about the botanical garden's publishing, not a pipeline error.
+    - Jardins
+
+corpus_filter:
+  # D36 (G2, project ruling 2026-08-10): conference-paper is IN. OpenAlex reclassified 3,737 of v1's works
+  # into this type, so excluding it would silently drop works the client sees in today's tool and
+  # under-represent LORIA/INRIA. Carried with an explicit is_conference flag so any view can toggle.
+  doc_types_keep: [article, book-chapter, review, book, conference-paper]
+  flag_conference_papers: true
+  exclude_preprints: true       # D10 — entirely; no clean_preprints manual input
+  drop_retracted: true
+  drop_paratext: true
+  drop_missing_title: true
+  # D37 (re-confirmed 2026-08-11): NO DOI requirement. Requiring one would drop 11,342 works
+  # (30.8%) — 90.6% of them attributable to a curated UL lab, 69.5% French, 10,372 HAL deposits.
+  # A DOI is required only where the operation is DOI-keyed (ISITE flag, abstract backfill,
+  # cross-source coverage), and each of those must report its DOI-less remainder explicitly.
+  require_doi: false
+  # Already enforced since the first run, not new: works typed `paratext` are removed by the doc-type
+  # filter, and these two flags catch the rest (6 retracted in the 2026-08-10 snapshot).
+  filter_language: false        # SDG step translates instead
+  apply_indexed_in_crossref: false   # D25 — measured: Lorraine 79.5% vs France 80.5-87.2%
+
+abstracts:
+  # D6 — backfill ONLY where OpenAlex has none after reconstruction; keep the longest.
+  backfill_order: [hal, openaire]
+  keep: longest
+  never_shorten: true
+  record_fields: [abstract_source, abstract_chars, abstract_lang]
+  hal_base_url: "https://api.archives-ouvertes.fr"
+  openaire_base_url: "https://api.openaire.eu"
+  cache_dir: "cache/abstracts"
+  flag_hal_boilerplate: true    # "...ou non, emanant des etablissements..." contaminated 54 v1 works
+
+france_baseline:
+  # D5 — API cursor crawl, no BigQuery (it would undercut client autonomy).
+  country_filter: "authorships.institutions.country_code:FR"   # NOT institutions.country_code
+  # MUST mirror corpus_filter.doc_types_keep, or the baseline is scoped differently from the
+  # numerator it normalises (D36 added conference-paper to both).
+  doc_types: [article, book-chapter, review, book, conference-paper]
+  select: [id, cited_by_count, publication_year, type, primary_topic]
+  keep_from_primary_topic: [subfield.id, field.id]
+  # Measured 2026-08-10: 893,019 works for the four types; 1,100,570 with conference-paper.
+  expected_total_works: 1100570
+  calibration_year: 2019        # G3: run this year first, report count/size/wall-clock
+
+metrics:
+  # D17 — ONE stratum for FWCI and PPtop alike, matching OpenAlex's own normalisation.
+  stratum: [subfield_id, publication_year, type]
+  min_stratum_n: 30             # below this the indicator is NULL, not computed (G4 confirms)
+  compute:
+    fwci_fr: true               # cited_by_count / mean(cited_by_count in stratum)
+    pptop10_fr: true            # >= 90th percentile in stratum
+    pptop1_fr: true             # >= 99th percentile in stratum
+    field_level_variants: false # only if the client asks, and then on field x year x type
+  carry_native_openalex: [fwci, citation_normalized_percentile]   # D14 cross-check, not headline
+  cross_check_within_year: true
+
+isite:
+  # D21 — hand list is canonical and frozen; the OpenAlex award is a cross-check column only.
+  doi_list_file: "all_doi_isite.xlsx"
+  expected_unique_dois: 3776
+  flag_column: In_ISITE
+  openalex_award_id: G3172997804          # "Isite LUE" = ANR-15-IDEX-0004
+  award_flag_column: In_ISITE_openalex_award
+  merge_award_into_flag: false            # measured 2026-08-11 canonical snapshot: would add only
+                                           # 9 corpus works (S-INV memo, reports/isite_award_reconciliation.md;
+                                           # supersedes the stale "6" figure)
+  report_award_only_works: true
+
+sdg:
+  # D19/D23/D28 — 16 separate per-SDG passes, VocTagger DEFAULTS, run before the workshop.
+  enabled: true
+  method: sixteen_passes_defaults
+  n_sdg_sheets: 16                        # there is no SDG 17 sheet
+  vocabulary_source: "../../../Tools/voctagger/VocTagger/data/vocabularies_sdgs.xlsx"
+  vocabulary_archive_subdir: "raw/vocab"  # snapshotted per run; reproducibility depends on it
+  tagger:
+    lang: en
+    threshold: 3
+    lemmatize_vocabulary: false
+    sentence_extras: true
+    interword_threshold: false
+    n_cores: 1                            # spaCy MP is flaky on Windows; shard processes instead
+  shards: 4                               # ~4.4 GB RAM at 4; 6 would push a 16 GB box
+  text:
+    composition: "title. abstract"
+    max_words: 400
+    min_keyword_hits: 1                   # >=2 is destructive: coverage 48.5% -> 16.5%
+    min_words_floor: null                 # only decides title-only works; G5c rules
+  language_id:
+    library: py3langid
+    norm_probs: true                      # NEVER the raw log-probability
+    french_threshold: 0.90
+  translation:
+    enabled: true                         # 48% vs 9% coverage on French works — non-negotiable
+    tool: "../../../Tools/translate-mt"
+    model: "Helsinki-NLP/opus-mt-fr-en"
+    backend: ct2_int8
+  openalex_metadata:
+    capture: true                         # D4 — store the Aurora field whatever the client picks
+    threshold: 0.40                       # OurResearch's own floor; nothing below it is published
+  three_way_comparison: true              # A=v1 shipped, B=SIRIS v2, C=OpenAlex Aurora (G6)
+
+interpreters:
+  # No single env runs everything (Phase 1 docs/TOOLS_AND_PARAMS.md §1).
+  default: "python"
+  translation: "C:/Users/Theodore/anaconda3/envs/topic_modeling/python.exe"
+  voctagger: "../../../Tools/voctagger/.venv/Scripts/python.exe"
+
+storage:
+  # D18 REVISED (project ruling, 2026-08-11): KEEP the raw payloads, compressed. This is still the first test
+  # run of the pilot, not the pilot itself — "keep a maximum of data around, we'll clean the process
+  # later on". Deleting raw cost real debugging ability on 2026-08-10 (diagnosing the 478
+  # truncation refetches needed a re-crawl) and makes "same code + same archived snapshot =>
+  # identical output" untrue for any change to the PARSE step.
+  raw_format: jsonl
+  convert_to: parquet
+  compression: zstd
+  delete_jsonl_after_checksum: false
+  compress_raw_jsonl: true       # -> raw/*.jsonl.zst, checksummed BEFORE compression
+  raw_compression_level: 10      # zstd; level 10 is a good size/time trade-off on this box
+
+audit:
+  # §10 — Class 1 failures fail the run; Class 2 "investigate" blocks deployment (G8).
+  fail_on_structural: true
+  block_deploy_on_investigate: true
+  drift_bands:
+    corpus_size:        {expected: 0.10, investigate: 0.25}
+    works_per_lab:      {expected: 0.15, investigate: 0.30}
+    abstract_coverage:  {expected_pts: 5, investigate_pts: 10}
+    sdg_coverage:       {expected_pts: 3, investigate_pts: 7}
+    fwci_fr_median:     {expected: 0.10, investigate: 0.20}
+    partner_count:      {expected: 0.15, investigate: 0.30}
+    isite_flagged:      {expected: 0.05, investigate: 0.10}
+  # CORRECTED 2026-08-11. This band validates the THRESHOLD against the FRENCH population, where 10%
+  # must hold by construction. It is NOT a test on Lorraine's share: applying it to a
+  # research-intensive subset would assert that Lorraine cannot outperform the national baseline,
+  # which is the very thing the indicator measures. Measured: Lorraine 20.4% vs OpenAlex's global
+  # 13.5% on the same works — the French baseline carries 207k largely uncited conference papers.
+  # v1's defect was the year SLIDE (15.4% -> 2.5%); the v2 test is therefore "no year gradient".
+  pptop_share_per_year: {target: 0.10, tolerance_pts: 2, applies_to: france_population}
+  pptop_year_spread_max_pts: 12      # Lorraine's max-min across years; v1's was 12.9 pts and monotone
+
+baselines_v1:
+  # Frozen Phase 1 numbers the shift report measures against. Phase 1 is READ-ONLY.
+  corpus_final: 28094
+  corpus_raw: 41448
+  abstract_coverage_text_present: 0.577
+  abstract_coverage_v1_effective: 0.801
+  sdg_tagged_works: 4486
+  isite_flagged_works: 1760
+  france_baseline_rows: 791985
+  pptop10_subfield_share_by_year: {2019: 0.154, 2020: 0.146, 2021: 0.101, 2022: 0.056, 2023: 0.025}
+
+topic_model:
+  enabled: false                # D9 — zero topic-model dependency in pipeline or views
+
+workshop_tunables:
+  # Chain pass 3 (Foundry rev 3 §9): workshop-tunable constants live HERE, not in table schemas
+  # or scripts. Builders (44g/46/47) read these; a builder needing a constant absent here ADDS it
+  # here (with provenance comment), never hardcodes. Values below are the frozen/ratified defaults
+  # pending the Oct 5-6 workshop (8.A/8.B3 ratification bundle).
+  momentum_recentring_median: 1.061   # frozen — reports/lab_momentum_frozen.py section A; NOT recomputed
+  momentum_band_pct: 25               # ±25% recentred bands (frozen definition)
+  momentum_significance_p: 0.05       # two-proportion gate; ns -> grey (frozen definition)
+  quadrant_default_floor: 50          # V1 quadrant default view (215 partners)
+  hub_default_floor: 20               # V1 hub table default floor slider
+  drill_partner_floor: 10             # ptn_works / ptn_topics materialisation floor
+  i11_sparkline_min_works: 3          # §6.3 — cells >=3 get a sparkline (25,460)
+  i11_delta_min_works: 20             # §6.3 — numeric two-window delta ONLY >=20 (1,293)
+  author_impact_floor: 30             # A2 — works-with-indicators floor (480 persons)
+
+app:
+  # Streamlit view switches (Stream C). Read by Streamlit/lib/app_config.py.
+  # Contract: docs/data_contract.yaml -> app_config_keys.
+  # D51 — b_siris | c_openalex | "off". Selects a column of sdg_three_way.parquet.
+  # NOTE: quote "off" — unquoted, YAML 1.1 reads it as the boolean false (the app
+  # handles both, but the quoted form is what the file means).
+  sdg_variant: b_siris
+  include_conference: true      # D52 — default state of the sidebar toggle (ul_pubs.is_conference).
+  show_hors_liste: false        # D56 — hors-liste structures are selectable but out of the rankings.

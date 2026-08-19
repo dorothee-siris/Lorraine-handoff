@@ -1,0 +1,834 @@
+# Data foundation — rev 3.1 (Foundry pass 2, post-Wind-Tunnel absorb, 2026-08-15)
+# CANONICAL machine half. Supersedes data_foundation_draft.yaml rev 2 AND this file's own rev 3
+# (tunnel pass 2: 27 attacks — 15 CONFIRMED / 7 WEAK absorbed, 5 UNFOUNDED; CHALLENGE_MEMO_pass2.md).
+# Reading guide + rationale: DATA_FOUNDATION.md rev 3.1 (same folder).
+# Consumers: BUILD_PLAN.md streams W0b/W1/W2/W3/W4/W5/E1. When a table is BUILT, its entry moves to
+# docs/data_contract.yaml via docs/contract_fragments/<producer>_<table>.yaml (BUILD_PLAN S13).
+#
+# Evidence base: reports/foundry_pass2_probes.py (F0) · reports/data/_f3_scratch/
+# f3_hostile_recompute.py (tunnel recomputes incl. the dual-mode momentum diff) ·
+# repaired reports/lab_momentum_frozen.py (F2) · inputs/overlays/* (F2+F2b, volume-verified).
+#
+# Conventions for ALL new tables:
+#   - long/typed columns only — NO ':'/'|' blob encodings
+#   - conf_state in {all, no_conf} on EVERY new aggregate (or explicit conf_exempt/conf columns
+#     with reason)
+#   - ARTIFACT-FLAG (R-A, tunnel-hardened): NO artifact_state key rows. Every measure column on a
+#     work-grain aggregate is exactly ONE of:
+#       (a) twinned: `_xa` variant (excl-artifact = primary-flagged works dropped, pipeline-computed);
+#       (b) listed in artifact_invariant_columns with a reason (list/structural facts);
+#       (c) covered by the table's artifact_exempt block (whole measure family inert under toggle —
+#           MUST grey out with †-annotated header while toggle ON, and land in the export header's
+#           deferred_twins list; tunnel #17).
+#     Topic-grain tables: flagged rows carry artifact_flag AND surviving cells carry `_xa` count
+#     twins (both §6.2 halves: row-drop + work-drop; tunnel #4). W1 ships the (a)/(b)/(c)
+#     completeness check as CODE so this file cannot drift again (tunnel #2).
+#   - MOMENTUM UNDER ARTIFACT TOGGLE (ruling, tunnel #3): the momentum family (classes, p, w1/w2,
+#     arrows, deltas-classified) is artifact_exempt APP-WIDE — never recomputed under the artifact
+#     lens; rendered greyed/inert with caption « momentum calculé sur le corpus entier » while ON.
+#     Rationale: 4-variant momentum has no golden, multiplies frozen-definition surface for marginal
+#     insight; a visibly-inert chip is honest, a silently-stale one is not. Momentum IS recomputed
+#     per conf_state (frozen METHOD reapplied; median derived per variant — see ptn_mom_facts).
+#     PLAN-SUPERSESSION NOTE (to re-confirm with user at close): §6.2 "work-grain aggregates drop
+#     flagged works" holds everywhere EXCEPT the momentum family, which discloses instead.
+#   - SHIPS-V2 SURFACES under artifact toggle (tunnel #5): the standard banner text would LIE there
+#     (nothing filtered). They get a DISTINCT strip: « Le filtre « hors référentiel » s'applique aux
+#     nouvelles vues ; cette page v2 affiche le corpus entier — lignes concernées marquées †. » and
+#     every export header carries artifact_applied: yes|no. PLAN-SUPERSESSION NOTE (same mechanism).
+#   - PERIMETER SELECTOR on panels WITHOUT subset rows — including NEW views' non-subset panels
+#     (tunnel #6): explicit disclosure strip; never a silently unfiltered number. Matrix extension
+#     (e.g. ptn_fields in_isite rows ≈ +2-4k) = costed workshop option, not built now.
+#   - subset_id FK to dim_subsets, default 'all', ONLY per subset_row_matrix
+#   - perimeter_id row policy (tunnel #21): thm_funding/thm_frontier = {all, in_isite};
+#     thm_diversity = {all, in_isite} ∪ curated labs (structure_key, per plan T3 grain). Additions
+#     follow the same declared-contract-change rule as subset_row_matrix.
+#   - D53 NULL-never-0; snapshot_date everywhere; category/arrow dtypes on identity strings;
+#     frozen-definition numbers are PIPELINE outputs (incl. I11 deltas — tunnel #11)
+#
+# ARTIFACT-FLAG source: inputs/manual/OA_bad_topics.xlsx (copy-in W1), "Filter out" -> 811 topics.
+# Measured (F0-P4, tunnel-reproduced): primary 4,106 = 11.15% · any 7,616 = 20.68% · In_ISITE 6/22.
+# France-baseline asymmetry DISCLOSED: no topic grain in France strata -> _xa recomputes UL side
+# only; FWCI_FR reference strata artifact-invariant by construction; caveats in METHODES.
+
+subset_row_matrix:
+  ptn_summary:  [all, in_isite]
+  geo_countries: [all, in_isite]
+  thm_specialisation: [all, in_isite]
+  # all other tables: subset_id fixed 'all'. Declared-change rule as above. Contingencies flagged:
+  # programme rows (workshop ask #1), roster rows on aut_public (PM6/A5), ptn_fields in_isite rows
+  # (workshop option per tunnel #6).
+
+canonical_counts:               # overlay-corrected; tunnel-reproduced to the digit
+  ptn_topics_cells_at_p10floor: 156164
+  ptn_topics_cells_ge3: 25460
+  ptn_topics_cells_ge20: 1293
+  ptn_works_pairs_at_p10floor: 116345
+  partner_floor_ge10: 2309      # tunnel #19 — VIZ_SPEC's 2,311/1,280/448/345 are stale-indicative
+  partner_floor_ge20: 1279
+  partner_floor_ge50: 447
+  null_country_partner_ids: 346   # arbitrated (W2 fix): F3's 347 = Namibia's ISO 'NA' swallowed
+                                  # as null by CSV tooling; parquet-native read keeps it. Export
+                                  # risk flagged (keep_default_na discipline).
+  countries_ge10: 120
+  momentum_display: "all 680 -> 105/51/276/248 (>=50: 213 -> 46/16/102/49); no_conf 562 ->
+    90/44/211/217 (>=50: 172 -> 36/15/85/36) — real partners only; the phantom ('None'
+    pseudo-partner, stable, c1=2102/c2=1796) is method-run-only, pinned by the mom_facts
+    off-by-one invariant"
+  in_isite_works: 1839
+  isite_award_works: 808        # ul_pubs.In_ISITE_openalex_award (749) = SUPERSEDED, different
+                                # construction — contract note + METHODES line, column not rebuilt
+  ul_intl_share: 0.427          # source ul_pubs; lands in dim_corpus_facts via W0b (tunnel #10)
+  ul_company_share: 0.065
+  momentum_frozen: "D1 11,431 / D2 10,776 / MED 1.0608(→1.061 disclosed); 682 -> 106/52/277/247; new 5/dormant 0; >=50: 215 -> 47/17/103/48"
+  momentum_shipped: "Centre Inria blocked: D1 11,423 / D2 10,772 / MED 1.0604; 681 -> 105/51/277/248; >=50: 214 -> 46/16/103/49; exactly ONE boundary flip: CHU de Reims I4210105796 up->ns (tunnel #1, machine-diffed)"
+
+meta:
+  snapshot_reference: "2026-08-11"
+  golden_scripts:
+    momentum: reports/lab_momentum_frozen.py          # repaired, dual-mode
+    momentum_diff: reports/data/_f3_scratch/f3_hostile_recompute.py   # the enumerated-flip reference
+    pass2_probes: reports/foundry_pass2_probes.py
+    thematic_probes: reports/lab_thematic_probes.py
+    frontierness: reports/lab_frontierness_probe.py
+    pass3_probes: reports/lab_pass3_probes.py
+  lazy_file_rules:
+    - "every lazy work/cell-grain file written sorted by its filter key, row_group_size=5000"
+    - "Class-1 invariant: num_row_groups >= n_rows/10000"
+    - "app side: per-key reads via lib/lazy.py in st.cache_data(max_entries~32)"
+
+supersessions:                  # routed corrections to VALIDATED artifacts — surface at close
+  - "plan §6.1 SOURCE POINTER corrected: the ACCORD frontier scores = `RPF\\Readout\\Raw data\\
+     Cleaning bad OA topics.xlsx` (the artifact the catalog card enr-frontierness-baseline blesses
+     AND the file lab_frontierness_probe.py measured ×1.37/×1.03/99.9%/~51 on) — NOT
+     `ETO vs OpenAlex experiment\\...\\OA_frontier_scores.xlsx` (different vintage: 3,706 vs 4,516
+     topics, corr ~0.90, join coverage 88.7% vs 99.9%, flips the standardised read ×1.03→×0.94).
+     Discovered by W3's honest golden miss. §6.2's 811-topic list is UNAFFECTED (OA_bad_topics.xlsx
+     reproduces the plan's counts exactly). Both vintages + score column stamped per the card."
+  - "VIZ_SPEC 2.7 EURECA card: Freiberg renders UNION 15 (2-id composition), not 16 (per-id sum) — sum-vs-union footnote (F2b + tunnel #22)"
+  - "VIZ_SPEC 2.5/2.7 partner-floor figures 2,311/1,280/448/345 -> canonical 2,309/1,279/447/347 (tunnel #19); E1 app-number checks use canonical_counts"
+  - "thematic_gap_analysis rev 2 / inventory T7 figures 'EC family 2,214 rows · ERDF 279 works'
+     are ORPHANED EVIDENCE (no regenerating script exists anywhere — W3 exhaustive grep; the Lab
+     run-3 doc violated its own evidence-regeneration promise for these two). Canonical now =
+     W3's documented construction: EC family 2,182 rows (16 named funders) · ERDF 429 rows /
+     203 distinct works. ANR 4,433 and overall 21.3% reproduce exactly. Per-funder diff table in
+     progress/W3_thematic_ext.md; construction in the 47_thm_funding fragment + METHODES."
+  - "plan §6.2 per-grain sentence: momentum family = artifact_exempt-with-grey (ruling above) — re-confirm at close"
+  - "plan §6.2 banner on ships-v2 pages: distinct honest strip + artifact_applied export field — re-confirm at close"
+  - "R-B sentence 'fully drives every NEW view' corrected: non-subset panels on new views carry the disclosure strip (tunnel #6)"
+
+export_layer:                   # tunnel #15/#16/#17 absorbed
+  filename_grammar: "lorraine-explorer_<view>_<indicator>_<snapshot>_<conf>_<artifact>[_<subset>][_<entity>][_<node>].xlsx"
+  slug_rules: "ascii-kebab; <conf> in {all,noconf}; <artifact> in {full,filtered}; <entity> kind-prefixed (p-I157674565, a-A5023887100, c-fr, l-<structure_key>); <node> LEVEL-PREFIXED (d-2, f-11, sf-1103, t-10123) — prefixes make [_<subset>][_<entity>][_<node>] unambiguous to parse"
+  round_trip_scope: "filename round-trips {view, indicator, snapshot, conf, artifact, subset, entity, node} EXACTLY; local widget state (type filter, floor slider, search) lives in the header sheet ONLY — stated, not encoded (tunnel #15b)"
+  header_sheet:
+    fields: [method_one_liner, snapshot_date, active_filters, conference_toggle_state,
+             artifact_toggle_state, artifact_applied, artifact_banner_text_if_on,
+             deferred_twin_columns, perimeter_subset, entity, drill_node, generation_date]
+  api: "exports.panel_xlsx(df, view, indicator, state, *, entity=None, node=None, impact_strip=False) -> (bytes, filename); exports.works_xlsx(...) for drill exports (lazy sources only)"
+  exceptions:
+    - "aut_impact_drill: NO export path in code"
+    - "author-scoped works exports: source = aut_works, which PHYSICALLY carries no impact column (structural §6.4-3bis, tunnel #16); impact_strip kwarg kept as defence-in-depth"
+
+drill_layer:                    # tunnel #7/#8/#9 absorbed — every promised drill has a named source
+  mechanics: "pyarrow filters= on key-sorted rg5000 files; proofs: ptn_topics 1/45 groups (2.2%), ptn_works 1/24 (4.1%)"
+  cache: "st.cache_data(max_entries=32) per (file,key); never a whole lazy file"
+  paths:
+    partner_works: "ptn_works, key partner_id"
+    partner_topic_cell_pubs: "ptn_works, key partner_id + in-slice filter on primary node ids (I11 per-cell xlsx)"
+    author_works: "aut_works (NEW), key author_id; yearly bars derived in-app from the fetched slice (bounded per-author; declared exception to L2)"
+    country_focus: "geo_fields (NEW), key country_code"
+    country_pubs: "ptn_works, key partner_id IN <country's >=10-floor partners>; export discloses '>=10-floor partners only' (sub-floor tail named refusal)"
+    subset_works: "subset_works (NEW, W1), key subset_id — serves the P-V4 award tile (32) and subset publication exports; ul_pubs is 1 row group and is NEVER the drill source"
+
+producers:
+  44g_build_corpus_facts.py:    # W0 SHIPPED + W0b delta (rides wave 1) + pass-6 delta
+    emits: [dim_corpus_facts]
+    w0b_delta: "add: ul_intl_share, ul_company_share (+_xa twins; per conf_state row) ·
+                corpus_works_xa, works_with_indicators_xa, works_excluded_thin_stratum_xa,
+                corpus_collaborative_works_xa · momentum_recentring_median: frozen 1.061 on the
+                'all' row ONLY, NULL on no_conf (live per-variant medians = ptn_mom_facts; the
+                deployed 1.061×2 is wrong — tunnel #3) · re-run suite + load-map eval"
+    pass6_delta: "add: raw_pull_works (S-NC cross-stream request — the 46,404-family pre-filter
+                  pull count, read off works.parquet's own row count, same value both conf_state
+                  rows; cross-checked against config.perimeter.expected_works_a at build time)"
+  48_build_subsets.py:          # W1 (+ lib/artifact.py + completeness check + copy-in)
+    consumes: [works_master, corpus_topics, inputs/manual/all_doi_isite.xlsx,
+               inputs/manual/OA_bad_topics.xlsx, corpus_funding]
+    emits: [dim_subsets, work_subsets, dim_artifact_topics, subset_works]
+    also: "lib/artifact.py: load_bad_topics()/flag_works() + the R-A completeness check
+           (walks this YAML: every measure column twinned, listed, or exempt — CI-grade, tunnel #2)"
+  46_build_partner_views.py:    # W2 + pass-6 delta (ptn_denominators, sdg_tags, mom window labels)
+    consumes: [works_master, corpus_authorships, corpus_topics, ul_partners, ul_descendants,
+               inputs/overlays/* (status==ok only), lib/artifact.py, work_subsets, sdg_siris]
+    emits: [ptn_summary, ptn_mom_facts, ptn_yearly, ptn_fields, ptn_labs, ptn_works, ptn_topics,
+            geo_countries, geo_fields, geo_groups, consortium_weights, ptn_denominators]
+    pass6_delta: "ptn_works: add sdg_tags (pipe-joined SIRIS sdg numbers, #9/#11/#32/#44) ·
+                  ptn_mom_facts: add mom_w1_label/mom_w2_label (S-NC cross-stream request, rendered
+                  from lib46_momentum.W1_YEARS/W2_YEARS) · NEW ptn_denominators (P4/#39/#40, derived
+                  directly from ptn_summary's own (all,all) rows — see its own table entry below)"
+    gate: "42b run 2026-08-17 (pass-4 G3): share_p/share_p_capped_flag/partner_total_windowed
+           (ptn_summary) and baseline_partner_share (ptn_fields) populate ONLY on (conf_state='all',
+           subset_id='all' / conf_state='all') rows for partners in the 42b pulled set (~3,616 +
+           3 merged-union canonical partners); every no_conf/in_isite row stays NULL by design
+           (challenge memo #8) — never 0 (D53)"
+  47_build_thematic_ext.py:     # W3
+    consumes: [works_master, corpus_topics, france_baseline_strata, corpus_funding,
+               inputs/manual/frontierness_baseline.xlsx, lib/artifact.py, work_subsets]
+    emits: [thm_specialisation, thm_diversity, thm_codiscipline, thm_funding, thm_frontier]
+  47c_build_frontier_topics.py: # pass 5, S3b, ruling R11 (full-depth materialization). Standalone
+                                 # file, not a 47 extension -- see its own module docstring for the
+                                 # placement rationale (smaller/cleaner diff, same precedent as
+                                 # 47b_build_crossings.py). Runs right AFTER 47 (golden-continuity
+                                 # cross-check reads this same snapshot's own thm_frontier.parquet).
+    consumes: [works_master, corpus_topics, all_topics, inputs/manual/frontierness_baseline.xlsx,
+               lib/artifact.py, thm_frontier (golden-continuity cross-check only, read not written)]
+    emits: [thm_frontier_topics]
+  45b_build_author_views.py:    # W4
+    consumes: [ul_authors, works_master, corpus_authorships, hal-link fields, lib/artifact.py]
+    emits: [aut_public, aut_works, aut_impact_drill, aut_coverage]
+  49_pull_peer_benchmark.py:    # pass 4, G4 -- live OpenAlex pull, not a build step (peer corpora
+                                 # are outside the UL snapshot by definition, same class as 42b)
+    consumes: [inputs/overlays/bench_peers.csv]
+    emits: ["raw/peers/<peer_id>.jsonl.zst (per peer)", "peer_works_<peer_id>.parquet (per peer)"]
+  49b_build_peer_benchmark.py:  # pass 4, G4
+    consumes: [works_master, france_baseline_strata, all_topics, "peer_works_<peer_id>.parquet x9",
+               inputs/overlays/bench_peers.csv]
+    emits: [bench_peers]
+  47b_build_crossings.py:       # pass 5, S3, ruling R16 / plan P3 -- crossing != comparing, no peer input
+    consumes: [works_master, corpus_topics, all_topics, ul_labs, sdg_siris,
+               inputs/manual/frontierness_baseline.xlsx, lib/artifact.py]
+    emits: [thm_frontier_labs, thm_sdg_labs]
+  49w_pull_peers_wide.py:       # pass 5, S2 -- live OpenAlex pull, wide select (abstracts, full topic
+                                 # object, sustainable_development_goals, language), same filter recipe
+                                 # as 49_pull_peer_benchmark.py, verified IDENTICAL at build time
+    consumes: [inputs/overlays/bench_peers.csv]
+    emits: ["raw/peers/<peer_id>_wide.jsonl.zst (per peer)"]
+  49c_build_peer_context.py:    # pass 5, S3, rulings R6/R7 / plan P5
+    consumes: [works_master, corpus_topics, corpus_sdg, all_topics,
+               "raw/peers/<peer_id>_wide.jsonl.zst x9", inputs/overlays/bench_peers.csv,
+               inputs/manual/frontierness_baseline.xlsx, lib/artifact.py, thm_diversity
+               (transfer-bar reference only, read not written)]
+    emits: [bench_sdg, bench_positioning, bench_diversity]
+  47d_build_sdg_methods.py:     # pass 6, S-DAT, P11/P6-R7 (#7/#10/#12) -- SIRIS vs Aurora method
+                                 # comparison, crossing != comparing (R16 untouched)
+    consumes: [works_master, sdg_siris, corpus_sdg, ul_labs]
+    emits: [sdg_lab_methods]
+  43c_build_lab_tops.py:        # pass 6, S-DAT, P6-R6/#34 + P6/#29 + #11/#32/#44
+    consumes: [works_master, corpus_authorships, ul_partners, ul_authors, ul_labs, all_topics,
+               sdg_siris, inputs/manual/Identifiants_UnivLorraine.xlsx,
+               inputs/overlays/idset_consortium.csv, lib/artifact.py]
+    emits: [lab_top_partners, lab_top_authors, lab_wordcloud, lab_works]
+  44h_build_zero_fill.py:       # pass 6, S-DAT, #20 -- full-vocab display twins, no v1/Foundry
+                                 # precedent (thematic_overview itself sits outside this YAML)
+    consumes: [all_topics, thematic_overview]
+    emits: ["topics_zero_fill (not tracked in this YAML's tables: block -- pure display join of an
+            already-untracked table, thematic_overview; see docs/data_contract.yaml for the full
+            column contract)", "subfields_zero_fill (same)"]
+  43a_lab_identity.py:          # pass 6, S-DAT, P7 (#3/#28) -- manual-input enrichment, no
+                                 # snapshot table output (writes inputs/manual/
+                                 # Identifiants_UnivLorraine.xlsx's nom_complet/nom_source columns)
+    consumes: ["inputs/manual/Identifiants_UnivLorraine.xlsx (in place)", "ROR API (free, keyless)"]
+    emits: ["inputs/manual/Identifiants_UnivLorraine.xlsx (nom_complet/nom_source columns added)"]
+
+tables:
+
+  # ---------- shared dims ----------
+  dim_corpus_facts:
+    status: SHIPPED (W0) + W0b delta above
+    grain: conf_state (2 rows) + scalar facts
+    columns: [conf_state, corpus_works, corpus_works_xa, works_excluded_thin_stratum,
+              works_excluded_thin_stratum_xa, works_with_indicators, works_with_indicators_xa,
+              corpus_collaborative_works, corpus_collaborative_works_xa,
+              ul_intl_share, ul_intl_share_xa, ul_company_share, ul_company_share_xa,
+              france_intl_share, france_intl_works, france_total_works,
+              momentum_recentring_median, raw_pull_works, snapshot_date]
+    artifact_invariant_columns: "france_* (no topic grain in France scope — METHODES caveat);
+                                 momentum_recentring_median (frozen disclosure value, 'all' row
+                                 only); raw_pull_works (pass 6 — a pre-filter pull-count fact,
+                                 identical both conf_state rows, not a corpus measure)"
+  dim_subsets:
+    status: BUILD (W1)
+    grain: subset (tiny registry — conf/xa as COLUMNS, not rows; tunnel #14)
+    rows: "4 active (all · in_isite · in_isite_award · reserved stubs) + stub rows per pending kind"
+    columns: [subset_id, label_fr, label_en, kind, owner, source_file, vintage_date,
+              n_works, n_works_noconf, n_works_xa, n_works_noconf_xa, defi_rollup,
+              status{active|stub}, snapshot_date]
+  work_subsets:
+    status: BUILD (W1)
+    grain: work x subset
+    columns: [work_id, subset_id, evidence{doi_list|award|hal_code|orcid_roster}]
+    invariants: ["in_isite rows == 1839", "in_isite_award rows == 808", "no orphan subset_id"]
+  subset_works:                  # NEW (tunnel #8) — the subset-grain publications drill source
+    status: BUILD (W1)
+    grain: work x subset (metadata-bearing; ~2.7k rows now)
+    columns: [subset_id, work_id, year, title, doi, type, is_conference, in_isite, artifact_flag]
+    write_spec: "sorted by subset_id, rg=5000 (trivially 1 group at current size — invariant floor
+                 n_rows/10000 still satisfied; revisit if programme corpora land)"
+    lazy_load: "lib/lazy.py key subset_id; serves P-V4 award tile (32 works) + subset exports"
+  dim_artifact_topics:
+    status: BUILD (W1)
+    grain: topic (811 rows)
+    columns: [topic_id, topic_name, reason_label_fr, snapshot_date]
+
+  # ---------- partner family ----------
+  ptn_summary:
+    status: BUILD (W2)
+    grain: partner x conf_state x subset_id
+    rows_measured: "12,570 partners; RAM sim at rev-3 shape 8.6 MB (tunnel #18) — float32 on
+                    share/ratio columns at builder discretion; load-map eval measures post-build"
+    eager_load: [V1, V2]
+    columns:
+      identity: [partner_id, display_name, country_code, type_openalex, consortium_member,
+                 idset_tags, merged_from_ids, plumbing_guard_flag]
+      volume:   [co_works_full, co_works_full_xa, co_works_fractional, co_works_intl,
+                 share_ul, share_ul_xa, share_ul_direct, n_ul_labs, first_year, last_year]
+      reciprocity: [partner_total_windowed, share_p, share_p_capped_flag]    # populated (all,all)
+                                                                             # only, since 42b
+                                                                             # (2026-08-17, pass-4)
+      impact:   [fwci_fr_median, fwci_fr_median_xa, fwci_fr_mean, fwci_fr_mean_xa,
+                 share_cited, share_cited_xa, works_with_indicators, works_with_indicators_xa]
+      momentum: [mom_class, mom_category, mom_p_value, mom_w1_share, mom_w2_share,
+                 mom_count_arrow, mom_eligible_flag]        # per conf_state; NO _xa (exempt ruling)
+      isite:    [isite_co_works, isite_share]
+    artifact_invariant_columns: "identity block (list/structural) · reciprocity (42b-gated,
+      partner-side not artifact-filterable) · isite_* (list-based) · n_ul_labs/first_year/last_year
+      (presence facts) · share_ul_direct/co_works_fractional/co_works_intl (DEFERRED twins —
+      grey-out + deferred_twins export list, tunnel #17)"
+    artifact_exempt_families: "momentum (app-wide ruling above)"
+    invariants:
+      - "DUAL-MODE momentum golden (tunnel #1, ENUMERATED): frozen-parity run == 682 -> 106/52/277/247,
+         new 5/dormant 0, >=50: 215 -> 47/17/103/48 EXACT; shipped run == 681 -> 105/51/277/248,
+         >=50: 214 -> 46/16/103/49 EXACT; machine-diff == {removed: Centre Inria de l'UL (down),
+         flips: CHU de Reims I4210105796 up->ns} and NOTHING else. Any other diff fails the build —
+         never weaken the blocklist to pass."
+      - "class sums == eligible per (conf_state, floor); no_conf run derives ITS median per the
+         frozen METHOD (recorded in ptn_mom_facts; measured value pinned at first build by E1)"
+      - "blocklist absent / id-set partners present / no 'Deleted Institution' / successor merges
+         folded back per overlay status==ok (3 pairs this pass; the plan's '23 dup ids' predates
+         enumeration — remainder = overlay TODO catch-all, client/42b gate)"
+      - "share_p AND baseline_partner_share NULL-never-0; populated ONLY on (conf_state='all',
+         subset_id='all') rows for the ~3,616 + 3 merged-union partners in the 42b pulled set
+         (2026-08-17, pass-4 G3), NULL on every no_conf/in_isite row and on any partner outside the
+         pulled set — never 0 (D53)"
+      - "isite reconciliation: isite_co_works(all-row) == co_works_full(in_isite-row) per partner"
+  ptn_mom_facts:                 # NEW (tunnel #3) — per-variant momentum constants for the app
+    status: BUILD (W2)
+    grain: conf_state (2 rows)
+    columns: [conf_state, recentring_median, d1_denominator, d2_denominator, eligible_n,
+              band_pct, significance_p, snapshot_date]
+    artifact_exempt: "entire table = momentum-family constants (app-wide exemption ruling)"
+    phantom_ruling: "the frozen evidence's universes include ONE null-institution-id pseudo-partner
+      (the frozen script never drops null-id authorship rows — W2 landmine). Method-fidelity runs
+      keep it (682/681 reproduce); the DISPLAY table (ptn_summary) carries real partners only.
+      mom_facts records BOTH: eligible_n (method run) and display_eligible_n (real rows); the
+      off-by-one is PINNED by invariant, and the METHODES disclosure sentence names the
+      pseudo-partenaire technique. The phantom-free recomputed variant = costed option at the
+      8.B3 windows ratification, not built now."
+    columns: [conf_state, recentring_median, d1_denominator, d2_denominator, eligible_n,
+              display_eligible_n, phantom_partner_works_w1, phantom_partner_works_w2,
+              band_pct, significance_p, mom_w1_label, mom_w2_label, snapshot_date]
+    pass6_delta: "mom_w1_label/mom_w2_label added (S-NC cross-stream request, NARRATIVE_CONTRACT_
+                  pass6.md sec.5): rendered FR/EN-neutral window labels ('2019-2020'/'2022-2023')
+                  from lib46_momentum.W1_YEARS/W2_YEARS, so pages 5/8 stop hardcoding the string."
+    invariants: ["(all) row matches canonical_counts.momentum_shipped (MED 1.0604, 681)",
+                 "ptn_summary classified rows per (conf_state, floor) == display_eligible_n —
+                  and eligible_n - display_eligible_n == 1 exactly (the named phantom)",
+                 "dim_corpus_facts.momentum_recentring_median('all') == frozen 1.061 disclosure —
+                  the DISPLAYED quadrant median/band comes from THIS table's shipped values"]
+  ptn_yearly:
+    status: BUILD (W2)
+    grain: partner x year x conf_state
+    columns: [partner_id, year, conf_state, co_works, co_works_xa,
+              share_of_ul_collab, share_of_ul_collab_xa]
+    lazy_load: per-partner (V2)
+  ptn_fields:
+    status: BUILD (W2)
+    grain: partner x node(field|subfield sparse floored) x conf_state
+    columns: [partner_id, node_level, node_id, conf_state, co_works, co_works_xa,
+              share_of_pair, share_of_pair_xa, baseline_ul_share, baseline_ul_share_xa,
+              baseline_partner_share, baseline_france_share, lq_vs_ul, lq_vs_ul_xa,
+              mom_class, mom_p_value, mom_eligible_flag]
+    artifact_invariant_columns: "baseline_partner_share (42b) · baseline_france_share (no topic grain)"
+    artifact_exempt_families: "momentum (I6 chips grey under toggle ON)"
+    lazy_load: per-partner (V2)
+    gate_columns_null: [baseline_partner_share]  # populated on conf_state='all' cells only, where
+      # the 42b/merged-union denominator exists (2026-08-17, pass-4 G3, lens #8 applied
+      # symmetrically to ptn_summary.share_p); NULL on every no_conf cell and on any cell lacking
+      # a partner x node denominator — never 0 (D53). No separate capped-flag column exists for
+      # this table; a >1 raw ratio (snapshot-vs-live drift) is silently capped at 1.0.
+  ptn_labs:
+    status: BUILD (W2)
+    grain: partner x lab x conf_state
+    columns: [partner_id, lab_ror, lab_name, conf_state, co_works, share_of_lab_attributed,
+              nolab_works, nolab_share]
+    artifact_exempt: "portage = structural read; grey caption under toggle ON (upgraded from
+                      'caveat in METHODES' per tunnel #17 grey-out rule)"
+    invariants: ["share <= 1", "NO-LAB excluded from shares, disclosed"]
+  ptn_works:
+    status: BUILD (W2)
+    grain: work x partner (>=10 floor)
+    rows_measured: "116,345; 24 row groups; prune 4.1%"
+    write_spec: "sorted by partner_id, rg=5000"
+    columns: [partner_id, work_id, year, title, doi, type, is_conference, fwci_fr, in_isite,
+              labs_short, artifact_flag, sdg_tags, primary_field_id, primary_subfield_id,
+              primary_topic_id]
+    note: "the 3 primary-node int columns serve the I11 per-cell publications drill (partner
+           pushdown + in-slice node filter — tunnel #8) and the country-pubs path. pass 6:
+           sdg_tags added (#9/#11/#32/#44, pipe-joined SIRIS sdg numbers) for the enriched
+           partner publication-list download; work-grain list table, no twinning needed"
+    conf_exempt: "per-row is_conference"
+  ptn_topics:
+    status: BUILD (W2)
+    grain: partner x topic x year x conf_state (sparse long)   # conf added post-P2 catch: the
+      # parent ptn_fields IS conf-keyed — a no_conf field row drilling into all-types topic rows
+      # is a visible inconsistency. (This grain slipped tunnel #14's sweep and W1's checker,
+      # which validates artifact declarations only — conf sweep added to E1b's checks.)
+    rows_measured: "224,396 at 1 state (2.06 MB; 45 groups; prune 2.2%); ~2x at 2 states"
+    write_spec: "sorted by partner_id, rg=5000"
+    columns: [partner_id, topic_id, subfield_id, year, co_works, co_works_xa,
+              fwci_fr_median_cell, frontier_score_std, artifact_flag,
+              delta_value, delta_flag]
+    note: "co_works_xa = both §6.2 halves at topic grain (tunnel #4); delta_value/delta_flag =
+           pipeline-computed two-window numeric delta, NULL below the >=20 floor (1,293 cells;
+           tunnel #11); classes/acceleration remain REFUSED at this grain"
+    artifact_invariant_columns: "frontier_score_std (topic-level baseline property, not a corpus
+      measure) · fwci_fr_median_cell (DEFERRED twin — grey-out + deferred_twins export list)"
+    artifact_exempt_families: "delta_value/delta_flag (momentum-family ruling)"
+    floors: "sparkline >=3 (25,460); delta >=20 (1,293)"
+  consortium_weights:
+    status: BUILD (W2)
+    grain: member x scope{lue, all} x conf_state
+    eager_load: [P-V3, P-V4, V1]        # V1 consortium cards need union counts (tunnel #10)
+    columns: [member, member_label, scope, conf_state, co_works_distinct, share_of_scope,
+              incl_own_centre_variant_share, id_set_size, snapshot_date]
+    artifact_exempt: "id-set structural weights; grey caption under ON"
+    invariants: ["distinct-union (GT 21 vs 45 assert) · weights == F0-P5 exactly · blocklist disjoint"]
+  geo_countries:
+    status: BUILD (W2)
+    grain: country x year x conf_state x subset_id (+ totals; unknown bucket explicit)
+    columns: [country_code, year, conf_state, subset_id, co_works, co_works_xa, share_ul,
+              share_ul_xa, fwci_fr_median, fwci_fr_median_xa, unknown_bucket_flag]
+    eager_load: [V3]
+    note: "trend sparkline derives from the year rows themselves (no packed trend_cells column)"
+  geo_fields:                    # NEW (tunnel #9) — V3 country focus card
+    status: BUILD (W2)
+    grain: country x node(field|subfield floored) x conf_state
+    columns: [country_code, node_level, node_id, conf_state, co_works, co_works_xa,
+              share_of_country_pair, share_of_country_pair_xa, baseline_ul_share, fwci_fr_median]
+    artifact_invariant_columns: "baseline_ul_share + fwci_fr_median (DEFERRED twins — grey-out +
+      deferred_twins export list)"
+    write_spec: "sorted by country_code, rg=5000"
+    lazy_load: "lib/lazy.py key country_code"
+  geo_groups:
+    status: BUILD (W2)
+    grain: group x member x conf_state (+ member yearly long rows)
+    columns: [group_id, member_id, member_name, conf_state, co_works_distinct, mom_class,
+              year, co_works_year]
+    artifact_exempt: "group cards grey under ON"
+    note: "Freiberg = UNION 15 (supersessions); RPTU churn pair 20+2 footnote; owner client"
+
+  # ---------- thematic extensions ----------
+  thm_specialisation:
+    status: BUILD (W3)
+    grain: node(field|subfield) x conf_state x subset_id
+    columns: [level, node_id, conf_state, subset_id, ul_works, ul_works_xa, france_works,
+              activity_index_lq, activity_index_lq_xa, floor_flag]
+    artifact_invariant_columns: "france_works (no topic grain — the lq_xa UL-side-only caveat)"
+  thm_diversity:
+    status: BUILD (W3)
+    grain: perimeter x year x conf_state    # perimeter_id in {all, in_isite} + curated labs (plan T3)
+    columns: [perimeter_id, perimeter_kind, year, conf_state, variety, variety_xa, balance,
+              balance_xa, disparity, disparity_xa, rao_stirling, rao_stirling_xa, n_works,
+              n_works_xa, floor_flag, delta_class, delta_p_value]
+    artifact_exempt_families: "delta_class/delta_p_value (momentum-family ruling)"
+    note: "computed AT subfield, FIXED; formula per catalog card"
+  thm_codiscipline:
+    status: BUILD (W3)
+    grain: perimeter x field_a x field_b x conf_state
+    columns: [perimeter_id, field_a, field_b, conf_state, co_works, co_works_xa, floor_flag]
+  thm_funding:
+    status: BUILD (W3)
+    grain: field x perimeter x funder_family x conf_state
+    columns: [field_id, perimeter_id, funder_family, conf_state, works_with_funding,
+              works_with_funding_xa, rows_count, share_of_works, share_of_works_xa]
+    artifact_invariant_columns: "rows_count (acknowledgement rows, not works — rows≠works discipline)"
+  thm_frontier:
+    status: BUILD (W3)
+    grain: "panel: perimeter x field x conf_state; texture: topic top-N x conf_state (tunnel #14)"
+    columns_panel: [perimeter_id, field_id, conf_state, raw_frontier_share, raw_frontier_share_xa,
+                    field_standardised_share, field_standardised_share_xa, neutral_point,
+                    score_column_used, baseline_vintage]
+    columns_texture: [conf_state, topic_id, topic_name, frontier_score_std, ul_works, ul_works_xa,
+                      isite_works, isite_works_xa, artifact_flag]
+    input: "inputs/manual/frontierness_baseline.xlsx = COPY-IN of RPF\\Readout\\Raw data\\
+            Cleaning bad OA topics.xlsx (per the supersession above — the card-blessed artifact);
+            baseline_vintage + score_column_used stamped on every row"
+    invariants: ["standardised beside raw everywhere (x1.37/x1.03 golden)", "z never on subsets",
+                 "hors_referentiel 11.15% disclosed beside texture"]
+  # thm_theme_agg: DELETED — T6 DROPPED (tombstone; plan §7 client-facing line)
+
+  thm_frontier_topics:             # NEW (pass 5, S3b, ruling R11 full-depth materialization)
+    status: BUILD (pass 5, S3b)
+    grain: "topic (ALL UL topics carrying >=1 corpus PRIMARY-topic work, 3,274) x conf_state (2)
+      == 6,548 rows"
+    columns: [topic_id, topic_name, domain_id, domain_name, field_id, field_name, subfield_id,
+              subfield_name, conf_state, ul_works, ul_works_xa, isite_works, isite_works_xa,
+              frontier_catalog_flag, frontier_score_std, score_reason, artifact_flag,
+              baseline_vintage, score_column_used, snapshot_date]
+    why_built: "R11 (2026-08-18): the owner's own named acceptance example is 'type quantum -> see
+      the position of ALL topics containing quantum' -- thm_frontier's texture rows only ever
+      covered the top-20 emerging (kept) topics globally, so a query below rank #20 (or excluded,
+      or unmatched) had nothing to find. This table extends the SAME frontier construction to
+      every topic the UL corpus actually uses as a primary topic."
+    construction: "SAME baseline file / 811-exclusion list / score column as
+      47_build_thematic_ext.py's frontier section (reused verbatim, never re-derived -- same
+      discipline 47b_build_crossings.py already follows). ul_works/isite_works use the identical
+      primary-topic bare-id match 47's own texture rows use, which is why the 20 topics already
+      materialized there reproduce IDENTICAL frontier_score_std/ul_works/isite_works here (golden
+      continuity, asserted at build time against this SAME snapshot's own tables/thm_frontier.parquet
+      -- this builder runs right after 47 in run_all.py for exactly that reason, never against a
+      prior deploy)."
+    frontier_catalog_flag: "True iff the topic matches a baseline row AND is NOT on the 811-topic
+      exclusion list (47's own 'kept' population) -- independent of whether a numeric score
+      happens to be defined for it (see score_reason)."
+    score_reason: "NULL exactly when frontier_score_std is populated. Otherwise one of:
+      'excluded_811' (topic on the 811-exclusion list -- 297 of the 3,274 UL topics, measured),
+      'unmatched_baseline' (topic id absent from the baseline file entirely -- measured ZERO on
+      the 2026-08-11 snapshot; kept as a live guard, not assumed impossible on a future snapshot),
+      'no_baseline_score' (topic matched and kept, but the baseline's own Average frontierness
+      cell is NaN for it -- the SAME `.notna()` gate 47's own `scoreable` mask already applies,
+      reused not reimplemented; measured ZERO among UL's kept topics this snapshot -- the 2 world
+      topics carrying a NaN score are both already on the exclusion list)."
+    isite_decomposition: "isite_works(_xa), same-row twin, zero recomputation (same convention as
+      thm_frontier_labs)"
+    artifact_flag: "topic-level 811-registry flag (True iff the topic itself is on the exclusion
+      list) -- the SAME meaning thm_frontier's own texture-row artifact_flag already carries, now
+      honestly True/False (this table is not pre-filtered to the kept population like the old
+      texture rows were)"
+    floors: "NO min_stratum_n floor applies to frontier_score_std -- it is a topic-level BASELINE
+      property, never a corpus-derived statistic, so gating it on UL-works volume would be a
+      category error. Raw counts (ul_works/isite_works, and their _xa twins) are never floored
+      either, the same D53 raw-count rule every other table here already follows."
+    artifact_invariant_columns: "score_reason (NULL-reason provenance label, not a corpus measure
+      -- same class as topic_name/mom_category, already exempt in lib/artifact.py's IDENTITY_EXACT
+      set). Every other declared column already sits in that same IDENTITY_EXACT set (topic_id/
+      topic_name/domain_id/domain_name/field_id/field_name/subfield_id/subfield_name/conf_state/
+      frontier_score_std/artifact_flag/baseline_vintage/score_column_used/snapshot_date) or the
+      `_flag` identity suffix (frontier_catalog_flag) or is a twinned measure (ul_works/
+      isite_works) -- verified against `python lib/artifact.py --check`."
+    invariants:
+      - "row count == 2 x (distinct topic_id carrying an is_primary==True row in
+         corpus_topics.parquet), measured 2 x 3,274 = 6,548"
+      - "isite_works(_xa) <= ul_works(_xa) on every row"
+      - "the 20 topics already materialized on thm_frontier's texture rows (row_kind=='texture')
+         reproduce an IDENTICAL frontier_score_std/ul_works/isite_works here, per topic_id x
+         conf_state (golden continuity, asserted at build time)"
+      - "frontier_score_std NULL <=> score_reason non-null, and vice versa (never both populated,
+         never both NULL)"
+    producer: pipeline/47c_build_frontier_topics.py
+
+  thm_frontier_labs:              # NEW (pass 5, S3, ruling R16 / plan P3)
+    status: BUILD (pass 5)
+    grain: lab (69, incl. NO LAB per thm_diversity's own precedent) x conf_state
+    columns: [lab, conf_state, works_n, works_n_xa, works_n_scoreable, works_n_scoreable_xa,
+              frontier_works_n, frontier_works_n_xa, frontier_share, frontier_share_xa,
+              field_standardised_share, field_standardised_share_xa, isite_works_n,
+              isite_works_n_xa, isite_frontier_works_n, isite_frontier_works_n_xa,
+              frontier_cut_threshold, snapshot_date]
+    construction: "frontier work = 47's own amplification-golden binary cut (Average frontierness
+      >= top-decile of kept topics), NOT 47's panel's continuous percentile (no natural count
+      there). field_standardised_share generalises 47's ISITE-vs-rest pairwise direct
+      standardisation to 69 groups via ONE shared reference (whole-corpus scoreable-works field
+      mix, fixed per conf_state) -- the standard N-group generalisation (standardise every group
+      onto one population, never onto each other). Small-cell guard: a lab-field cell below
+      workshop_tunables.i11_sparkline_min_works (3, reused) is dropped from that lab's own
+      restricted/renormalised field set before standardising -- found live (lab Crem: n=1 in a
+      17%-corpus-weighted field swung its standardised share x7.4 before the guard; x2.2 after)."
+    isite_decomposition: "isite_works_n / isite_frontier_works_n, same-row twins (cheap, per plan)"
+    artifact_flag: "_xa twin on every count/share column (R-A convention, lib.artifact.flag_works,
+      4,106/11.15% golden re-asserted at build time)"
+    floors: "D53: frontier_share*/field_standardised_share* NULL below min_stratum_n (30) on their
+      own scoreable denominator; raw counts never floored"
+    no_peer_context: "crossing != comparing (owner's rule) -- no peer column/row/denominator"
+    artifact_invariant_columns: "lab (identity key, same class as topic_name/field_name already
+      exempt elsewhere) · frontier_cut_threshold (a global method constant broadcast on every row,
+      same class as thm_frontier's own neutral_point/score_column_used)"
+    invariants:
+      - "works_n(conf_state='all') == ul_labs.works, per lab, EXACT (69/69 -- acceptance #1
+         identity 1, asserted in the builder)"
+    producer: pipeline/47b_build_crossings.py
+
+  thm_sdg_labs:                   # NEW (pass 5, S3, ruling R16 / plan P3)
+    status: BUILD (pass 5)
+    grain: lab (69, incl. NO LAB) x sdg (1-16, SIRIS-B route -- no SDG17 sheet) x conf_state
+    columns: [lab, sdg, conf_state, works_n, works_n_xa, works_tagged_n, works_tagged_n_xa,
+              works_this_sdg_n, works_this_sdg_n_xa, share_of_lab_sdg_tagged,
+              share_of_lab_sdg_tagged_xa, snapshot_date]
+    construction: "SIRIS-B route (sdg_siris.parquet, long work x sdg grain, read directly -- no
+      string parsing). Denominator = the LAB's own SDG-TAGGED work count (plan wording verbatim:
+      'share of lab's SDG-tagged works'), NOT its whole work count -- shares sum above 1.0 per lab
+      by design (multi-SDG works, corpus-wide 1.445 SDGs/tagged-work)."
+    isite_decomposition: "NONE this pass (plan named it for thm_frontier_labs only; a lab x SDG x
+      ISITE 3-way cross sits almost everywhere below the 30-work floor at 14.8% corpus-wide SDG
+      coverage) -- named as a cheap not-built-this-pass follow-up in docs/OVERLAY_MATRIX.md"
+    artifact_flag: "_xa twin on every count/share column (R-A convention)"
+    floors: "D53: share_of_lab_sdg_tagged* NULL below min_stratum_n (30) on works_tagged_n(_xa)"
+    no_peer_context: "crossing != comparing (owner's rule)"
+    artifact_invariant_columns: "lab (identity key) · sdg (identity key, same class as field_a/
+      field_b already exempt elsewhere -- an SDG number is a category label, not a measure)"
+    invariants:
+      - "UNION over all 69 lab work-sets (incl. NO LAB) of (lab's works INTERSECT sdg_siris's
+         tagged works) == sdg_siris.parquet's own full distinct-tagged-work set, EXACTLY (5,447 ==
+         5,447 -- acceptance #1 identity 2, a partition-by-union check, asserted in the builder)"
+    producer: pipeline/47b_build_crossings.py
+
+  bench_peers:
+    status: BUILD (pass 4, G4) -- upgraded from the GATED-CLIENT stub; peer set = user ruling
+      2026-08-17 (the 9 of docs/benchmark_peer_candidates.md Sec.3), registry-driven
+      (inputs/overlays/bench_peers.csv, status==ok, workshop keeps tick-box override power)
+    grain: entity_id (UL + 9 peers) x node_level {all, domain, field, subfield} x node_id x
+      conf_state {all, no_conf} -- 10 x 283 x 2 = 5,660 rows
+    columns: [entity_id, entity_name, rung, country, node_level, node_id, node_name, conf_state,
+      works, share_of_entity, lq_vs_france, fwci_fr_mean, fwci_fr_median, pptop10_fr_share,
+      works_with_indicators, peer_pull_date, golden_probe_date, snapshot_date]
+    pass6_delta: "peer_pull_date/golden_probe_date added (S-NC cross-stream request): page 14
+      hardcodes both as literal FR strings. Read from this snapshot's own MANIFEST.json (step
+      '49_pull_peer_benchmark' finished_utc) and from reports/data/peer_candidate_probes.csv's own
+      mtime, respectively — provenance facts, same IDENTITY_EXACT class as snapshot_date."
+    invariants: ["share_of_entity sums to 1 +/-0.001 per entity x conf_state at node_level in
+      {domain,field,subfield} (topiced-total basis; untopiced remainder disclosed, not folded in)",
+      "every node_id resolves in all_topics", "per-peer 'all'/'all' works == its own pulled
+      peer_works_<id>.parquet row count", "works_with_indicators<30 => the 3 indicator columns
+      NULL, never 0 (D53)", "no _xa/artifact_flag column anywhere (S9 exempt-by-construction)",
+      "UL-path golden: 500 sampled UL works (seed 42) recomputed via a verbatim copy of 31's
+      stratum join reproduce works_master's own FWCI_FR/PPtop10_FR EXACTLY (lens #14)"]
+    producer: "pipeline/49_pull_peer_benchmark.py (live OpenAlex pull, direct-id perimeter,
+      resumable per peer, calibrated on Tampere first) + pipeline/49b_build_peer_benchmark.py
+      (the France-strata join copied from 31_build_baseline.py verbatim + the LQ construction
+      generalising thm_specialisation to {all,domain,field,subfield})"
+    honesty_notes: "FR-vs-foreign direct-id asymmetry ~25-35% (Sec.2b); FWCI_FR on foreign peers =
+      fixed French yardstick, not a world norm; Nantes/UGA component-ecole exclusions understate
+      their eng-mat share vs UL (direction-of-bias, lens #16); +/-3% live-drift band vs the frozen
+      2026-08-17 G8 CSV, both pull dates stamped (lens #13/#15); UL row's <=0.1% filter-asymmetry
+      vs a fresh live count (lens #12); per-entity works_with_indicators/works coverage measured
+      and disclosed if <95% (lens #13)."
+    # RA-C02 fix: mirrors data_contract.yaml's bench_peers.parquet artifact_exempt block
+    # (the S9 by-construction rationale) as a STRUCTURED key -- the "no _xa/artifact_flag
+    # column anywhere (S9 exempt-by-construction)" line already sat in `invariants` above as
+    # prose, invisible to lib/artifact.py's check_completeness() (only artifact_invariant_
+    # columns/artifact_exempt/artifact_exempt_families count as declared coverage).
+    artifact_exempt: "S9: peer corpora are pulled live from OpenAlex, not the frozen local
+      artifact-flagged snapshot -- there is no way to know which of a peer's works sit on one
+      of the 811 excluded topics. EXEMPT BY CONSTRUCTION (no _xa columns anywhere), the same
+      disclosed asymmetry 42b's reciprocity denominators already carry. The page shows the
+      standard exemption strip, never toggle behaviour."
+    read_by: "Streamlit/pages/12_Benchmark.py (T4b)"
+
+  bench_sdg:                      # NEW (pass 5, S3, rulings R6/R7 / plan P5)
+    status: BUILD (pass 5)
+    grain: entity_id (UL + 9 peers) x sdg (1-17, native OpenAlex/Aurora range -- SDG17 IS tagged
+      by Aurora, unlike the SIRIS-B 16-pass route) x conf_state
+    columns: [entity_id, entity_name, rung, country, sdg, conf_state, entity_total_works, works,
+              share_of_entity_works, snapshot_date]
+    construction: "BOTH sides = OpenAlex/Aurora native SDG field, method identical: UL from
+      corpus_sdg.parquet (score>=0.40, config sdg.openalex_metadata.threshold) restricted to the
+      direct-id 28,464-work perimeter; peers from the wide pull's own sustainable_development_goals
+      list, same threshold. Denominator = entity's OWN TOTAL works (plan wording 'share of entity
+      works', not of tagged works -- matches the shipped SDG panel's own pct_sdg convention in
+      44_build_thematic.py, denominator = whole node population, untagged counts as 0)."
+    artifact_exempt: "S9: same rationale as bench_peers, reused verbatim -- peer corpora are pulled
+      live, not from the frozen artifact-flagged snapshot. EXEMPT BY CONSTRUCTION, no _xa column
+      anywhere on ANY row, including UL's (uniform treatment across the whole table, same as
+      bench_peers does for its own UL row)."
+    floors: "D53: share_of_entity_works NULL if entity_total_works < min_stratum_n (30) -- never
+      hit in practice at this entity grain (smallest entity ~13k works), implemented anyway"
+    invariants:
+      - "spot-checked against 3 live OpenAlex group_by=sustainable_development_goals.id calls
+         (funded key, $0.0003 total): 2 of 3 entities (the pass-5 0%-drift peers) reproduce EXACTLY;
+         UL shows a 0-3-work delta, same order of magnitude as the ALREADY-DISCLOSED ~0.1% UL
+         live-vs-snapshot drift documented for bench_peers' own Sec.2a -- normal index movement
+         over the elapsed week, not a construction defect. Full log: progress/S3_data_ext.md."
+    producer: pipeline/49c_build_peer_context.py
+
+  bench_positioning:               # NEW (pass 5, S3, rulings R6/R7 / plan P5)
+    status: BUILD (pass 5)
+    grain: entity_id (UL + 9 peers) x field_id (26) x conf_state
+    columns: [entity_id, entity_name, rung, country, field_id, conf_state, n_scoreable,
+              raw_frontier_share, field_standardised_share, neutral_point, score_column_used,
+              baseline_vintage, join_coverage_pct, method, snapshot_date]
+    construction: "PROBE A (progress/S3_data_ext.md): thm_frontier assigns topics to works via
+      PRIMARY topic only, already -- peers' wide pull also carries primary_topic only. Zero
+      adaptation needed: copies 47's own panel construction VERBATIM (front_pctile/field_pctile,
+      rank(pct=True) over the SAME fixed baseline) onto every entity. method='primary_topic_both_
+      sides' on every row (already true for UL, not merely a peer-side compromise)."
+    artifact_exempt: "S9, same as bench_sdg/bench_peers -- no _xa column anywhere, UL included"
+    floors: "D53: raw_frontier_share/field_standardised_share NULL below min_stratum_n (30) on
+      n_scoreable"
+    honesty_notes: "per-entity join coverage measured and disclosed (join_coverage_pct column):
+      99.48%-99.95% across the 10 entities this pull, all comfortably above the ~99.9% UL golden
+      band"
+    producer: pipeline/49c_build_peer_context.py
+
+  bench_diversity:                 # NEW (pass 5, S3, rulings R6/R7 / plan P5)
+    status: BUILD (pass 5)
+    grain: entity_id (UL + 9 peers) x conf_state
+    columns: [entity_id, entity_name, rung, country, conf_state, n_works, variety, balance,
+              disparity, rao_stirling, method, disparity_matrix_source, snapshot_date]
+    construction: "PROBE B (progress/S3_data_ext.md): 47's thm_diversity is multi-topic
+      (corpus_topics score-weighted), which does NOT transfer to peers (primary-topic-only) as a
+      straight recompute -- a one-hot weight matrix collapses subfield-pair co-occurrence to zero
+      everywhere, structurally meaningless. FIX (labelled symmetric variant, not abandoned): the
+      252x252 disparity matrix is a subfield-PAIR property, built ONCE from UL's full multi-topic
+      corpus (verbatim copy of 47's own build_subfield_weight_matrix/build_disparity_matrix) and
+      REUSED UNCHANGED for every entity's own primary-topic-only p-vector. method='primary_topic_
+      both_sides' on every row."
+    transfer_bar: "build-time ASSERT (not merely printed): a verbatim recompute of thm_diversity's
+      OWN stored (perimeter_id='all', year=2019, conf_state='all') row, via this table's copied
+      47-code, reproduces the DEPLOYED value EXACTLY -- diff 0.00e+00 on all 4 components
+      (variety/balance/disparity/rao_stirling). Proves the copied code is byte-faithful."
+    ul_both_ways: "printed at build time + archived in progress/S3_data_ext.md + docs/METHODES.md:
+      DEPLOYED thm_diversity (multi-topic, perimeter='all'=36,819-work lineage corpus, year=2019
+      only) rao_stirling=0.321715 vs bench_diversity's shipped UL row (primary-topic-only,
+      direct-id 28,464-work perimeter, full 2019-2023 window) rao_stirling=0.332703 -- NOT a
+      like-for-like delta (perimeter/window/construction all differ at once), reported as two
+      distinct labelled numbers, never subtracted into one misleading figure."
+    artifact_exempt: "S9, same as bench_sdg/bench_positioning/bench_peers -- no _xa anywhere"
+    floors: "D53: variety/balance/disparity/rao_stirling NULL if n_works < min_stratum_n (30) --
+      never hit in practice at this entity grain"
+    sample_range: "rao_stirling [0.290, 0.364] across all 10 entities, conf_state='all' -- tight,
+      plausible, no outliers"
+    producer: pipeline/49c_build_peer_context.py
+
+  # ---------- author family ----------
+  aut_public:
+    status: BUILD (W4)
+    grain: author (ONE row per person — conf/xa as COLUMNS; tunnel #12 RAM ruling)
+    rows_measured: "12,680; ~6 MB RAM with the 4 count columns (vs 13.0 MB at 2-state rows)"
+    columns: [author_id, display_name, orcid, idhal, n_works, n_works_noconf, n_works_xa,
+              n_works_noconf_xa, ul_credited_works, main_labs, thematic_identity_fields,
+              thematic_identity_subfields, laureate_tags, snapshot_date]
+    conf_exempt: "directory identity; conference exclusion served by the n_works_noconf column"
+    artifact_invariant_columns: "identity + ul_credited_works (credit facts) + laureate_tags"
+    invariants: ["STRUCTURAL: no column matching fwci|pptop|impact|citation (Class-1 regex)"]
+  aut_works:                     # NEW (tunnel #7) — the A-V2 works drill, structurally impact-free
+    status: BUILD (W4)
+    grain: author x work (UL-credited authorship pairs)
+    rows_est: "~90-140k (size at build; Class-1 row-group floor applies)"
+    write_spec: "sorted by author_id, rg=5000"
+    columns: [author_id, work_id, year, title, doi, type, is_conference, in_isite, labs_short,
+              artifact_flag]      # PHYSICALLY no fwci/pptop — §6.4-3bis structural (tunnel #16)
+    lazy_load: "lib/lazy.py key author_id; A-V2 yearly bars derived in-app from the fetched slice
+                (declared bounded exception to L2)"
+    invariants: ["no impact column (same regex check as aut_public)",
+                 "pairs reconcile with aut_public.n_works per author"]
+  aut_impact_drill:
+    status: BUILD (W4)
+    grain: author (>=30 works_with_indicators) x conf_state
+    rows_measured: "480/state; 16 KB"
+    columns: [author_id, conf_state, fwci_fr_mean, pptop10_count, works_with_indicators]
+    artifact_exempt: "impact context computed on full corpus — stated in the drill caption"
+    invariants: ["floor >=30 (band 400-600)", "no download control rendered (V check)"]
+  aut_coverage:
+    status: BUILD (W4)
+    grain: unit(lab|field|year|population) x conf_state (rows ~3,390 x2 — tiny; tunnel #12 note)
+    columns: [unit_kind, unit_id, unit_label, conf_state, n_persons, n_persons_orcid, pct_orcid,
+              n_works, n_works_orcid_author, pct_works_orcid, idhal_proxy_pct,
+              unknown_distinct_note, snapshot_date]
+    artifact_exempt: "identifier coverage is about persons/identifiers, not topics"
+    goldens: "72.6 / 72.4 / 48.6 / by-year 67.1..71.5 with 2023 dip intact / 480"
+
+  # ---------- pass 6 (S-DAT): lab tops, SDG methods, partner denominators ----------
+  sdg_lab_methods:
+    status: BUILD (pass 6)
+    grain: lab (69, incl. NO LAB) x sdg (1-16) x conf_state
+    columns: [lab, sdg, conf_state, lab_total_pubs, lab_tagged_siris, lab_tagged_aurora, n_siris,
+              n_aurora, share_lab_corpus_siris, share_lab_corpus_aurora, snapshot_date]
+    artifact_exempt: "SDG method-comparison ranking (SIRIS-VocTagger vs OpenAlex-Aurora), same
+      S9-class scope decision as bench_sdg — no _xa twin this pass (documented, not silently
+      skipped); follow-up candidate if the workshop wants artifact-toggle parity here too"
+    no_peer_context: "crossing != comparing (owner's rule, R16) -- no peer column/row/denominator"
+    floors: "D53: share_lab_corpus_* NULL below min_stratum_n (30) on lab_total_pubs; raw counts
+      never floored"
+    invariants:
+      - "for every SDG and BOTH methods: UNION over the 69 lab (conf_state='all') work-sets of
+         (lab's works INTERSECT method's tagged works) == the method's own corpus-wide tagged set,
+         EXACTLY (partition-by-union, same discipline as thm_sdg_labs)"
+    producer: pipeline/47d_build_sdg_methods.py
+
+  lab_top_partners:
+    status: BUILD (pass 6)
+    grain: lab (69, incl. NO LAB) x scope{international, france} x rank (<=30, sparse)
+    columns: [lab, scope, rank, partner_id, partner_name, country, copubs, is_consortium_member,
+              snapshot_date]
+    artifact_exempt: "ranking table (partner identity + raw copub count) — same S9-class scope
+      decision as sdg_lab_methods"
+    invariants: ["rank dense 1..N per (lab, scope), N<=30", "copubs desc within (lab, scope)"]
+    producer: pipeline/43c_build_lab_tops.py
+
+  lab_top_authors:
+    status: BUILD (pass 6)
+    grain: lab (69, incl. NO LAB) x method{maison, orcid_only} x rank (<=30, sparse)
+    columns: [lab, method, rank, author_key, display_name, orcid, pubs, fwci_mean, snapshot_date]
+    artifact_exempt: "ranking table, same S9-class scope decision as lab_top_partners"
+    invariants: ["rank dense 1..N per (lab, method), N<=30",
+                 "orcid NULL on every maison row, non-null on every orcid_only row"]
+    producer: pipeline/43c_build_lab_tops.py
+
+  lab_wordcloud:
+    status: BUILD (pass 6)
+    grain: lab (69, incl. NO LAB) x level{subfield, topic, keyword} x term (<=120 per lab x level)
+    columns: [lab, level, term, weight, snapshot_date]
+    artifact_exempt: "display/wordcloud aggregate, same S9-class scope decision as lab_top_partners"
+    invariants: ["<=120 rows per (lab, level)", "weight desc within (lab, level)"]
+    producer: pipeline/43c_build_lab_tops.py
+
+  lab_works:                     # NEW (pass 6, #11/#32/#44) -- lab-scoped publications drill
+    status: BUILD (pass 6)
+    grain: lab (69, incl. NO LAB) x work_id, EVERY work in the lab's Labs-matched set (no floor)
+    columns: [lab, work_id, year, title, doi, type, is_conference, fwci_fr, pptop10_fr, pptop1_fr,
+              indicator_status, in_isite, artifact_flag, sdg_tags, primary_field_id,
+              primary_subfield_id, primary_topic_id, snapshot_date]
+    write_spec: "sorted by lab, rg=5000 (Class-1 floor asserted in the builder)"
+    lazy_load: "lib/lazy.py key 'lab' -- per-lab x ODD works list (#11), per-indicator download
+      (#32), same pattern as ptn_works/aut_works"
+    note: "work-grain list table (work_id present) — per-row artifact_flag is the mechanism, no
+      column twinning applies (lib/artifact.py R-A skip rule)"
+    producer: pipeline/43c_build_lab_tops.py
+
+  ptn_denominators:               # NEW (pass 6, P4/#39/#40)
+    status: BUILD (pass 6)
+    grain: partner_id (one row per partner, derived from ptn_summary's own (all,all) rows)
+    columns: [partner_id, display_name, country_code, co_works_full, is_consortium_member,
+              share_of_ul_corpus, share_of_ul_france_copubs_hors_site, share_of_ul_intl_copubs,
+              share_of_ul_country_copubs, snapshot_date]
+    construction: "co_works_full copied verbatim from ptn_summary (all,all) -- never a separate
+      recompute, so page 8's progress-bar 'part partenaire' and this table's shares always
+      reconcile on the same row. Denominators: whole UL corpus (len(works_master)); UL's France
+      copubs EXCLUDING the 8 consortium signatories (inputs/overlays/idset_consortium.csv) for
+      FR partners; UL's total international copubs and UL's copubs with the partner's own country
+      for non-FR partners."
+    artifact_invariant_columns: "partner_id/display_name/country_code/is_consortium_member
+      (identity block, same class as ptn_summary's own identity columns) · co_works_full (a
+      verbatim copy of an already-declared ptn_summary measure, not re-derived here)"
+    artifact_exempt: "share_of_ul_corpus, share_of_ul_france_copubs_hors_site,
+      share_of_ul_intl_copubs, share_of_ul_country_copubs (same S9-class scope decision as
+      sdg_lab_methods/lab_top_partners -- no _xa twin this pass, documented not silently skipped;
+      each is a ratio over co_works_full, itself an already-exempt verbatim copy)"
+    invariants:
+      - "every share_of_ul_* column in [0,1] wherever non-null"
+      - "consortium signatories carry NULL share_of_ul_france_copubs_hors_site (excluded from that
+         denominator by definition)"
+      - "FR partners: NULL share_of_ul_intl_copubs / share_of_ul_country_copubs; international
+         partners: NULL share_of_ul_france_copubs_hors_site"
+      - "ONE hand-verified spot check: independent pandas groupby-sum recompute of one partner's
+         share_of_ul_country_copubs reproduces the table value EXACTLY (asserted at build time)"
+    producer: pipeline/46_build_partner_views.py
+
+  # ---------- overlays ----------
+  overlays:
+    path: inputs/overlays/
+    state: "successor_merges 3 ok / 4 TODO (tunnel #13 correction) · blocklist 3 ·
+            consortium 15 rows/8 members · unigr 6/5 · eureca 3/2 (Freiberg 2-id) ·
+            hospital 3 named ok + catch-all TODO (rides 42b)"
+    standing_invariants: ["blocklist disjoint from every id-set", "status==ok ids resolve >0 rows",
+                          "TODO rows never consumed"]

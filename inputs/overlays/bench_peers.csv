@@ -1,0 +1,10 @@
+peer_id,display_name,rung,country,status,source,note
+I2279609970,Universite de Lille,FR-ISITE,FR,ok,"G8 dossier rev 2, user ruling 2026-08-17",
+I97188460,Nantes Universite,FR-ISITE,FR,ok,"G8 dossier rev 2, user ruling 2026-08-17","Component-ecole exclusion (G8 dossier Sec.2c): Centrale Nantes (I100445878, 9,561 works all-time) has its own OpenAlex id and is NOT included in this peer's direct-id count. UL's own direct id INCLUDES its INP schools, so this peer's eng-mat share reads UNDERSTATED relative to UL by construction (direction-of-bias, lens #16) -- disclosed on the Benchmark page method strip, never silently corrected."
+I198244214,Universite Clermont Auvergne,FR-ISITE,FR,ok,"G8 dossier rev 2, user ruling 2026-08-17",
+I899635006,Universite Grenoble Alpes,FR-IDEX,FR,ok,"G8 dossier rev 2, user ruling 2026-08-17","Component-ecole exclusion (G8 dossier Sec.2c): Grenoble INP is an etablissement-composante retaining legal personality with its own OpenAlex id, NOT included in this peer's direct-id count (id unresolved/not in hits). UL's own direct id INCLUDES its INP schools, so this peer's eng-mat share (0.44) reads UNDERSTATED relative to UL by construction (direction-of-bias, lens #16) -- disclosed on the Benchmark page method strip, never silently corrected."
+I157674565,University of Liege,XBORDER,BE,ok,"G8 dossier rev 2, user ruling 2026-08-17",
+I62318514,University of Duisburg-Essen,EU-MIRROR,DE,ok,"G8 dossier rev 2, user ruling 2026-08-17",
+I166825849,Tampere University,EU-MIRROR,FI,ok,"G8 dossier rev 2, user ruling 2026-08-17","Calibration peer (G4): smallest clean id on the list -- verified clean in OpenAlex (legacy TUT/UTA ids hold 0 works, fully migrated to this merged id; G8 dossier Sec.2c)."
+I98381234,University of Oulu,EU-MIRROR,FI,ok,"G8 dossier rev 2, user ruling 2026-08-17",
+I169108374,University of the Basque Country (UPV/EHU),EU-MIRROR,ES,ok,"G8 dossier rev 2, user ruling 2026-08-17","Near-clone of UL's thematic shape (cosine 0.987, the G8 probe's own discovery) -- not a kill-criterion note, kept for continuity with the dossier."

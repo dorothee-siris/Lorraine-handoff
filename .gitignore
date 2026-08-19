@@ -1,0 +1,43 @@
+# =============================================================================
+# WHITELIST .gitignore — public deployment repo (decision 2026-08-20, pass-6 refine)
+# Everything is IGNORED unless explicitly re-included below. This repo ships ONLY:
+# the Streamlit app, the pipeline (+ its lib and inputs), and the client-facing
+# method docs. Internal Factory material (BUILD_PLANs, briefs, post-mortems,
+# progress notes, tests, reports) NEVER ships — by mechanism, not by care.
+# =============================================================================
+/*
+
+# --- root files that ship ---
+!/.gitignore
+!/README.md
+!/config.yaml
+!/run_all.py
+
+# --- the app (incl. deployed data + pinned requirements) ---
+!/Streamlit/
+
+# --- the pipeline + its vendored lib + manual inputs ---
+!/pipeline/
+!/lib/
+!/inputs/
+
+# --- docs: ONLY the data contracts (60_deploy validates against them)
+#     and the client-facing method docs README links to ---
+!/docs/
+/docs/*
+!/docs/data_contract.yaml
+!/docs/METHODES.md
+!/docs/SHIFT_v1_v2.md
+!/docs/AUDIT.md
+!/docs/PROVENANCE.md
+!/docs/REGISTRE_OBJETS.md
+!/docs/foundry/
+/docs/foundry/*
+!/docs/foundry/data_foundation.yaml
+
+# --- hygiene inside whitelisted dirs ---
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+.streamlit/secrets.toml
