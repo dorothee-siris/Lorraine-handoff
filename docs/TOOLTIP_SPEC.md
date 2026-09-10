@@ -144,3 +144,41 @@ le donne déjà, le rang dans un tableau déjà trié, la valeur de l'axe sur un
 l'axe est gradué et lisible, le nombre de co-auteurs, et toute mention de fichier, de colonne
 ou de décision interne — celles-ci vivent dans les `note:` du YAML, qui ne sont jamais rendues
 à l'écran. Le survol ne conclut jamais : il dit comment lire, la conclusion reste au lecteur.
+
+## §7b — Ce que la passe 7b a décidé
+
+**Vingt-huit clés, quarante-six textes de lecture.** Les huit surfaces restantes entrent au
+contrat avec les mêmes règles dures. Les valeurs de mode ne sont pas reprises du plan mais
+**relues dans le code de contrôle de chaque page**, et trois d'entre elles y contredisaient le
+plan : les deux nuages d'indice de spécialisation de la page portefeuille et le nuage de rapport
+de la page I-SITE ont chacun leur propre bascule d'échelle, que le plan donnait absente. Les
+clés sont conservées, les faits corrigés au registre.
+
+**Deux modes ne sont pas un produit.** Le panneau de part de la page benchmark ne suit pas la
+bascule d'échelle qui pilote les deux panneaux de spécialisation : le graphique a donc **cinq**
+modes réels, pas six. Leurs identifiants s'écrivent avec un souligné et non avec la barre
+verticale de la convention à deux axes, parce que le parseur du registre découpe les cellules du
+tableau sur cette barre — une contrainte de lecture, pas un choix de style.
+
+**Deux formats nouveaux.** `valeur_signal` porte la valeur d'un signal dans son unité propre
+— compte, part ou rapport — parce que la page benchmark met six signaux d'unités différentes sur
+la même ligne de survol ; `intervalle_2d` met deux bornes sur une seule ligne, ce qui permet à un
+survol de boîte de tenir l'écart interquartile et l'étendue en deux lignes au lieu de quatre.
+Aucun autre format n'a été ajouté : le vocabulaire de la passe 7a couvre le reste.
+
+**Les planchers se disent en mots.** Un nuage d'indice ou de rapport dont la ligne repose sur
+moins de trente travaux porte une ligne drapeau et l'encre de réserve ; un indicateur de citation
+sous dix travaux garde sa dague. Les libellés, eux, ne portent aucun chiffre : « écart
+interquartile » et « étendue complète » remplacent les percentiles, que la valeur affiche.
+
+**Une ligne de survol retirée au plan.** Le graphique en forêt de la page benchmark refuse
+explicitement le classement dans son propre code ; la ligne « rang » que le tableau du plan lui
+donnait n'a pas été écrite. De même, la ligne « référence » des nuages de points appariés n'existe
+pas : elle répéterait la même constante sur chaque marque, et c'est la ligne de lecture qui nomme
+le trait rouge tireté.
+
+**Une chaîne par entité, pas par trace.** Trois graphiques dessinent la même entité avec deux
+marques (barre grise et point bleu des membres du site, deux extrémités de l'haltère des membres
+du périmètre I-SITE) : les deux marques portent la MÊME chaîne de survol. Autrement la marque
+secondaire perdrait un libellé inconditionnel et la conformité de constructeur échouerait sur un
+graphique pourtant correct à l'œil.

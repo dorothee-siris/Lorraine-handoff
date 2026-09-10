@@ -330,6 +330,328 @@ READING: dict[str, dict[str, str]] = {
             "pairs a été arrêté en atelier, la comparaison ne vaut que dans ce jeu."
         ),
     },
+
+    # ------------------------------------------------ Page 1 -- Vue d'ensemble
+    "ov_breakdown_bars": {
+        "doc_types": (
+            "Une barre par type de document, la plus fournie en haut : la longueur donne le "
+            "nombre de travaux du corpus sur {window} et la colonne de droite le répète en "
+            "chiffres. La teinte plus sombre isole la part relevant du périmètre I-SITE, sans "
+            "retirer aucun travail du total."
+        ),
+        "domaines": (
+            "Une barre par domaine, la plus fournie en haut, sur la même géométrie que les "
+            "types de document ; la colonne de droite répète le volume en chiffres. Un travail "
+            "peut relever de plusieurs domaines, les barres ne s'additionnent donc pas au corpus."
+        ),
+    },
+    "ov_breakdown_annual": {
+        "doc_types": (
+            "Le même découpage année par année, compté depuis zéro : un groupe de barres par "
+            "année, une barre par type de document. La teinte plus sombre isole la part relevant "
+            "du périmètre I-SITE."
+        ),
+        "domaines": (
+            "Le même découpage année par année : un groupe de barres par année, une barre par "
+            "domaine. Les domaines se recouvrant, la somme d'une année dépasse le nombre de "
+            "travaux de cette année."
+        ),
+    },
+    "ov_consortium_share": {
+        "default": (
+            "Une ligne par membre du périmètre I-SITE : la barre grise donne sa part du corpus "
+            "complet du site, le point bleu sa part du seul périmètre I-SITE. Les deux parts "
+            "sont mesurées séparément, aucune n'est déduite de l'autre, et les périmètres des "
+            "membres se recouvrent."
+        ),
+    },
+
+    # ------------------------------------------------ Page 2 -- Laboratoires
+    "lab_breakdown_bars": {
+        "types_document": (
+            "Une barre par type de document pour la structure retenue, la plus fournie en haut ; "
+            "la colonne de droite répète le volume en chiffres. La teinte plus sombre isole la "
+            "part relevant du périmètre I-SITE."
+        ),
+        "domaines": (
+            "Une barre par domaine pour la structure retenue ; la colonne de droite répète le "
+            "volume en chiffres. Un travail pouvant relever de plusieurs domaines, les barres ne "
+            "s'additionnent pas au corpus de la structure."
+        ),
+    },
+    "lab_breakdown_annual": {
+        "types_document": (
+            "Le même découpage année par année, compté depuis zéro : un groupe par année, une "
+            "barre par type de document. La teinte plus sombre isole la part relevant du "
+            "périmètre I-SITE."
+        ),
+        "domaines": (
+            "Le même découpage année par année : un groupe par année, une barre par domaine. Les "
+            "domaines se recouvrant, la somme d'une année dépasse le nombre de travaux de cette "
+            "année."
+        ),
+    },
+    "lab_field_share": {
+        "default": (
+            "Une barre par champ : la longueur donne la part du corpus de la structure, jamais un "
+            "volume, et la colonne de droite porte le nombre de travaux derrière cette part. Les "
+            "champs se lisent dans le même ordre que les boîtes de droite."
+        ),
+    },
+    "lab_fwci_whiskers": {
+        "default": (
+            "Une boîte par champ, dans l'ordre des barres de gauche : le trait central est la "
+            "médiane, la boîte l'écart interquartile et les moustaches l'étendue affichée. Le "
+            "trait rouge tireté marque la référence France, au-delà de laquelle le champ est plus "
+            "cité que sa strate française ; un champ sans indicateur calculé garde sa ligne, sans "
+            "boîte."
+        ),
+    },
+
+    # ------------------------------- Page 4 -- Portefeuille thématique
+    "pf_treemap": {
+        "fwci_median": (
+            "Chaque pavé est un nœud du portefeuille : sa surface donne le volume de travaux et "
+            "sa teinte le FWCI médian, la nuance neutre marquant la référence France. Un nœud "
+            "sans indicateur calculé garde sa surface, sans teinte d'impact."
+        ),
+        "pct_top10": (
+            "La surface donne toujours le volume de travaux ; la teinte porte ici la part des "
+            "publications phares du nœud. Un nœud sans indicateur calculé garde sa surface, sans "
+            "teinte."
+        ),
+        "pct_international": (
+            "La surface donne le volume de travaux, la teinte la part des collaborations "
+            "internationales du nœud. Cette part se lit sur le corpus du nœud, jamais sur le "
+            "corpus entier."
+        ),
+        "pct_isite": (
+            "La surface donne le volume de travaux, la teinte la part du nœud relevant du "
+            "périmètre I-SITE. Cette part isole une contribution, elle ne retire aucun travail du "
+            "volume que la surface représente."
+        ),
+    },
+    "pf_fwci_box_domains": {
+        "standard": (
+            "Une boîte par domaine : trait central la médiane, boîte l'écart interquartile, "
+            "moustaches l'étendue affichée, les valeurs extrêmes étant écartées pour que les "
+            "domaines restent comparables. Le trait rouge tireté marque la référence France."
+        ),
+        "extremes": (
+            "Mêmes boîtes, moustaches étendues jusqu'aux valeurs extrêmes : un seul travail très "
+            "cité suffit alors à étirer un domaine, et les autres se tassent. Le trait rouge "
+            "tireté marque toujours la référence France."
+        ),
+    },
+    "pf_fwci_box_fields": {
+        "standard": (
+            "Une boîte par champ : trait central la médiane, boîte l'écart interquartile, "
+            "moustaches l'étendue affichée, les valeurs extrêmes étant écartées pour garder les "
+            "champs comparables. Le trait rouge tireté marque la référence France."
+        ),
+        "extremes": (
+            "Mêmes boîtes, moustaches étendues jusqu'aux valeurs extrêmes : un seul travail très "
+            "cité suffit à étirer un champ, et les autres se tassent. Le trait rouge tireté "
+            "marque toujours la référence France."
+        ),
+    },
+    "pf_lq_fields": {
+        "log": (
+            "Une ligne par champ : le point donne l'indice de spécialisation face à la population "
+            "française de référence, et le trait rouge tireté la parité avec elle. L'échelle "
+            "logarithmique met sur-représentation et sous-représentation à distance égale de ce "
+            "trait ; une ligne en encre de réserve est sous le plancher de trente travaux."
+        ),
+        "lineaire": (
+            "Même lecture à écart absolu : les champs très spécialisés s'étirent vers la droite "
+            "et les champs sous-représentés se tassent contre le trait rouge tireté de la parité. "
+            "Une ligne en encre de réserve est sous le plancher de trente travaux."
+        ),
+    },
+    "pf_lq_subfields": {
+        "log": (
+            "Même lecture au grain du sous-champ : le point donne l'indice face à la population "
+            "française de référence, le trait rouge tireté la parité. Les sous-champs étant plus "
+            "fins, davantage de lignes passent sous le plancher de trente travaux et portent "
+            "l'encre de réserve."
+        ),
+        "lineaire": (
+            "Même lecture au grain du sous-champ, à écart absolu : les sous-champs très "
+            "spécialisés s'étirent vers la droite. Les lignes en encre de réserve sont sous le "
+            "plancher de trente travaux."
+        ),
+    },
+
+    # ------------------------------------------------ Page 5 -- Positionnement
+    "pos_lq_frontier": {
+        "log": (
+            "Chaque bulle est un champ : l'axe horizontal donne l'indice de spécialisation face à "
+            "la France, l'axe vertical la position de frontière standardisée, et l'aire le volume "
+            "de travaux. Les deux traits rouges tiretés marquent la parité avec la France et le "
+            "point neutre de la frontière ; une bulle creuse est sous le plancher de trente "
+            "travaux."
+        ),
+        "lineaire": (
+            "Même plan, à écart absolu sur l'axe horizontal : les champs fortement spécialisés "
+            "s'écartent vers la droite et les autres se resserrent près du trait de parité. Les "
+            "deux traits rouges tiretés et le sens des quadrants ne changent pas."
+        ),
+    },
+    "pos_frontier_labs": {
+        "default": (
+            "Une barre par structure, les plus fournies en tête : la longueur donne le nombre de "
+            "travaux de frontière et la colonne de droite le répète en chiffres. La teinte plus "
+            "sombre isole la part relevant du périmètre I-SITE."
+        ),
+    },
+    "pos_div_spark": {
+        "default": (
+            "Un point par année : la courbe donne l'indice de diversité du corpus, une pente "
+            "montante signalant un portefeuille plus étalé entre disciplines. Une année sous le "
+            "plancher de trente travaux ne porte pas de point, et la courbe y est interrompue "
+            "plutôt que lissée."
+        ),
+    },
+    "pos_peer_frontier": {
+        "default": (
+            "Une ligne par champ : le point bleu situe l'Université de Lorraine, les points gris "
+            "les établissements du jeu de pairs, et le trait rouge tireté le point neutre de la "
+            "frontière. Les pairs n'ayant pas de périmètre I-SITE, la comparaison porte des deux "
+            "côtés sur le corpus entier."
+        ),
+    },
+    "pos_domain_heatmap": {
+        "default": (
+            "Chaque cellule croise deux domaines et porte le nombre de co-publications qui les "
+            "associent ; la teinte suit ce nombre. La diagonale porte les travaux internes à un "
+            "domaine, et la matrice est symétrique : une même paire s'y lit deux fois."
+        ),
+    },
+
+    # --------------------------------------- Page 6 -- Exploration thématique
+    "ex_time_abs": {
+        "default": (
+            "Une courbe par élément retenu : le point donne le nombre de publications de l'année, "
+            "compté depuis zéro. Les courbes se lisent en volume, une pente n'y dit rien du poids "
+            "relatif."
+        ),
+    },
+    "ex_time_share": {
+        "default": (
+            "Les mêmes éléments en parts empilées : la hauteur d'une bande donne le poids de "
+            "l'élément dans l'année, et l'empilement remplit toute la hauteur. Une bande qui "
+            "s'élargit sur un total qui baisse reste une part qui monte."
+        ),
+    },
+    "ex_dept_bars": {
+        "default": (
+            "Une barre par structure de rattachement, la plus fournie en haut : la longueur donne "
+            "le nombre de publications de l'élément retenu et la colonne de droite le répète en "
+            "chiffres. La teinte plus sombre isole la part relevant du périmètre I-SITE."
+        ),
+    },
+    "ex_lab_bars": {
+        "default": (
+            "Une barre par laboratoire, le plus fourni en haut : la longueur donne le nombre de "
+            "publications de l'élément retenu, la couleur le type de structure. La colonne de "
+            "droite répète le volume en chiffres et la teinte plus sombre isole la part relevant "
+            "du périmètre I-SITE."
+        ),
+    },
+
+    # ------------------------------------------------ Page 7 -- I-SITE
+    "isite_ratio_dots": {
+        "log": (
+            "Une ligne par champ : le point compare le poids du champ dans le périmètre I-SITE à "
+            "son poids dans le site entier, et le trait rouge tireté marque la parité des deux "
+            "poids. Au-delà de ce trait, le champ pèse davantage dans le périmètre qu'à l'échelle "
+            "du site ; un point creux est sous le plancher de trente travaux."
+        ),
+        "lineaire": (
+            "Même comparaison à écart absolu : les champs les plus déséquilibrés s'étirent vers "
+            "la droite et les autres se tassent contre le trait rouge tireté de la parité. Un "
+            "point creux est sous le plancher de trente travaux."
+        ),
+    },
+    "isite_consortium_dumbbell": {
+        "default": (
+            "Une ligne par membre : le point gris donne sa part du corpus du site entier, le "
+            "point bleu sa part du corpus du périmètre I-SITE, et le trait qui les relie l'écart "
+            "entre les deux. Les deux parts ont des dénominateurs différents et se lisent "
+            "séparément ; les périmètres des membres se recouvrent."
+        ),
+    },
+
+    # ------------------------------------------------ Page 12 -- Profil auteur
+    "author_yearly_bars": {
+        "default": (
+            "Une barre par année de la fenêtre, comptée depuis zéro : la hauteur donne le nombre "
+            "de publications de la personne. Une année sans publication garde sa place sur l'axe."
+        ),
+    },
+
+    # --------------------------- Page 13 -- Identifiants et couverture
+    "id_orcid_yearly": {
+        "default": (
+            "Une barre par année : la hauteur donne la part des travaux portant au moins un "
+            "auteur lorrain lié à un identifiant. Une barre en encre de réserve signale que la "
+            "liaison des identifiants est plus tardive que les travaux, et que le recul de la "
+            "dernière année tient à ce retard, non à un changement de pratique."
+        ),
+    },
+    "id_orcid_fields": {
+        "default": (
+            "Une barre par champ, le mieux couvert en haut : la longueur donne la part des "
+            "travaux du champ portant un auteur lorrain lié, et la colonne de droite la répète en "
+            "chiffres. Le seau des travaux sans champ renseigné ferme la liste et ne se lit pas "
+            "comme un champ."
+        ),
+    },
+
+    # ------------------------------------------------ Page 14 -- Benchmark
+    "bench_rung_forest": {
+        "fwci_mean_off": (
+            "Un panneau par groupe de comparaison, une ligne par signal : le point bleu situe "
+            "l'Université de Lorraine, le losange gris la médiane des pairs du groupe et le trait "
+            "gris leur étendue. Les échelles diffèrent d'un signal à l'autre mais sont partagées "
+            "entre les groupes, et aucun rang n'est calculé."
+        ),
+        "fwci_mean_on": (
+            "Même lecture, la ligne d'impact portant la moyenne au lieu de la médiane : la "
+            "moyenne suit les valeurs extrêmes et se déplace davantage sur un effectif mince. Les "
+            "autres signaux et les échelles ne changent pas."
+        ),
+    },
+    "bench_dot_ratio": {
+        "lq_champ_log": (
+            "Une ligne par champ : le point bleu situe l'Université de Lorraine, les points gris "
+            "les pairs, chacun étiqueté, et le trait rouge tireté la parité avec la France. "
+            "L'échelle logarithmique met sur-représentation et sous-représentation à distance "
+            "égale de ce trait."
+        ),
+        "lq_champ_lineaire": (
+            "Même lecture à écart absolu : les champs fortement spécialisés s'étirent vers la "
+            "droite et les autres se resserrent contre le trait rouge tireté de la parité. Les "
+            "points gris restent les pairs, le point bleu l'Université de Lorraine."
+        ),
+        "lq_sous_champ_log": (
+            "Même lecture au grain du sous-champ, où les effectifs sont plus minces : le point "
+            "bleu situe l'Université de Lorraine, les points gris les pairs, le trait rouge "
+            "tireté la parité avec la France. Une ligne sous le plancher de trente travaux "
+            "s'indique sans s'affirmer."
+        ),
+        "lq_sous_champ_lineaire": (
+            "Même lecture au grain du sous-champ, à écart absolu : les sous-champs les plus "
+            "spécialisés s'étirent vers la droite. Une ligne sous le plancher de trente travaux "
+            "s'indique sans s'affirmer."
+        ),
+        "pptop_champ": (
+            "Une ligne par champ : le point donne la part des publications phares de "
+            "l'établissement dans ce champ, et le trait rouge tireté la référence de comparaison. "
+            "L'échelle est une part : elle reste linéaire quelle que soit la bascule des panneaux "
+            "de spécialisation."
+        ),
+    },
 }
 
 # Trous de formatage attendus par chaque graphique (union sur ses modes). Une page
@@ -357,6 +679,35 @@ READING_PLACEHOLDERS: dict[str, tuple[str, ...]] = {
     "lab_sdg_bars": (),
     "pf_sdg_bars": (),
     "pf_sdg_peers_scatter": (),
+    # ---- passe 7b : seul le decoupage de la page 1 nomme la fenetre dans sa phrase.
+    'ov_breakdown_bars': ("window",),
+    'ov_breakdown_annual': (),
+    'ov_consortium_share': (),
+    'lab_breakdown_bars': (),
+    'lab_breakdown_annual': (),
+    'lab_field_share': (),
+    'lab_fwci_whiskers': (),
+    'pf_treemap': (),
+    'pf_fwci_box_domains': (),
+    'pf_fwci_box_fields': (),
+    'pf_lq_fields': (),
+    'pf_lq_subfields': (),
+    'pos_lq_frontier': (),
+    'pos_frontier_labs': (),
+    'pos_div_spark': (),
+    'pos_peer_frontier': (),
+    'pos_domain_heatmap': (),
+    'ex_time_abs': (),
+    'ex_time_share': (),
+    'ex_dept_bars': (),
+    'ex_lab_bars': (),
+    'isite_ratio_dots': (),
+    'isite_consortium_dumbbell': (),
+    'author_yearly_bars': (),
+    'id_orcid_yearly': (),
+    'id_orcid_fields': (),
+    'bench_rung_forest': (),
+    'bench_dot_ratio': (),
 }
 
 
@@ -384,6 +735,7 @@ CAPTION_PLACEHOLDERS: dict[str, tuple[str, ...]] = {
     'PLANE_UNSCORED': (),
     'THIN_PARTNER': (),
     'JOINT_UNDER_FLOOR': (),
+    'TOPIC_LIVE_DRIFT': (),
 }
 
 # ---------------------------------------------------------------------------
@@ -507,6 +859,12 @@ CAPTIONS: dict[str, str] = {
         "ce qui est la lecture honnête d'un partenariat mince, pas une donnée manquante."
     ),
     "JOINT_UNDER_FLOOR": "non affiché sous cinq co-publications",
+    # Backlog #23 -- appelee sous toute surface au grain du topic (pages 9 et 4).
+    "TOPIC_LIVE_DRIFT": (
+        "Le décompte des topics est vivant : l'affectation d'un travail à un topic suit un "
+        "référentiel qui évolue, et deux relevés pris à des dates différentes ne donnent pas "
+        "exactement le même compte."
+    ),
 }
 
 # ---------------------------------------------------------------------------
@@ -923,6 +1281,398 @@ HOVER_LABELS: dict[str, dict[str, list[str]]] = {
             'objectif',
             "part du corpus propre de l'établissement",
             'position dans le jeu de pairs',
+        ],
+    },
+    # ---- Page 1 -- Vue d'ensemble
+    'ov_breakdown_bars': {
+        'doc_types': [
+            '',
+            'travaux du corpus',
+            'part du corpus',
+            'dont périmètre I-SITE',
+        ],
+        'domaines': [
+            '',
+            'travaux du corpus',
+            'part du corpus',
+            'dont périmètre I-SITE',
+        ],
+    },
+    'ov_breakdown_annual': {
+        'doc_types': [
+            '',
+            'année',
+            "travaux de l'année",
+            'dont périmètre I-SITE',
+        ],
+        'domaines': [
+            '',
+            'année',
+            "travaux de l'année",
+            'dont périmètre I-SITE',
+        ],
+    },
+    'ov_consortium_share': {
+        'default': [
+            '',
+            'part du corpus complet du site',
+            'part du périmètre I-SITE',
+            "travaux co-signés avec l'UL",
+        ],
+    },
+    # ---- Page 2 -- Laboratoires
+    'lab_breakdown_bars': {
+        'types_document': [
+            '',
+            'travaux de la structure',
+            'part du corpus de la structure',
+            'dont périmètre I-SITE',
+        ],
+        'domaines': [
+            '',
+            'travaux de la structure',
+            'part du corpus de la structure',
+            'dont périmètre I-SITE',
+        ],
+    },
+    'lab_breakdown_annual': {
+        'types_document': [
+            '',
+            'année',
+            "travaux de l'année",
+            'dont périmètre I-SITE',
+        ],
+        'domaines': [
+            '',
+            'année',
+            "travaux de l'année",
+            'dont périmètre I-SITE',
+        ],
+    },
+    'lab_field_share': {
+        'default': [
+            '',
+            'part du corpus de la structure',
+            'travaux de la structure',
+            'dont périmètre I-SITE',
+        ],
+    },
+    'lab_fwci_whiskers': {
+        'default': [
+            '',
+            'FWCI médian (réf. France)',
+            'écart interquartile',
+            'étendue des moustaches',
+            'travaux avec indicateur calculé',
+            '',
+            '',
+        ],
+    },
+    # ---- Page 4 -- Portefeuille thematique
+    'pf_treemap': {
+        'fwci_median': [
+            '',
+            'travaux du nœud',
+            'FWCI médian (réf. France)',
+            'part des publications phares',
+            'part des collaborations internationales',
+            'dont périmètre I-SITE',
+            '',
+        ],
+        'pct_top10': [
+            '',
+            'travaux du nœud',
+            'FWCI médian (réf. France)',
+            'part des publications phares',
+            'part des collaborations internationales',
+            'dont périmètre I-SITE',
+            '',
+        ],
+        'pct_international': [
+            '',
+            'travaux du nœud',
+            'FWCI médian (réf. France)',
+            'part des publications phares',
+            'part des collaborations internationales',
+            'dont périmètre I-SITE',
+            '',
+        ],
+        'pct_isite': [
+            '',
+            'travaux du nœud',
+            'FWCI médian (réf. France)',
+            'part des publications phares',
+            'part des collaborations internationales',
+            'dont périmètre I-SITE',
+            '',
+        ],
+    },
+    'pf_fwci_box_domains': {
+        'standard': [
+            '',
+            'FWCI médian (réf. France)',
+            'écart interquartile',
+            'étendue affichée',
+            'travaux avec indicateur calculé',
+            '',
+        ],
+        'extremes': [
+            '',
+            'FWCI médian (réf. France)',
+            'écart interquartile',
+            'étendue complète',
+            'travaux avec indicateur calculé',
+            '',
+        ],
+    },
+    'pf_fwci_box_fields': {
+        'standard': [
+            '',
+            'FWCI médian (réf. France)',
+            'écart interquartile',
+            'étendue affichée',
+            'travaux avec indicateur calculé',
+            '',
+        ],
+        'extremes': [
+            '',
+            'FWCI médian (réf. France)',
+            'écart interquartile',
+            'étendue complète',
+            'travaux avec indicateur calculé',
+            '',
+        ],
+    },
+    'pf_lq_fields': {
+        'log': [
+            '',
+            'indice de spécialisation (LQ), référence France',
+            "travaux de l'UL",
+            'travaux de la population française de référence',
+            'indice du seul périmètre I-SITE',
+            '',
+        ],
+        'lineaire': [
+            '',
+            'indice de spécialisation (LQ), référence France',
+            "travaux de l'UL",
+            'travaux de la population française de référence',
+            'indice du seul périmètre I-SITE',
+            '',
+        ],
+    },
+    'pf_lq_subfields': {
+        'log': [
+            '',
+            'indice de spécialisation (LQ), référence France',
+            "travaux de l'UL",
+            'champ de rattachement',
+            '',
+        ],
+        'lineaire': [
+            '',
+            'indice de spécialisation (LQ), référence France',
+            "travaux de l'UL",
+            'champ de rattachement',
+            '',
+        ],
+    },
+    # ---- Page 5 -- Positionnement
+    'pos_lq_frontier': {
+        'log': [
+            '',
+            'indice de spécialisation (LQ), référence France',
+            'frontière standardisée',
+            'frontière brute',
+            "travaux de l'UL",
+            'indice du seul périmètre I-SITE',
+            '',
+        ],
+        'lineaire': [
+            '',
+            'indice de spécialisation (LQ), référence France',
+            'frontière standardisée',
+            'frontière brute',
+            "travaux de l'UL",
+            'indice du seul périmètre I-SITE',
+            '',
+        ],
+    },
+    'pos_frontier_labs': {
+        'default': [
+            '',
+            'travaux de frontière',
+            'part de frontière de la structure',
+            'travaux de la structure',
+            'dont périmètre I-SITE',
+        ],
+    },
+    'pos_div_spark': {
+        'default': [
+            '',
+            'indice de diversité',
+            "travaux de l'année",
+            '',
+        ],
+    },
+    'pos_peer_frontier': {
+        'default': [
+            '',
+            'champ',
+            'frontière standardisée',
+            'groupe de comparaison',
+        ],
+    },
+    'pos_domain_heatmap': {
+        'default': [
+            '',
+            'co-publications entre les deux domaines',
+            "part de l'ensemble des paires",
+        ],
+    },
+    # ---- Page 6 -- Exploration thematique
+    'ex_time_abs': {
+        'default': [
+            '',
+            'année',
+            "publications de l'année",
+        ],
+    },
+    'ex_time_share': {
+        'default': [
+            '',
+            'année',
+            "part de l'année",
+            "publications de l'année",
+        ],
+    },
+    'ex_dept_bars': {
+        'default': [
+            '',
+            "publications de l'élément",
+            'dont périmètre I-SITE',
+        ],
+    },
+    'ex_lab_bars': {
+        'default': [
+            '',
+            "publications de l'élément",
+            'type de structure',
+            'dont périmètre I-SITE',
+        ],
+    },
+    # ---- Page 7 -- I-SITE
+    'isite_ratio_dots': {
+        'log': [
+            '',
+            'travaux du périmètre I-SITE',
+            'travaux du site',
+            'rapport des deux parts',
+            'domaine',
+            '',
+        ],
+        'lineaire': [
+            '',
+            'travaux du périmètre I-SITE',
+            'travaux du site',
+            'rapport des deux parts',
+            'domaine',
+            '',
+        ],
+    },
+    'isite_consortium_dumbbell': {
+        'default': [
+            '',
+            'part du corpus du site entier',
+            'part du corpus du périmètre I-SITE',
+            'co-travaux, périmètre du site',
+            'co-travaux, périmètre I-SITE',
+            "ensemble d'identifiants du membre",
+        ],
+    },
+    # ---- Page 12 -- Profil auteur
+    'author_yearly_bars': {
+        'default': [
+            '',
+            'publications de la personne',
+        ],
+    },
+    # ---- Page 13 -- Identifiants
+    'id_orcid_yearly': {
+        'default': [
+            '',
+            'part des travaux portant un auteur lorrain lié',
+            'travaux portant un auteur lié',
+            "travaux de l'année",
+            '',
+        ],
+    },
+    'id_orcid_fields': {
+        'default': [
+            '',
+            'part des travaux portant un auteur lorrain lié',
+            'travaux du champ',
+            '',
+        ],
+    },
+    # ---- Page 14 -- Benchmark
+    'bench_rung_forest': {
+        'fwci_mean_on': [
+            '',
+            'signal',
+            'valeur',
+            'groupe de comparaison',
+            'étendue des pairs',
+            'médiane des pairs',
+            'nombre de pairs',
+            '',
+        ],
+        'fwci_mean_off': [
+            '',
+            'signal',
+            'valeur',
+            'groupe de comparaison',
+            'étendue des pairs',
+            'médiane des pairs',
+            'nombre de pairs',
+            '',
+        ],
+    },
+    'bench_dot_ratio': {
+        'lq_champ_log': [
+            '',
+            'établissement',
+            'indice de spécialisation (LQ), référence France',
+            "travaux de l'établissement sur ce nœud",
+            '',
+        ],
+        'lq_champ_lineaire': [
+            '',
+            'établissement',
+            'indice de spécialisation (LQ), référence France',
+            "travaux de l'établissement sur ce nœud",
+            '',
+        ],
+        'lq_sous_champ_log': [
+            '',
+            'établissement',
+            'indice de spécialisation (LQ), référence France',
+            "travaux de l'établissement sur ce nœud",
+            '',
+        ],
+        'lq_sous_champ_lineaire': [
+            '',
+            'établissement',
+            'indice de spécialisation (LQ), référence France',
+            "travaux de l'établissement sur ce nœud",
+            '',
+        ],
+        'pptop_champ': [
+            '',
+            'établissement',
+            'part des publications phares',
+            "travaux de l'établissement sur ce nœud",
+            '',
         ],
     },
 }

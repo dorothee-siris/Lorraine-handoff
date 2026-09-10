@@ -84,6 +84,15 @@ formats:
   annee:
     definition: "l'annee telle qu'elle apparait sur l'axe"
     exemple: "2021"
+  valeur_signal:
+    definition: "la valeur d'un signal dans son unite propre -- compte, part ou rapport --
+      mise en forme en francais par la page (fr_int, fr_pct ou deux decimales) ; l'unite
+      suit la valeur, jamais un chiffre nu dont l'echelle serait a deviner"
+    exemple: "12,3 % -- ou 1 234 -- ou 1,31"
+  intervalle_2d:
+    definition: "deux bornes sur une seule ligne, deux decimales, virgule francaise et tiret
+      demi-cadratin ; sert aux etendues (interquartile, moustaches, min-max des pairs)"
+    exemple: "0,84 - 1,42"
 
 charts:
 
@@ -493,6 +502,447 @@ charts:
          format: pct_1d,
          note: "chaque etablissement est rapporte a son propre corpus, jamais au corpus lorrain"}
       - {field: rung, label: "position dans le jeu de pairs", format: texte}
+
+
+  # ============================================ PASSE 7B ============================================
+  # Les 28 graphiques des 8 surfaces restantes (BUILD_PLAN pass 7b, B2-B6). Memes regles dures
+  # qu'au-dessus. Les valeurs de mode sont confirmees sur le code de controle de chaque page
+  # (voir la table « pass 7b » du registre, colonne notes, qui porte la ligne du controle).
+
+  # ------------------------------------------------ Page 1 -- Vue d'ensemble
+  ov_breakdown_bars:
+    view: vue_ensemble
+    kind: bars
+    entity: categorie
+    mode_axis: decoupage
+    modes: [doc_types, domaines]
+    lines:
+      - {field: category_label, label: "", format: texte}
+      - {field: total, label: "travaux du corpus", format: entier}
+      - {field: share_of_corpus, label: "part du corpus", format: pct_1d,
+         note: "denominateur : le corpus entier de la fenetre, tous types de documents"}
+      - {field: isite_total, label: "dont périmètre I-SITE", format: entier,
+         when: "affichage I-SITE actif",
+         note: "liste de DOI validee par l'etablissement, jamais un mot-cle"}
+
+  ov_breakdown_annual:
+    view: vue_ensemble
+    kind: bars_groupees
+    entity: categorie
+    mode_axis: decoupage
+    modes: [doc_types, domaines]
+    lines:
+      - {field: category_label, label: "", format: texte}
+      - {field: year, label: "année", format: annee}
+      - {field: count, label: "travaux de l'année", format: entier}
+      - {field: isite_count, label: "dont périmètre I-SITE", format: entier,
+         when: "affichage I-SITE actif"}
+
+  ov_consortium_share:
+    view: vue_ensemble
+    kind: points_sur_barres
+    entity: membre
+    lines:
+      - {field: member, label: "", format: texte}
+      - {field: site_share, label: "part du corpus complet du site", format: pct_1d}
+      - {field: isite_share, label: "part du périmètre I-SITE", format: pct_1d,
+         when: "affichage I-SITE actif",
+         note: "deux perimetres mesures separement, aucun n'est deduit de l'autre"}
+      - {field: site_co_works, label: "travaux co-signés avec l'UL", format: entier}
+    note: "la barre grise et le point bleu portent la MEME chaine : sinon la trace du point
+      perdrait un libelle inconditionnel et la conformite (d) echouerait"
+
+  # ------------------------------------------------ Page 2 -- Laboratoires
+  lab_breakdown_bars:
+    view: laboratoires
+    kind: bars
+    entity: categorie
+    mode_axis: decoupage
+    modes: [types_document, domaines]
+    lines:
+      - {field: category_label, label: "", format: texte}
+      - {field: total, label: "travaux de la structure", format: entier}
+      - {field: share_of_structure, label: "part du corpus de la structure", format: pct_1d}
+      - {field: isite_total, label: "dont périmètre I-SITE", format: entier,
+         when: "affichage I-SITE actif"}
+
+  lab_breakdown_annual:
+    view: laboratoires
+    kind: bars_groupees
+    entity: categorie
+    mode_axis: decoupage
+    modes: [types_document, domaines]
+    lines:
+      - {field: category_label, label: "", format: texte}
+      - {field: year, label: "année", format: annee}
+      - {field: count, label: "travaux de l'année", format: entier}
+      - {field: isite_count, label: "dont périmètre I-SITE", format: entier,
+         when: "affichage I-SITE actif"}
+
+  lab_field_share:
+    view: laboratoires
+    kind: bars
+    entity: champ
+    lines:
+      - {field: field_name, label: "", format: texte}
+      - {field: share, label: "part du corpus de la structure", format: pct_1d}
+      - {field: count, label: "travaux de la structure", format: entier}
+      - {field: isite_share, label: "dont périmètre I-SITE", format: pct_1d,
+         when: "affichage I-SITE actif"}
+
+  lab_fwci_whiskers:
+    view: laboratoires
+    kind: boites
+    entity: champ
+    lines:
+      - {field: field_name, label: "", format: texte}
+      - {field: p50, label: "FWCI médian (réf. France)", format: score_2d,
+         when: "mediane calculee",
+         note: "articles et revues seulement ; le perimetre differe des volumes de gauche"}
+      - {field: p25_p75, label: "écart interquartile", format: intervalle_2d,
+         when: "mediane calculee"}
+      - {field: p10_p90, label: "étendue des moustaches", format: intervalle_2d,
+         when: "mediane calculee",
+         note: "interdecile : un seul champ extreme aplatirait toutes les lignes sur une
+           etendue complete"}
+      - {field: count, label: "travaux avec indicateur calculé", format: entier}
+      - {field: no_indicator, label: "", format: drapeau, when: "mediane non calculee",
+         note: "phrase affichee : « indicateur non calcule sur ce champ »"}
+      - {field: under_floor, label: "", format: drapeau, when: "compte sous dix travaux",
+         note: "phrase affichee : « sous le plancher de dix travaux »"}
+
+  # ------------------------------- Page 4 -- Portefeuille thematique
+  pf_treemap:
+    view: portefeuille
+    kind: treemap
+    entity: noeud
+    mode_axis: couleur
+    modes: [fwci_median, pct_top10, pct_international, pct_isite]
+    lines:
+      - {field: node_name, label: "", format: texte}
+      - {field: works, label: "travaux du nœud", format: entier}
+      - {field: fwci_median, label: "FWCI médian (réf. France)", format: score_2d,
+         when: "indicateur calcule", note: "articles et revues seulement"}
+      - {field: pct_top10, label: "part des publications phares", format: pct_1d,
+         when: "indicateur calcule"}
+      - {field: pct_international, label: "part des collaborations internationales", format: pct_1d}
+      - {field: pct_isite, label: "dont périmètre I-SITE", format: pct_1d,
+         when: "affichage I-SITE actif"}
+      - {field: no_indicator, label: "", format: drapeau, when: "indicateur non calcule",
+         note: "phrase affichee : « indicateur non calcule sur ce nœud »"}
+    note: "px aligne deja customdata par nœud ; la page remplace fig.data[0].customdata par
+      une chaine par nœud, les nœuds parents portant les valeurs agregees calculees par px"
+
+  pf_fwci_box_domains:
+    view: portefeuille
+    kind: boites
+    entity: domaine
+    mode_axis: etendue
+    modes: [standard, extremes]
+    lines_by_mode:
+      standard:
+        - {field: domain_name, label: "", format: texte}
+        - {field: p50, label: "FWCI médian (réf. France)", format: score_2d}
+        - {field: p25_p75, label: "écart interquartile", format: intervalle_2d}
+        - {field: p10_p90, label: "étendue affichée", format: intervalle_2d}
+        - {field: count, label: "travaux avec indicateur calculé", format: entier}
+        - {field: under_floor, label: "", format: drapeau, when: "compte sous dix travaux",
+           note: "phrase affichee : « sous le plancher de dix travaux »"}
+      extremes:
+        - {field: domain_name, label: "", format: texte}
+        - {field: p50, label: "FWCI médian (réf. France)", format: score_2d}
+        - {field: p25_p75, label: "écart interquartile", format: intervalle_2d}
+        - {field: p0_p100, label: "étendue complète", format: intervalle_2d}
+        - {field: count, label: "travaux avec indicateur calculé", format: entier}
+        - {field: under_floor, label: "", format: drapeau, when: "compte sous dix travaux"}
+
+  pf_fwci_box_fields:
+    view: portefeuille
+    kind: boites
+    entity: champ
+    mode_axis: etendue
+    modes: [standard, extremes]
+    lines_by_mode:
+      standard:
+        - {field: field_name, label: "", format: texte}
+        - {field: p50, label: "FWCI médian (réf. France)", format: score_2d}
+        - {field: p25_p75, label: "écart interquartile", format: intervalle_2d}
+        - {field: p10_p90, label: "étendue affichée", format: intervalle_2d}
+        - {field: count, label: "travaux avec indicateur calculé", format: entier}
+        - {field: under_floor, label: "", format: drapeau, when: "compte sous dix travaux"}
+      extremes:
+        - {field: field_name, label: "", format: texte}
+        - {field: p50, label: "FWCI médian (réf. France)", format: score_2d}
+        - {field: p25_p75, label: "écart interquartile", format: intervalle_2d}
+        - {field: p0_p100, label: "étendue complète", format: intervalle_2d}
+        - {field: count, label: "travaux avec indicateur calculé", format: entier}
+        - {field: under_floor, label: "", format: drapeau, when: "compte sous dix travaux"}
+
+  pf_lq_fields:
+    view: portefeuille
+    kind: points
+    entity: champ
+    mode_axis: echelle
+    modes: [log, lineaire]
+    lines:
+      - {field: field_name, label: "", format: texte}
+      - {field: lq, label: "indice de spécialisation (LQ), référence France", format: score_2d}
+      - {field: works_ul, label: "travaux de l'UL", format: entier}
+      - {field: works_fr, label: "travaux de la population française de référence", format: entier}
+      - {field: lq_isite, label: "indice du seul périmètre I-SITE", format: score_2d,
+         when: "affichage I-SITE actif"}
+      - {field: floor_flag, label: "", format: drapeau, when: "sous le plancher",
+         note: "phrase affichee : « sous le plancher de trente travaux, indice indique et non
+           affirme » ; encre de reserve et dague sur la ligne (P1)"}
+
+  pf_lq_subfields:
+    view: portefeuille
+    kind: points
+    entity: sous_champ
+    mode_axis: echelle
+    modes: [log, lineaire]
+    lines:
+      - {field: subfield_name, label: "", format: texte}
+      - {field: lq, label: "indice de spécialisation (LQ), référence France", format: score_2d}
+      - {field: works_ul, label: "travaux de l'UL", format: entier}
+      - {field: field_name, label: "champ de rattachement", format: texte}
+      - {field: floor_flag, label: "", format: drapeau, when: "sous le plancher",
+         note: "phrase affichee : « sous le plancher de trente travaux, indice indique et non
+           affirme »"}
+
+  # ------------------------------------------------ Page 5 -- Positionnement
+  pos_lq_frontier:
+    view: positionnement
+    kind: scatter
+    entity: champ
+    mode_axis: echelle
+    modes: [log, lineaire]
+    lines:
+      - {field: field_name, label: "", format: texte}
+      - {field: lq, label: "indice de spécialisation (LQ), référence France", format: score_2d}
+      - {field: frontier_std, label: "frontière standardisée", format: dec_1}
+      - {field: frontier_raw, label: "frontière brute", format: dec_1}
+      - {field: works, label: "travaux de l'UL", format: entier}
+      - {field: lq_isite, label: "indice du seul périmètre I-SITE", format: score_2d,
+         when: "affichage I-SITE actif", note: "marque losange, tracee separement"}
+      - {field: floor_flag_spec, label: "", format: drapeau, when: "sous le plancher",
+         note: "phrase affichee : « sous le plancher de trente travaux »"}
+
+  pos_frontier_labs:
+    view: positionnement
+    kind: bars
+    entity: structure
+    lines:
+      - {field: lab, label: "", format: texte}
+      - {field: frontier_works, label: "travaux de frontière", format: entier}
+      - {field: frontier_share, label: "part de frontière de la structure", format: pct_1d}
+      - {field: works, label: "travaux de la structure", format: entier}
+      - {field: isite_frontier_n, label: "dont périmètre I-SITE", format: entier,
+         when: "affichage I-SITE actif"}
+
+  pos_div_spark:
+    view: positionnement
+    kind: sparkline
+    entity: annee
+    lines:
+      - {field: year, label: "", format: annee}
+      - {field: rs, label: "indice de diversité", format: score_2d,
+         when: "annee au-dessus du plancher"}
+      - {field: works, label: "travaux de l'année", format: entier}
+      - {field: floor_flag, label: "", format: drapeau, when: "sous le plancher",
+         note: "phrase affichee : « sous le plancher de trente travaux, point non dessine »"}
+
+  pos_peer_frontier:
+    view: positionnement
+    kind: points
+    entity: etablissement
+    lines:
+      - {field: entity_name, label: "", format: texte}
+      - {field: field_name, label: "champ", format: texte}
+      - {field: field_standardised_share, label: "frontière standardisée", format: dec_1}
+      - {field: rung, label: "groupe de comparaison", format: texte}
+    note: "les pairs n'ont pas de perimetre I-SITE : la comparaison porte sur le corpus entier
+      des deux cotes, et le perimetre est donc nomme dans la ligne de lecture"
+
+  pos_domain_heatmap:
+    view: positionnement
+    kind: heatmap
+    entity: paire_de_domaines
+    lines:
+      - {field: pair_name, label: "", format: texte,
+         note: "« domaine de la ligne x domaine de la colonne » ; customdata a deux dimensions (B3)"}
+      - {field: co_works, label: "co-publications entre les deux domaines", format: entier}
+      - {field: share_of_pairs, label: "part de l'ensemble des paires", format: pct_1d,
+         note: "denominateur : la somme de la matrice, calculee sur la page"}
+
+  # --------------------------------------- Page 6 -- Exploration thematique
+  ex_time_abs:
+    view: exploration
+    kind: lignes
+    entity: element
+    lines:
+      - {field: name, label: "", format: texte}
+      - {field: year, label: "année", format: annee}
+      - {field: count, label: "publications de l'année", format: entier}
+
+  ex_time_share:
+    view: exploration
+    kind: aires
+    entity: element
+    lines:
+      - {field: name, label: "", format: texte}
+      - {field: year, label: "année", format: annee}
+      - {field: share, label: "part de l'année", format: pct_1d,
+         note: "denominateur : le total de l'annee sur les elements empiles"}
+      - {field: count, label: "publications de l'année", format: entier}
+
+  ex_dept_bars:
+    view: exploration
+    kind: bars
+    entity: structure
+    lines:
+      - {field: dept, label: "", format: texte}
+      - {field: count, label: "publications de l'élément", format: entier}
+      - {field: isite_count, label: "dont périmètre I-SITE", format: entier,
+         when: "affichage I-SITE actif"}
+
+  ex_lab_bars:
+    view: exploration
+    kind: bars
+    entity: structure
+    lines:
+      - {field: name, label: "", format: texte}
+      - {field: count, label: "publications de l'élément", format: entier}
+      - {field: type, label: "type de structure", format: texte}
+      - {field: isite_count, label: "dont périmètre I-SITE", format: entier,
+         when: "affichage I-SITE actif"}
+
+  # ------------------------------------------------ Page 7 -- I-SITE
+  isite_ratio_dots:
+    view: isite
+    kind: points
+    entity: champ
+    mode_axis: echelle
+    modes: [log, lineaire]
+    lines:
+      - {field: field_name, label: "", format: texte}
+      - {field: isite_works, label: "travaux du périmètre I-SITE", format: entier}
+      - {field: site_works, label: "travaux du site", format: entier}
+      - {field: ratio, label: "rapport des deux parts", format: score_2d,
+         note: "part du champ dans le perimetre I-SITE rapportee a sa part dans le site"}
+      - {field: domain_name, label: "domaine", format: texte}
+      - {field: floor_flag, label: "", format: drapeau, when: "sous le plancher",
+         note: "phrase affichee : « sous le plancher de trente travaux, rapport indique et non
+           affirme »"}
+
+  isite_consortium_dumbbell:
+    view: isite
+    kind: points_apparies
+    entity: membre
+    lines:
+      - {field: member, label: "", format: texte}
+      - {field: site_share, label: "part du corpus du site entier", format: pct_1d}
+      - {field: isite_share, label: "part du corpus du périmètre I-SITE", format: pct_1d}
+      - {field: site_co_works, label: "co-travaux, périmètre du site", format: entier}
+      - {field: isite_co_works, label: "co-travaux, périmètre I-SITE", format: entier}
+      - {field: id_set_size, label: "ensemble d'identifiants du membre", format: entier,
+         note: "taille de l'ensemble d'identifiants retenu pour le membre"}
+    note: "les deux extremites de l'haltere portent la MEME chaine, pour la meme raison que
+      ov_consortium_share"
+
+  # ------------------------------------------------ Page 12 -- Profil auteur
+  author_yearly_bars:
+    view: profil_auteur
+    kind: bars_annuelles
+    entity: annee
+    lines:
+      - {field: year, label: "", format: annee}
+      - {field: count, label: "publications de la personne", format: entier}
+
+  # --------------------------- Page 13 -- Identifiants et couverture
+  id_orcid_yearly:
+    view: identifiants
+    kind: bars_annuelles
+    entity: annee
+    lines:
+      - {field: year, label: "", format: annee}
+      - {field: pct_orcid, label: "part des travaux portant un auteur lorrain lié", format: pct_1d}
+      - {field: n_works_orcid_author, label: "travaux portant un auteur lié", format: entier}
+      - {field: n_works, label: "travaux de l'année", format: entier}
+      - {field: coverage_break, label: "", format: drapeau, when: "recul sur la derniere annee",
+         note: "phrase affichee : « la liaison des identifiants est plus tardive que les
+           travaux, ce recul tient au retard de liaison et non a une baisse de pratique » ;
+           remplace l'annotation ad hoc, encre de reserve et dague sur la barre (P1)"}
+
+  id_orcid_fields:
+    view: identifiants
+    kind: bars
+    entity: champ
+    lines:
+      - {field: unit_label, label: "", format: texte}
+      - {field: pct_works_orcid, label: "part des travaux portant un auteur lorrain lié",
+         format: pct_1d}
+      - {field: n_works, label: "travaux du champ", format: entier}
+      - {field: unknown_bucket, label: "", format: drapeau, when: "seau non renseigne",
+         note: "phrase affichee : « seau des travaux sans champ renseigne, ce n'est pas un
+           champ » -- meme regle que le seau pays de la page geographie"}
+
+  # ------------------------------------------------ Page 14 -- Benchmark
+  bench_rung_forest:
+    view: benchmark
+    kind: forest
+    entity: etablissement
+    mode_axis: moyenne
+    modes: [fwci_mean_on, fwci_mean_off]
+    lines:
+      - {field: entity_name, label: "", format: texte,
+         note: "« Université de Lorraine » ou « pairs du groupe » selon la marque"}
+      - {field: signal_label, label: "signal", format: texte,
+         note: "le libelle du signal vient de la donnee : c'est LUI qui dit mediane ou moyenne
+           selon le mode, le libelle de survol ne bouge pas"}
+      - {field: value, label: "valeur", format: valeur_signal}
+      - {field: rung, label: "groupe de comparaison", format: texte}
+      - {field: peer_range, label: "étendue des pairs", format: intervalle_2d,
+         when: "au moins deux pairs"}
+      - {field: peer_median, label: "médiane des pairs", format: valeur_signal,
+         when: "au moins un pair"}
+      - {field: n_peers, label: "nombre de pairs", format: entier}
+      - {field: single_peer, label: "", format: drapeau, when: "un seul pair",
+         note: "phrase affichee : « un seul pair dans ce groupe, la marque est ce pair et non
+           une etendue »"}
+    note: "aucune ligne de rang : ce graphique refuse explicitement le classement (son propre
+      docstring), et le tableau du plan qui en proposait une est corrige ici"
+
+  bench_dot_ratio:
+    view: benchmark
+    kind: points
+    entity: noeud
+    mode_axis: panneau
+    modes: [lq_champ_log, lq_champ_lineaire, lq_sous_champ_log, lq_sous_champ_lineaire,
+            pptop_champ]
+    lines_by_mode:
+      lq_champ_log: &bdr_lq
+        - {field: node_name, label: "", format: texte}
+        - {field: entity_name, label: "établissement", format: texte}
+        - {field: lq_vs_france, label: "indice de spécialisation (LQ), référence France",
+           format: score_2d}
+        - {field: works, label: "travaux de l'établissement sur ce nœud", format: entier}
+        - {field: under_floor, label: "", format: drapeau, when: "sous le plancher",
+           note: "phrase affichee : « sous le plancher de trente travaux »"}
+      lq_champ_lineaire: *bdr_lq
+      lq_sous_champ_log: *bdr_lq
+      lq_sous_champ_lineaire: *bdr_lq
+      pptop_champ:
+        - {field: node_name, label: "", format: texte}
+        - {field: entity_name, label: "établissement", format: texte}
+        - {field: pptop10_share, label: "part des publications phares", format: pct_1d,
+           note: "articles et revues seulement ; denominateur = les travaux de
+             l'etablissement sur le nœud dont l'indicateur est calcule"}
+        - {field: works, label: "travaux de l'établissement sur ce nœud", format: entier}
+        - {field: under_floor, label: "", format: drapeau, when: "sous le plancher",
+           note: "phrase affichee : « sous le plancher de trente travaux »"}
+    note: "la reference (la ligne rouge tiretee) ne prend pas de ligne de survol : elle vaut
+      la meme constante sur toutes les marques, et la ligne de lecture la nomme"
 
 tiles:
 
