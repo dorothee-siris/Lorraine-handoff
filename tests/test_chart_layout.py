@@ -50,24 +50,38 @@ if not _CHARTS_FILE.exists():
 
 # F-SYSMOD (tests/conftest.py) : deux packages nommes `lib` existent dans ce depot
 # (le pipeline racine et Streamlit/lib) ; sys.modules['lib'] ne peut etre bind qu'a
-# un seul par process. Le swap doit avoir lieu AVANT `import lib.charts` -- au niveau
-# du MODULE, pas dans setup_module -- car ce fichier a besoin des CONSTANTES au niveau
-# module (parametrize decorators), contrairement aux 9 fichiers AppTest qui ne
-# resolvent `lib` qu'au moment de leurs propres fonctions de test (swap suffisant dans
-# setup_module pour eux). teardown_module restaure malgre tout la liaison anterieure
-# pour le reste de la session -- meme discipline, point d'ancrage different.
+# un seul par process.
+#
+# FIX-2 (docs/INSPECTION_REPORT_pass7a.md §8, D1, HIGH) : la version precedente
+# appelait `swap_lib_to_streamlit()` au niveau module et ne restaurait qu'en
+# `teardown_module` -- MAIS pytest importe (collecte) TOUS les fichiers d'une
+# session AVANT d'en executer aucun, et `teardown_module` d'un fichier ne tourne
+# qu'apres l'EXECUTION de ses propres tests, jamais juste apres sa collecte. Le
+# swap restait donc actif pendant toute la collecte des fichiers suivants
+# (alphabetiquement apres "chart_layout") -- `test_contract_tables.py`,
+# `test_invariants.py`, `test_pass6_data.py`, `test_pass7_data.py` -- qui ont
+# besoin du `lib` RACINE (`lib.snapshot` etc.) au niveau module : `sys.modules
+# ['lib']` pointait alors vers Streamlit/lib, `ModuleNotFoundError` immediat,
+# `pytest tests -q` avortait a la collecte, 0 test execute.
+#
+# Correctif retenu : le repli documente par conftest.py lui-meme pour un fichier
+# qui A BESOIN des constantes au niveau module (parametrize decorators evaluent
+# a l'IMPORT, avant que pytest puisse jamais appeler setup_module -- le patron
+# setup/teardown des 9 fichiers AppTest, qui ne resolvent `lib` qu'au moment de
+# leurs propres fonctions de test, ne peut pas s'appliquer ici) : le swap ET la
+# restauration ont lieu ICI, au meme niveau module, l'un juste apres l'autre,
+# SANS jamais les separer par un hook differe. Aucune collecte d'un AUTRE
+# fichier ne peut s'intercaler entre deux instructions du corps de CE module --
+# la fenetre de fuite est donc fermee : `sys.modules['lib']` n'est jamais
+# rebind a Streamlit/lib plus longtemps que ces trois lignes.
 from conftest import restore_lib, swap_lib_to_streamlit  # noqa: E402
 
 _saved_lib_modules: dict = swap_lib_to_streamlit()
-
 import lib.charts as C   # noqa: E402
 import lib.helpers as H  # noqa: E402
+restore_lib(_saved_lib_modules)  # restauree IMMEDIATEMENT -- pas de teardown_module differe
 
-import _registry  # noqa: E402  (tests/ meme -- pas de package, import nu)
-
-
-def teardown_module(_module) -> None:
-    restore_lib(_saved_lib_modules)
+import _registry  # noqa: E402  (tests/ meme -- pas de package, import nu ; independant de lib)
 
 
 REFERENCE_RED = getattr(H, "REFERENCE_RED", "#821D13")
