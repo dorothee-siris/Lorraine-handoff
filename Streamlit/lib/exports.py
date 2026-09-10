@@ -34,6 +34,7 @@ import pandas as pd
 import streamlit as st
 
 from lib.controls import ARTIFACT_BANNER_TEXT_FR
+from lib.helpers import snapshot_date_label  # pass 7a (page_workbook): single-sourced snapshot label
 
 # ============================================================================
 # CONSTANTS
@@ -324,3 +325,52 @@ def attach_download(st_container, df: pd.DataFrame, view: str, indicator: str, s
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         key=f"dl_{filename}",
     )
+
+
+# ============================================================================
+# PASS 7a ADDITION (S-LIB-B) -- docs/contract_fragments/lib_api_pass7.md
+# ============================================================================
+
+def _unique_sheet_name(name: str, used: set[str]) -> str:
+    """Excel sheet names: <=31 chars, unique within the workbook. Truncates, then
+    disambiguates a collision with a numbered suffix (page_workbook, pass 7a)."""
+    base = str(name)[:31] or "Feuille"
+    candidate = base
+    n = 2
+    while candidate in used:
+        suffix = f" ({n})"
+        candidate = base[: 31 - len(suffix)] + suffix
+        n += 1
+    used.add(candidate)
+    return candidate
+
+
+def page_workbook(sheets: dict[str, pd.DataFrame], lecture: list[tuple[str, str]], *,
+                  view: str) -> tuple[bytes, str]:
+    """
+    Whole-page export: ONE workbook covering every panel of a page in a single
+    download. Sheet "Lecture" FIRST -- two columns (Clé, Valeur), exactly the rows
+    the caller hands in `lecture` (the page's own filters, toggles, modes, snapshot,
+    window and canonical URL -- this function does not compute or interpret them) --
+    then one sheet per `sheets` entry, in the order given, names truncated to 31
+    chars and disambiguated on collision (`_unique_sheet_name`).
+
+    Reuses the SAME engine `_write_workbook` uses (`pd.ExcelWriter(engine="openpyxl")`)
+    rather than a second writer path, and the app's single filename grammar
+    (`build_filename`) for the (bytes, filename) return -- indicator slug "vue",
+    snapshot from `lib.helpers.snapshot_date_label()` (the same single-sourced value
+    every page's own `_EXPORT_STATE` already reads), so a page_workbook file stays
+    parseable by `parse_filename` like every other export.
+    """
+    buf = io.BytesIO()
+    lecture_df = pd.DataFrame(lecture, columns=["Clé", "Valeur"])
+    used_names: set[str] = set()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        lecture_df.to_excel(writer, sheet_name=_unique_sheet_name("Lecture", used_names), index=False)
+        for name, df in sheets.items():
+            df.to_excel(writer, sheet_name=_unique_sheet_name(name, used_names), index=False)
+    xlsx_bytes = buf.getvalue()
+
+    state = ExportState(snapshot=snapshot_date_label())
+    filename = build_filename(view, "vue", state)
+    return xlsx_bytes, filename

@@ -33,6 +33,8 @@ from __future__ import annotations
 from typing import Sequence
 from urllib.parse import quote
 
+from lib.helpers import UL_OPENALEX_ID  # pass 7a (P-LINKS): single-sourced, never retyped (RA-C05 pattern)
+
 # ============================================================================
 # CONSTANTS
 # ============================================================================
@@ -151,3 +153,111 @@ def link_icon(url: str | None, *, tooltip: str = LINK_TOOLTIP_FR) -> None:
     html = link_icon_html(url, tooltip=tooltip)
     if html:
         st.markdown(html, unsafe_allow_html=True)
+
+
+# ============================================================================
+# PASS 7a ADDITIONS (S-LIB-B) -- docs/contract_fragments/lib_api_pass7.md
+# Pair-scoped builders: UL is ALWAYS the lineage side (D33's UL corpus query), the
+# partner is ALWAYS the direct-id side -- never confused, same convention as the
+# module docstring's "Two institution scopes" above. Probe-verified 2026-09-10
+# (progress/P7_LIBB.md): `copubs_url(partner)` against the CNRS pair returned a
+# non-zero live count on the funded key.
+# ============================================================================
+
+IDLIST_MAX = 100
+
+# Sentinel row `docs/contract_fragments/46_geo_countries.yaml` names for the
+# unresolved-country bucket (geo_countries.unknown_bucket_flag) -- never build a link
+# for a country the source could not identify.
+UNKNOWN_COUNTRY_CODE = "UNKNOWN"
+
+
+def _year_type_node_filters(
+    year_from: int, year_to: int, types: Sequence[str] | None, node: tuple[str, str | int] | None,
+) -> list[str]:
+    """Shared tail every pass-7a pair/country filter appends after its own
+    institution term(s): year window, optional type restriction, optional taxonomy
+    node -- reuses `_NODE_FILTER_KEY` exactly as `openalex_url` already does above."""
+    filters = [f"publication_year:{year_from}-{year_to}"]
+    if types:
+        filters.append("type:" + "|".join(types))
+    if node is not None:
+        level, value = node
+        if level not in _NODE_FILTER_KEY:
+            raise ValueError(f"node level must be one of {sorted(_NODE_FILTER_KEY)}; got {level!r}")
+        filters.append(f"{_NODE_FILTER_KEY[level]}:{value}")
+    return filters
+
+
+def copubs_url(
+    partner_id: str,
+    *,
+    node: tuple[str, str | int] | None = None,
+    year_from: int = YEAR_START,
+    year_to: int = YEAR_END,
+    types: Sequence[str] | None = CORPUS_TYPES,
+    sort: str | None = None,
+) -> str:
+    """
+    UL (lineage) x partner (direct id) co-publications, live on OpenAlex:
+    `authorships.institutions.lineage:I90183372,authorships.institutions.id:{partner},
+    publication_year:{y0}-{y1},type:a|b|c|d|e[,primary_topic.<level>.id:<value>]`,
+    with `&sort=` appended verbatim when given (unencoded -- a plain `field:direction`
+    token, safe as a query value, same convention as BenchUp's own topic_url).
+    """
+    filters = [
+        f"{_SCOPE_FILTER_KEY['lineage']}:{UL_OPENALEX_ID}",
+        f"{_SCOPE_FILTER_KEY['direct']}:{partner_id}",
+    ]
+    filters += _year_type_node_filters(year_from, year_to, types, node)
+    url = f"{BASE_URL}?filter={quote(','.join(filters), safe=_SAFE_CHARS)}"
+    return f"{url}&sort={sort}" if sort else url
+
+
+def idlist_url(work_ids: Sequence[str]) -> str:
+    """
+    `filter=ids.openalex:W1|W2|...` -- a direct list of OpenAlex work ids. Raises
+    ValueError when empty or beyond IDLIST_MAX: a filter value list beyond that
+    length is UI-unwieldy, and the intended fallback is `phares_url`'s proxy branch,
+    never a caller looping this builder to page around the cap.
+    """
+    ids = list(work_ids)
+    if not ids or len(ids) > IDLIST_MAX:
+        raise ValueError(f"idlist_url: work_ids must have 1..{IDLIST_MAX} entries; got {len(ids)}")
+    filter_str = "ids.openalex:" + "|".join(ids)
+    return f"{BASE_URL}?filter={quote(filter_str, safe=_SAFE_CHARS)}"
+
+
+def phares_url(
+    work_ids: Sequence[str], partner_id: str, *, node: tuple[str, str | int] | None = None,
+) -> tuple[str, bool]:
+    """
+    `(idlist_url(ids), False)` for 1..IDLIST_MAX ids (the exact publication list);
+    otherwise `(copubs_url(partner_id, node=node, sort="cited_by_count:desc"), True)`
+    -- a "most cited first" proxy, never a literal re-application of the top-10%
+    decile rule OpenAlex cannot filter on directly. The page shows
+    `copy_fr.CAPTIONS["PHARES_PROXY"]` whenever the second element is True.
+    """
+    ids = list(work_ids)
+    if 1 <= len(ids) <= IDLIST_MAX:
+        return idlist_url(ids), False
+    return copubs_url(partner_id, node=node, sort="cited_by_count:desc"), True
+
+
+def country_url(country_code: str) -> str | None:
+    """
+    UL (lineage) x country, live on OpenAlex: `authorships.institutions.lineage:I90183372,
+    institutions.country_code:{CC},publication_year:{y0}-{y1},type:a|b|c|d|e`. Returns
+    None for the unresolved-country bucket (UNKNOWN_COUNTRY_CODE) or a falsy code --
+    never a guessed link for a country the source could not identify. The
+    `institutions.country_code` filter key itself is verified live by P-GEO
+    (<= 2 calls); this builder only assembles the string.
+    """
+    if not country_code or str(country_code).strip().upper() == UNKNOWN_COUNTRY_CODE:
+        return None
+    filters = [
+        f"{_SCOPE_FILTER_KEY['lineage']}:{UL_OPENALEX_ID}",
+        f"institutions.country_code:{country_code}",
+    ]
+    filters += _year_type_node_filters(YEAR_START, YEAR_END, CORPUS_TYPES, None)
+    return f"{BASE_URL}?filter={quote(','.join(filters), safe=_SAFE_CHARS)}"

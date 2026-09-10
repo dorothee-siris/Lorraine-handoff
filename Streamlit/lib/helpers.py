@@ -1335,3 +1335,91 @@ def momentum_display(row: Any, facts: Any) -> tuple[str, str, str | None]:
         recentring_median=_field(facts, "recentring_median"),
         count_arrow=_field(row, "mom_count_arrow"),
     )
+
+# ============================================================================
+# PASS 7a (P5/P11/P17) -- PAIR + SDG IDENTITY TOKENS
+# docs/contract_fragments/lib_api_pass7.md ; docs/studio/VIZ_SPEC_pass7.md SS2.1, SS3.2, SS4.
+# ADDITIVE ONLY (S-LIB-B scope fence): nothing above this banner moves.
+# ============================================================================
+
+# ---- SS2.1 pair colour grammar (P5) ----
+UL_COLOR = "#0072B2"        # focal, UNCHANGED (VIZ_SPEC SS1.1) -- single-sourced here; pages still
+                            # carry their OWN page-local "#0072B2" literals (FOCAL_BLUE etc.) as of
+                            # pass 7a -- migrating those is a page-stream concern, out of this scope fence.
+PARTNER_COLOR = "#CC79A7"   # Okabe-Ito reddish purple -- Studio-validated this pass (SS2.5)
+JOINT_COLOR = "#E69F00"     # BenchUp JOINT_TOPIC_COLOR, kept -- Studio-validated (SS2.5)
+
+PAIR_TWIN_FACTOR = 0.65     # no new constant: darken_hex's own existing default (I-SITE overlay)
+PAIR_COLORS_DARK = {        # text-only twins (value labels, gutter numbers, legend chip text, KPI
+                            # captions) -- NEVER a fill. == darken_hex(fill, PAIR_TWIN_FACTOR).
+    "ul": darken_hex(UL_COLOR, PAIR_TWIN_FACTOR),
+    "partner": darken_hex(PARTNER_COLOR, PAIR_TWIN_FACTOR),
+    "joint": darken_hex(JOINT_COLOR, PAIR_TWIN_FACTOR),
+}
+
+REFERENCE_RED = "#821D13"   # dashed reference tick/line AND caution ink (chrome, not an identity slot)
+
+# ---- SS4 bad-topics tint (P11) ----
+TINT_FACTOR = 0.55          # Studio-validated toward white (SS4.1) -- best of {0.35, 0.45, 0.55} on
+                            # "distinguishable from both its own hue and NEUTRAL_GREY"
+
+
+def tint(hex_color: str, factor: float = TINT_FACTOR) -> str:
+    """
+    Lighten `hex_color` toward white by `factor` (P11): each channel
+    c' = c + (255 - c) * factor. Idempotent on white (every channel is already
+    255, so c' == 255 for any factor) -- mirrors `darken_hex`'s own structure/
+    error-fallback, interpolating toward 255 instead of scaling toward 0.
+    """
+    h = hex_color.lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    try:
+        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    except ValueError:
+        return "#5a5a5a"
+    r = int(round(r + (255 - r) * factor))
+    g = int(round(g + (255 - g) * factor))
+    b = int(round(b + (255 - b) * factor))
+    r, g, b = max(0, min(255, r)), max(0, min(255, g)), max(0, min(255, b))
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+# ---- SS3.2 SDG identity (P17) -- hexes: BenchUp lib/palette.py verbatim (UN official) ----
+SDG_COLORS: Dict[int, str] = {
+    1: "#E5243B", 2: "#DDA63A", 3: "#4C9F38", 4: "#C5192D", 5: "#FF3A21", 6: "#26BDE2",
+    7: "#FCC30B", 8: "#A21942", 9: "#FD6925", 10: "#DD1367", 11: "#FD9D24", 12: "#BF8B2E",
+    13: "#3F7E44", 14: "#0A97D9", 15: "#56C02B", 16: "#00689D", 17: "#19486A",
+}
+
+# Official UN French short titles ("Objectifs de developpement durable"), numbered per P17.
+# Goal 17 is stored (never hard-coded out) even though BenchUp's classifier does not cover it --
+# a page derives the covered set from its OWN data and states any absence, never silently (SS3.1).
+SDG_LABELS_FR: Dict[int, str] = {
+    1: "ODD 1 · Pas de pauvreté",
+    2: "ODD 2 · Faim « zéro »",
+    3: "ODD 3 · Bonne santé et bien-être",
+    4: "ODD 4 · Éducation de qualité",
+    5: "ODD 5 · Égalité entre les sexes",
+    6: "ODD 6 · Eau propre et assainissement",
+    7: "ODD 7 · Énergie propre et d'un coût abordable",
+    8: "ODD 8 · Travail décent et croissance économique",
+    9: "ODD 9 · Industrie, innovation et infrastructure",
+    10: "ODD 10 · Inégalités réduites",
+    11: "ODD 11 · Villes et communautés durables",
+    12: "ODD 12 · Consommation et production responsables",
+    13: "ODD 13 · Mesures relatives à la lutte contre les changements climatiques",
+    14: "ODD 14 · Vie aquatique",
+    15: "ODD 15 · Vie terrestre",
+    16: "ODD 16 · Paix, justice et institutions efficaces",
+    17: "ODD 17 · Partenariats pour la réalisation des objectifs",
+}
+SDG_TEXT_DARKEN = 0.55   # darken_hex factor for SDG text/chip ink: clears 4.5:1 for all 17 (SS3.1)
+
+
+def sdg_color(n) -> str:
+    """SDG identity colour for goal `n` (1-17); unknown/invalid -> NEUTRAL_GREY (P17)."""
+    try:
+        return SDG_COLORS.get(int(n), NEUTRAL_GREY)
+    except (TypeError, ValueError):
+        return NEUTRAL_GREY
