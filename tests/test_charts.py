@@ -77,7 +77,7 @@ import _registry as R     # noqa: E402  (tests/ meme -- pas de paquet, import nu
 #                            n'importe `lib` que dans le corps de ses propres callables)
 
 # ... et le basculement est REFAIT pour la duree du RUN de ce fichier seulement : les
-# composeurs de trames appeles nus par ces tests (`R.frame_*`) font `from lib import
+# composeurs de trames appeles nus par ces tests (`F.frame_*`) font `from lib import
 # hover` dans leur corps, contrairement aux `R.build_*` qui basculent eux-memes.
 _saved_for_run: dict = {}
 
@@ -89,6 +89,38 @@ def setup_module(_module) -> None:
 
 def teardown_module(_module) -> None:
     restore_lib(_saved_for_run)
+
+
+class _Frames:
+    """Les composeurs de trames de `tests/_registry.py` appeles SOUS le
+    basculement, chacun pour son propre compte -- jamais en s'appuyant sur
+    l'etat ambiant de `sys.modules`.
+
+    POURQUOI (FIX-2, deuxieme moitie) : `_registry.build_*` bascule et
+    RESTAURE lui-meme (il doit le faire : `test_hover_spec.py` l'appelle sans
+    avoir bascule). Cette restauration retire `Streamlit/` de `sys.path` et
+    rend `sys.modules['lib']` a son etat anterieur -- donc le PREMIER
+    `R.build_*()` d'un test demolit le basculement que `setup_module` a pose,
+    et le `F.frame_*()` suivant leve ImportError. C'est exactement ce qu'a
+    montre la suite complete apres la restauration immediate : 18 echecs, tous
+    sur un appel nu a un composeur de trame. Enrober chaque appel supprime la
+    dependance a l'ordre des appels DANS un test comme a l'ordre des fichiers
+    dans la suite, en reutilisant l'unique implementation de conftest."""
+
+    def __getattr__(self, name: str):
+        fn = getattr(R, name)
+
+        def wrapped(*args, **kwargs):
+            saved, restore = R._swap()
+            try:
+                return fn(*args, **kwargs)
+            finally:
+                restore(saved)
+
+        return wrapped
+
+
+F = _Frames()
 
 
 HEX_RX = re.compile(r"#[0-9A-Fa-f]{6}\b")
@@ -394,7 +426,7 @@ def _phantom(fig: go.Figure):
 
 
 def test_gutter_phantom_text_equals_fmt_int_row_by_row() -> None:
-    d = R.frame_field_companion()
+    d = F.frame_field_companion()
     fig = R.build_zoom_field_companion()
     ph = _phantom(fig)
     assert ph is not None, "aucune trace-fantome de gutter"
@@ -408,7 +440,7 @@ def test_gutter_phantom_text_equals_fmt_int_row_by_row() -> None:
 
 
 def test_vacuity_gutter_text_fails_when_one_value_moves() -> None:
-    d = R.frame_field_companion()
+    d = F.frame_field_companion()
     expected = [HV.fmt_int(v) for v in d["co_works"]]
     mutated = d.copy()
     mutated.loc[0, "co_works"] = float(mutated.loc[0, "co_works"]) + 1.0
@@ -501,7 +533,7 @@ def test_vacuity_caution_fails_without_the_flag_column() -> None:
 # 7. L'ordre des lignes
 # ===========================================================================
 def test_builder_never_resorts_the_frame() -> None:
-    d = R.frame_field_companion()
+    d = F.frame_field_companion()
     shuffled = d.iloc[::-1].reset_index(drop=True)
     fig = C.bars_with_gutter(shuffled, family="champ", label_col="node_name",
                              value_col="co_works", color=H.UL_COLOR)
@@ -511,7 +543,7 @@ def test_builder_never_resorts_the_frame() -> None:
 
 
 def test_vacuity_order_check_fails_against_the_other_order() -> None:
-    d = R.frame_field_companion()
+    d = F.frame_field_companion()
     fig = C.bars_with_gutter(d, family="champ", label_col="node_name",
                              value_col="co_works", color=H.UL_COLOR)
     drawn = list(fig.layout.yaxis.ticktext)
@@ -524,7 +556,7 @@ def test_vacuity_order_check_fails_against_the_other_order() -> None:
 # 8. balance_bars
 # ===========================================================================
 def test_balance_segments_reconstruct_the_three_volumes() -> None:
-    d = R.frame_balance("volume", "field")
+    d = F.frame_balance("volume", "field")
     fig = R.build_balance_volume()
     ul, joint, partner = fig.data[0], fig.data[1], fig.data[2]
     half = d["vol_joint"].to_numpy(dtype=float) / 2.0
@@ -543,7 +575,7 @@ def test_balance_segments_reconstruct_the_three_volumes() -> None:
 
 
 def test_vacuity_balance_segments_fail_when_one_volume_moves() -> None:
-    d = R.frame_balance("volume", "field").copy()
+    d = F.frame_balance("volume", "field").copy()
     expected = d["vol_joint"].tolist()
     d.loc[0, "vol_joint"] = float(d.loc[0, "vol_joint"]) + 7.0
     fig = C.balance_bars(d, mode="volume", level="champ", partner_name="X")
@@ -563,7 +595,7 @@ def test_balance_gutter_carries_the_combined_quantity_per_mode() -> None:
         ("phares", "subfield", lambda d: d["n_phares_ul"] + d["n_phares_joint"]),
         ("fwci", "field", lambda d: d["n_fwci_joint"]),
     ):
-        d = R.frame_balance(mode, level)
+        d = F.frame_balance(mode, level)
         fig = C.balance_bars(d, mode=mode,
                              level="champ" if level == "field" else "sous_champ",
                              partner_name="X")
@@ -573,7 +605,7 @@ def test_balance_gutter_carries_the_combined_quantity_per_mode() -> None:
 
 
 def test_vacuity_balance_gutter_fails_on_the_wrong_combination() -> None:
-    d = R.frame_balance("volume", "field")
+    d = F.frame_balance("volume", "field")
     fig = R.build_balance_volume()
     stripped = [t.replace(" " + C.DAGGER, "") for t in _phantom(fig).text]
     assert stripped != [HV.fmt_int(v) for v in d["vol_joint"]], (
@@ -582,7 +614,7 @@ def test_vacuity_balance_gutter_fails_on_the_wrong_combination() -> None:
 
 
 def test_balance_link_column_has_one_entry_per_row_and_a_dash_under_the_floor() -> None:
-    d = R.frame_balance("volume", "field")
+    d = F.frame_balance("volume", "field")
     fig = R.build_balance_volume()
     ticktext = list(fig.layout.yaxis2.ticktext)
     assert len(ticktext) == len(d), "une entree de colonne liee par ligne"
@@ -602,7 +634,7 @@ def test_balance_link_column_has_one_entry_per_row_and_a_dash_under_the_floor() 
 
 
 def test_vacuity_link_column_fails_when_a_row_is_forced_under_the_floor() -> None:
-    d = R.frame_balance("volume", "field").copy()
+    d = F.frame_balance("volume", "field").copy()
     assert not bool(d["under_floor"].iloc[0]), "la 1re ligne doit etre au-dessus du plancher"
     d.loc[0, "under_floor"] = True
     fig = C.balance_bars(d, mode="volume", level="champ", partner_name="X")
@@ -620,7 +652,7 @@ def test_balance_mirror_has_no_x_ticks_and_only_a_zero_line() -> None:
 
 
 def test_balance_fwci_mode_draws_a_parity_reference_per_row() -> None:
-    d = R.frame_balance("fwci", "field")
+    d = F.frame_balance("fwci", "field")
     fig = R.build_balance_fwci()
     dashed = [s for s in fig.layout.shapes if s.line is not None and s.line.dash == "dash"]
     assert len(dashed) == len(d), "un tick de parite PAR LIGNE en mode fwci"
@@ -633,7 +665,7 @@ def test_balance_fwci_mode_draws_a_parity_reference_per_row() -> None:
 
 
 def test_balance_refuses_an_unknown_mode_or_level() -> None:
-    d = R.frame_balance("volume", "field")
+    d = F.frame_balance("volume", "field")
     with pytest.raises(ValueError):
         C.balance_bars(d, mode="ratio", level="champ", partner_name="X")
     with pytest.raises(ValueError):
@@ -648,7 +680,7 @@ def test_balance_refuses_an_unknown_mode_or_level() -> None:
     ("fig_plane_frontier", "frame_plane_frontier"),
 ])
 def test_plane_tint_is_applied_iff_artifact_flag(build: str, frame: str) -> None:
-    d = getattr(R, frame)()
+    d = getattr(F, frame)()
     fig = getattr(C, build)(d)
     fills = list(fig.data[0].marker.color)
     rings = list(fig.data[0].marker.line.color)
@@ -667,7 +699,7 @@ def test_plane_tint_is_applied_iff_artifact_flag(build: str, frame: str) -> None
     ("fig_plane_frontier", "frame_plane_frontier"),
 ])
 def test_vacuity_plane_tint_fails_when_a_flag_is_flipped(build: str, frame: str) -> None:
-    d = getattr(R, frame)().copy()
+    d = getattr(F, frame)().copy()
     hue = H.get_domain_color(d["domain_id"].iloc[0])
     before = list(getattr(C, build)(d).data[0].marker.color)[0]
     d.loc[0, "artifact_flag"] = not bool(d["artifact_flag"].iloc[0])
@@ -697,7 +729,7 @@ def test_impact_plane_has_one_constant_fwci_parity_reference() -> None:
 
 def test_plane_axis_padding_is_plane_pad_frac_per_side() -> None:
     fig = R.build_zoom_plane_frontier()
-    d = R.frame_plane_frontier()
+    d = F.frame_plane_frontier()
     x = pd.to_numeric(d["expansion"], errors="coerce").to_numpy(dtype=float)
     span = float(np.nanmax(x) - np.nanmin(x))
     lo, hi = [float(v) for v in fig.layout.xaxis.range]
@@ -706,7 +738,7 @@ def test_plane_axis_padding_is_plane_pad_frac_per_side() -> None:
 
 
 def test_vacuity_padding_fails_at_another_fraction() -> None:
-    d = R.frame_plane_frontier()
+    d = F.frame_plane_frontier()
     x = pd.to_numeric(d["expansion"], errors="coerce").to_numpy(dtype=float)
     span = float(np.nanmax(x) - np.nanmin(x))
     saved = C.PLANE_PAD_FRAC
