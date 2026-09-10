@@ -64,6 +64,25 @@ def test_copubs_url_matches_probe_verified_string():
     )
 
 
+def test_vacuity_copubs_url_pin_fails_if_the_partner_filter_term_is_dropped():
+    """Companion to test_copubs_url_matches_probe_verified_string (P14 / D2 fix): the
+    exact-match pin actually discriminates -- a copy of the expected string with the
+    partner (`authorships.institutions.id:`) term dropped, or built for a DIFFERENT
+    partner, must NOT equal what the real builder returns."""
+    correct_pin = (
+        "https://openalex.org/works?filter="
+        "authorships.institutions.lineage:I90183372,authorships.institutions.id:I1294671590,"
+        "publication_year:2019-2023,"
+        "type:article%7Cbook-chapter%7Creview%7Cbook%7Cconference-paper"
+    )
+    url = links.copubs_url(PARTNER_ID)
+    assert url == correct_pin  # sanity: the original check still holds before mutating
+
+    dropped_partner_term = correct_pin.replace(",authorships.institutions.id:I1294671590", "")
+    assert url != dropped_partner_term  # the original "==" assertion would FAIL against this
+    assert links.copubs_url("I9999999999") != correct_pin  # a different partner misses the pin too
+
+
 def test_copubs_url_node_variants_and_guard_rail():
     field_url = links.copubs_url(PARTNER_ID, node=("field", 11))
     assert field_url.endswith(",primary_topic.field.id:11")
@@ -81,6 +100,17 @@ def test_copubs_url_sort_appended_only_when_given():
     assert with_sort.endswith("&sort=cited_by_count:desc")
     without_sort = links.copubs_url(PARTNER_ID)
     assert "&sort=" not in without_sort
+
+
+def test_vacuity_copubs_url_sort_suffix_check_fails_without_a_matching_sort():
+    """Companion to test_copubs_url_sort_appended_only_when_given (P14 / D2 fix): the
+    endswith check is not vacuous -- a URL built with NO sort, or with a DIFFERENT
+    sort value, must NOT satisfy the same "&sort=cited_by_count:desc" suffix."""
+    no_sort = links.copubs_url(PARTNER_ID)
+    assert not no_sort.endswith("&sort=cited_by_count:desc")
+
+    other_sort = links.copubs_url(PARTNER_ID, sort="publication_date:desc")
+    assert not other_sort.endswith("&sort=cited_by_count:desc")
 
 
 # ============================================================================
@@ -111,11 +141,40 @@ def test_phares_url_direct_list_branch():
     assert url == links.idlist_url(small)
 
 
+def test_vacuity_phares_url_direct_branch_flips_to_proxy_past_the_threshold():
+    """Companion to test_phares_url_direct_list_branch (P14 / D2 fix): `is_proxy is
+    False` is not a vacuous constant -- pushing the id count one past IDLIST_MAX
+    flips the SAME branch to proxy (True), so the direct-branch assertion would
+    fail there."""
+    at_cap = [f"W{i}" for i in range(links.IDLIST_MAX)]
+    _, proxy_at_cap = links.phares_url(at_cap, PARTNER_ID)
+    assert proxy_at_cap is False
+
+    over_cap = [f"W{i}" for i in range(links.IDLIST_MAX + 1)]
+    _, proxy_over_cap = links.phares_url(over_cap, PARTNER_ID)
+    assert proxy_over_cap is not False
+    assert proxy_over_cap is True
+
+
 def test_phares_url_proxy_branch_over_cap():
     big = [f"W{i}" for i in range(links.IDLIST_MAX + 1)]
     url, is_proxy = links.phares_url(big, PARTNER_ID)
     assert is_proxy is True
     assert url == links.copubs_url(PARTNER_ID, sort="cited_by_count:desc")
+
+
+def test_vacuity_phares_url_proxy_url_is_specific_to_its_own_partner():
+    """Companion to test_phares_url_proxy_branch_over_cap (P14 / D2 fix): the equality
+    check against `copubs_url(partner_id, ...)` is not trivially satisfied by any
+    string -- the SAME over-cap list must yield a DIFFERENT proxy URL for a
+    different partner."""
+    big = [f"W{i}" for i in range(links.IDLIST_MAX + 1)]
+    url, is_proxy = links.phares_url(big, PARTNER_ID)
+    assert is_proxy is True
+    assert url == links.copubs_url(PARTNER_ID, sort="cited_by_count:desc")
+
+    other_url, _ = links.phares_url(big, "I9999999999")
+    assert other_url != url
 
 
 def test_phares_url_proxy_branch_on_empty():
@@ -124,6 +183,18 @@ def test_phares_url_proxy_branch_on_empty():
     url, is_proxy = links.phares_url([], PARTNER_ID)
     assert is_proxy is True
     assert url == links.copubs_url(PARTNER_ID, sort="cited_by_count:desc")
+
+
+def test_vacuity_phares_url_empty_case_check_fails_for_a_non_empty_short_list():
+    """Companion to test_phares_url_proxy_branch_on_empty (P14 / D2 fix): `is_proxy is
+    True` is specific to the EMPTY list, not any short list -- a single-id list (also
+    below IDLIST_MAX) must NOT be proxied."""
+    _, is_proxy_empty = links.phares_url([], PARTNER_ID)
+    assert is_proxy_empty is True
+
+    _, is_proxy_one = links.phares_url(["W1"], PARTNER_ID)
+    assert is_proxy_one is not True
+    assert is_proxy_one is False
 
 
 # ============================================================================
@@ -146,3 +217,13 @@ def test_country_url_real_code_shape():
         "publication_year:2019-2023,"
         "type:article%7Cbook-chapter%7Creview%7Cbook%7Cconference-paper"
     )
+
+
+def test_vacuity_country_url_pin_fails_if_the_country_code_term_is_swapped():
+    """Companion to test_country_url_real_code_shape (P14 / D2 fix): the exact-match
+    pin actually discriminates -- a copy of the expected string with the country code
+    swapped for a different one must NOT equal the real builder's output for "DE"."""
+    url = links.country_url("DE")
+    swapped = url.replace("institutions.country_code:DE", "institutions.country_code:FR")
+    assert swapped != url
+    assert links.country_url("FR") != url
