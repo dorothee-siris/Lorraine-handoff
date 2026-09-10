@@ -36,8 +36,25 @@ ptn_fields.parquet:
     - {name: "baseline_ul_share", dtype: float64, from: "this node's share of UL's OWN whole
        corpus (conf_state-scoped) -- a global constant repeated across all partners for the same node_id"}
     - {name: "baseline_ul_share_xa", dtype: float64}
-    - {name: "baseline_partner_share", dtype: "Float64 (nullable)", from: "42b gate NOT run --
-       NULL for every row this pass (D53)"}
+    - {name: "baseline_partner_share", dtype: "Float64 (nullable)", from: "FIX-1 (S-LENS D1, pass
+       7a, 2026-09-10 -- corrects this fragment's stale text, the BUILT column never changed):
+       co_works / partner_node_total, capped at 1.0 -- an INVOLVEMENT share (fraction of the
+       partner's own node output that involves UL, node-grain twin of ptn_summary.share_p), NOT the
+       node's weight in the partner's own portfolio. Populated on conf_state='all' rows only, where
+       partner_node_total is defined and >0 (~3,613 + 3 merged-union partners); NULL elsewhere,
+       NEVER 0 (D53)."}
+    - name: "partner_node_total"
+      dtype: int64
+      nullable: true
+      new_in_v2: true
+      why: "FIX-1 (S-LENS D1, pass 7a): the partner's own pub count at this node, decoded from the
+            42b blob (PartnerBaseLookup.node_total(), the SAME positional decode
+            baseline_partner_share's denominator already used internally) -- exposed as its own
+            column so a caller can derive the true portfolio weight (partner_node_total /
+            ptn_summary.partner_total_windowed) or true partner-only volume (partner_node_total -
+            co_works) without re-parsing the blob. Denominator: none, a count. NULL when the
+            partner has no 42b row or the node is absent from its blob. Identical on both
+            conf_state rows (an all-types partner fact, not conf-scoped)."
     - {name: "baseline_france_share", dtype: float64, from: "this node's share of the France
        baseline corpus (france_20xx shards), same conf_state doc-type scope"}
     - {name: "lq_vs_ul", dtype: float64, from: "share_of_pair / baseline_ul_share (location
@@ -53,11 +70,13 @@ ptn_fields.parquet:
     - {name: "mom_eligible_flag", dtype: boolean, from: "False (not NULL) for every subfield row
        and every field row outside the >=50-partner / >=20-in-window cell gate"}
     - {name: "snapshot_date", dtype: string}
-  artifact_invariant_columns: "baseline_partner_share (42b) · baseline_france_share (no topic
-    grain in France scope)"
+  artifact_invariant_columns: "baseline_partner_share (42b, involvement share -- FIX-1) ·
+    partner_node_total (42b partner-side fact) · baseline_france_share (no topic grain in France scope)"
   artifact_exempt_families: "momentum (I6 chips grey under toggle ON)"
-  gate_columns_null: [baseline_partner_share]
   invariants:
-    - "baseline_partner_share NULL on every row (D53, 42b gate) -- asserted in the builder"
+    - "baseline_partner_share populated ONLY on conf_state='all' rows where partner_node_total is
+       defined and >0; NULL elsewhere, NEVER 0 (D53) -- asserted in the builder. FIX-1 (2026-09-10)
+       corrects the prior 'NULL for every row' text here, a stale fragment claim only."
+    - "baseline_partner_share == co_works / partner_node_total wherever both non-null (within 2%)"
     - "mom_class only populated at node_level=='field' (subfield momentum refused by name, sec.6.6)"
   dropped_from_v1: []

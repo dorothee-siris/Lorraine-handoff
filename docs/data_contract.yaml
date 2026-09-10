@@ -1593,12 +1593,18 @@ files:
               "pass 6, P12/#46: Zoom partenaire réciprocité stratégique viz -- ponytail verdict
                (S-PRB probe 7 confirmed this table ALREADY serves the need, nothing new built):
                per (partner, field|subfield, conf_state='all') this table carries baseline_ul_share
-               (UL-side field share) AND baseline_partner_share (partner-side field share of ITS
-               OWN corpus, populated for the 42b-pulled ~3,616 + 3 merged-union partners) AND
-               co_works/share_of_pair (the copub volume) side by side -- exactly the 3 series a
-               per-field reciprocity scatter needs, honest about the conf_state='all'-only scope
-               (tests/test_pass6_data.py has no new test here per the ponytail call; the existing
-               ptn_fields invariants already assert baseline_partner_share's NULL discipline)"]
+               (UL-side field share, this node's weight in UL's OWN portfolio) AND
+               baseline_partner_share (populated for the 42b-pulled ~3,613 + 3 merged-union
+               partners) AND co_works/share_of_pair (the copub volume) side by side.",
+              "FIX-1 (pass 7a, S-LENS D1/D12, 2026-09-10): baseline_partner_share is NOT the
+               partner-side twin of baseline_ul_share (a portfolio weight) -- it is
+               co_works / partner_node_total, an INVOLVEMENT share (what fraction of the partner's
+               OWN output at this node involves UL), the node-grain twin of ptn_summary.share_p.
+               Two different quantities were plotted against each other on the reciprocity scatter's
+               'poids égal' diagonal before this fix (D2); the true portfolio weight
+               (partner_node_total / partner_total_windowed) is NOT a column this table carries --
+               a caller wanting it joins ptn_summary.partner_total_windowed against THIS table's
+               new partner_node_total. See docs/METHODES.md and progress/P7_DAT.md FIX-1 section."]
     rows_expected: 83136
     new_in_v2: true
     row_grain: "partner x node(field, all; OR subfield, floored) x conf_state. Measured: field cells
@@ -1634,8 +1640,32 @@ files:
       - {name: "baseline_ul_share", dtype: float64, from: "this node's share of UL's OWN whole
          corpus (conf_state-scoped) -- a global constant repeated across all partners for the same node_id"}
       - {name: "baseline_ul_share_xa", dtype: float64}
-      - {name: "baseline_partner_share", dtype: float64, nullable: true, from: "42b gate NOT run --
-         NULL for every row this pass (D53)"}
+      - {name: "baseline_partner_share", dtype: float64, nullable: true, from: "FIX-1 (S-LENS D1,
+         2026-09-10, corrects a stale contract claim -- the column's BUILT semantics never changed):
+         co_works / partner_node_total, capped at 1.0 (snapshot-vs-live drift) -- the share of the
+         PARTNER's own node output that involves UL (an involvement share, the node-grain twin of
+         ptn_summary.share_p -- NOT the node's weight in the partner's own portfolio, which is
+         partner_node_total / partner_total_windowed and is not a column here). Populated ONLY on
+         conf_state='all' rows, only where partner_node_total is defined and > 0 (~3,613 + 3
+         merged-union partners, 17,797 field+subfield cells measured this pass) -- NULL elsewhere,
+         NEVER 0 (D53)."}
+      - name: "partner_node_total"
+        dtype: int64
+        nullable: true
+        new_in_v2: true
+        why: "FIX-1 (S-LENS D1, pass 7a): the partner's OWN publication count at this node (field or
+              subfield), decoded from the 42b blob columns of ul_partners_base.parquet ('Pubs
+              breakdown per field (partner total)' / the 26 'Pubs per subfield within ... (partner
+              total)' blobs) via the SAME positional decode pipeline/46_build_partner_views.py's
+              PartnerBaseLookup.node_total() already used internally for baseline_partner_share's
+              denominator -- now exposed as its own column so a caller can derive the partner's true
+              portfolio weight (partner_node_total / ptn_summary.partner_total_windowed) or the true
+              partner-only volume (partner_node_total - co_works) without re-parsing the blob.
+              Denominator: none, this is a count (the partner's own total at that node, from 42b,
+              window/type scope identical to ptn_summary.partner_total_windowed). NULL when the
+              partner has no 42b row, or the node is absent from its blob. Broadcast identically
+              across BOTH conf_state rows for the same (partner, node) -- an all-types partner fact,
+              not scoped by UL's own conference filter."
       - {name: "baseline_france_share", dtype: float64, from: "this node's share of the France
          baseline corpus (france_20xx shards), same conf_state doc-type scope"}
       - {name: "lq_vs_ul", dtype: float64, from: "share_of_pair / baseline_ul_share (location
@@ -1662,12 +1692,19 @@ files:
       - {name: "mom_eligible_flag", dtype: boolean, from: "False (not NULL) for every subfield row
          and every field row outside the >=50-partner / >=20-in-window cell gate"}
       - {name: "snapshot_date", dtype: string}
-    artifact_invariant_columns: "baseline_partner_share (42b) · baseline_france_share (no topic
-      grain in France scope)"
+    artifact_invariant_columns: "baseline_partner_share (42b, involvement share -- FIX-1) ·
+      partner_node_total (42b partner-side fact, outside UL's own artifact-flag scope) ·
+      baseline_france_share (no topic grain in France scope)"
     artifact_exempt_families: "momentum (I6 chips grey under toggle ON)"
-    gate_columns_null: [baseline_partner_share]
     invariants:
-      - "baseline_partner_share NULL on every row (D53, 42b gate) -- asserted in the builder"
+      - "baseline_partner_share populated ONLY on conf_state='all' rows where partner_node_total is
+         defined and >0 (~3,613 + 3 merged-union partners); NULL elsewhere, NEVER 0 (D53) --
+         asserted in the builder. FIX-1 (2026-09-10) corrects the prior 'NULL for every row' text,
+         a stale contract claim only -- the built column never changed."
+      - "baseline_partner_share == co_works / partner_node_total wherever both are non-null
+         (within 2%, snapshot-vs-live-cap tolerance) -- golden, tests/test_pass7_data.py"
+      - "partner_node_total identical on the conf_state='all' and conf_state='no_conf' rows of the
+         same (partner_id, node_level, node_id) -- an all-types partner fact, not conf-scoped"
       - "mom_class only populated at node_level=='field' (subfield momentum refused by name, sec.6.6)"
     dropped_from_v1: []
 
@@ -1861,6 +1898,15 @@ files:
       - {name: "topic_id", dtype: category}
       - {name: "subfield_id", dtype: category, from: "the topic's own (static) subfield -- corpus_topics"}
       - {name: "year", dtype: int16}
+      - name: "conf_state"
+        dtype: category
+        allowed: [all, no_conf]
+        new_in_v2: true
+        why: "FIX-1 (S-LENS D12, pass 7a, 2026-09-10): declares a column the builder has carried
+              since the 'fix round 3' conf_state grain extension (part of this table's own `keys`
+              above since then) but which this contract never listed -- deploy logged it every run
+              as 'extra (undeclared, kept, logged)', harmless but wrong. No behavior change; the
+              deployed file already carried this column."
       - {name: "co_works", dtype: int32}
       - {name: "co_works_xa", dtype: int32}
       - name: "n_phares"

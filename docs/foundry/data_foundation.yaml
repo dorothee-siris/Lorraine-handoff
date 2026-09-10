@@ -361,9 +361,22 @@ tables:
     columns: [partner_id, node_level, node_id, conf_state, co_works, co_works_xa,
               n_phares, n_phares_xa,
               share_of_pair, share_of_pair_xa, baseline_ul_share, baseline_ul_share_xa,
-              baseline_partner_share, baseline_france_share, lq_vs_ul, lq_vs_ul_xa,
+              baseline_partner_share, partner_node_total, baseline_france_share, lq_vs_ul, lq_vs_ul_xa,
               mom_class, mom_p_value, mom_eligible_flag]
-    artifact_invariant_columns: "baseline_partner_share (42b) · baseline_france_share (no topic grain)"
+    baseline_partner_share_meaning: >
+      FIX-1 (S-LENS D1, pass 7a, 2026-09-10): co_works / partner_node_total -- an INVOLVEMENT share
+      (what fraction of the partner's OWN node output involves UL), the node-grain twin of
+      ptn_summary.share_p. NOT the node's weight in the partner's own portfolio (that quantity is
+      partner_node_total / ptn_summary.partner_total_windowed and is not a column of this table).
+      The column's BUILT values never changed by this fix -- only the contract's prior description
+      (which matched neither this formula) was corrected.
+    partner_node_total_meaning: "the partner's own pub count at this node, decoded from the 42b
+      blob (PartnerBaseLookup.node_total(), same positional decode baseline_partner_share's
+      denominator already used) -- exposed as its own column, pass 7a FIX-1. Denominator: none, a
+      count. NULL when the partner has no 42b row or the node is absent from its blob. Identical on
+      both conf_state rows (an all-types partner fact)."
+    artifact_invariant_columns: "baseline_partner_share (42b, involvement share) · partner_node_total
+      (42b partner-side fact) · baseline_france_share (no topic grain)"
     artifact_exempt_families: "momentum (I6 chips grey under toggle ON)"
     lazy_load: per-partner (V2)
     gate_columns_null: [baseline_partner_share]  # populated on conf_state='all' cells only, where
@@ -403,10 +416,13 @@ tables:
       # which validates artifact declarations only — conf sweep added to E1b's checks.)
     rows_measured: "224,396 at 1 state (2.06 MB; 45 groups; prune 2.2%); ~2x at 2 states"
     write_spec: "sorted by partner_id, rg=5000"
-    columns: [partner_id, topic_id, subfield_id, year, co_works, co_works_xa,
+    columns: [partner_id, topic_id, subfield_id, year, conf_state, co_works, co_works_xa,
               n_phares, n_phares_xa,
               fwci_fr_median_cell, frontier_score_std, artifact_flag,
               delta_value, delta_flag]
+    conf_state_note: "FIX-1 (S-LENS D12, pass 7a): conf_state was already part of this table's own
+      `grain`/`keys` above since the fix-round-3 extension but was missing from this flat `columns`
+      list -- declaration-only fix, no behavior change."
     note: "co_works_xa = both §6.2 halves at topic grain (tunnel #4); delta_value/delta_flag =
            pipeline-computed two-window numeric delta, NULL below the >=20 floor (1,293 cells;
            tunnel #11); classes/acceleration remain REFUSED at this grain"
@@ -502,6 +518,9 @@ tables:
     invariants: ["25,942 rows exact (3,706 x 7)", "exactly one is_latest per topic_id",
                  "latest-bin describe(): mean~0 (<0.001), std 0.674/0.841 (+/-0.005)",
                  "corr(0.7E+0.3A, frontier) > 0.999"]
+    artifact_exempt: "S9-class scope decision (same as bench_peers/bench_sdg/lab_top_partners): a
+      GLOBAL OpenAlex topic-population reshape (3,706 world topics x 7 bins), entirely outside UL's
+      own corpus/artifact-flag scope -- no work_id, no UL-side measure, nothing to twin."
 
   thm_frontier_topics:             # NEW (pass 5, S3b, ruling R11 full-depth materialization)
     status: BUILD (pass 5, S3b)

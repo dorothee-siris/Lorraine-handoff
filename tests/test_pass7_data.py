@@ -296,3 +296,137 @@ def test_subfield_blob_round_trip_ten_partners():
     assert len(parsed0) > 1, "sample blob has <=1 field, mutation would be meaningless"
     mutated_reserialised = " | ".join(parsed0[:-1])  # drop the last field
     assert mutated_reserialised != blob0, "mutation did not change the blob -- vacuous check"
+
+
+# =================================================================================================
+# FIX-1 (S-LENS D1, 2026-09-10) -- partner_node_total golden + baseline_partner_share semantics pin
+# =================================================================================================
+
+def _independent_node_total(base_row: pd.Series, level: str, node_id: int, field_ids: list[int],
+                            field_of_subfield: dict, subfields_by_field: dict,
+                            field_name: dict) -> int | None:
+    """Fresh, standalone re-implementation of PartnerBaseLookup.node_total()'s positional decode
+    (pipeline/46_build_partner_views.py) -- independent of the builder's own class, per the
+    house rule that a golden is recomputed from source, never by calling pipeline code."""
+    if level == "field":
+        parts = str(base_row["Pubs breakdown per field (partner total)"] or "").split(" | ")
+        idx_list = field_ids
+    else:
+        field_id = field_of_subfield.get(int(node_id))
+        if field_id is None:
+            return None
+        col = f'Pubs per subfield within "{field_name[field_id]}" (id: {field_id}) (partner total)'
+        if col not in base_row.index:
+            return None
+        parts = str(base_row[col] or "").split(" | ")
+        idx_list = subfields_by_field[field_id]
+    try:
+        return int(parts[idx_list.index(int(node_id))])
+    except (ValueError, IndexError):
+        return None
+
+
+@pytest.fixture(scope="module")
+def partner_base_taxonomy():
+    """Same field/subfield id-ordering PartnerBaseLookup builds from all_topics -- recomputed here
+    independently rather than imported, so this fixture cannot silently share a bug with the class
+    under test."""
+    all_topics = pd.read_parquet(TABLES / "all_topics.parquet",
+                                 columns=["field_id", "field_name", "subfield_id"])
+    at = all_topics.assign(field_id=all_topics["field_id"].astype(str).astype(int),
+                           subfield_id=all_topics["subfield_id"].astype(str).astype(int))
+    field_ids = sorted(at["field_id"].unique())
+    field_of_subfield = at.drop_duplicates("subfield_id").set_index("subfield_id")["field_id"].to_dict()
+    subfields_by_field = {f: sorted(at.loc[at["field_id"] == f, "subfield_id"].unique()) for f in field_ids}
+    field_name = at.drop_duplicates("field_id").set_index("field_id")["field_name"].to_dict()
+    return field_ids, field_of_subfield, subfields_by_field, field_name
+
+
+def test_golden_partner_node_total_cnrs_chru_five_fields_five_subfields(partner_base_taxonomy):
+    field_ids, field_of_subfield, subfields_by_field, field_name = partner_base_taxonomy
+    base = pd.read_parquet(TABLES / "ul_partners_base.parquet").set_index("Partner ID")
+    ptn_fields = table("ptn_fields")
+    fields_all = ptn_fields[(ptn_fields["conf_state"] == "all")]
+
+    checked = 0
+    for partner_id in (CNRS, CHRU_NANCY):
+        base_row = base.loc[partner_id]
+        for level, n_check in (("field", 5), ("subfield", 5)):
+            rows = fields_all[(fields_all["partner_id"] == partner_id)
+                              & (fields_all["node_level"] == level)].head(n_check)
+            assert len(rows) == n_check, f"{partner_id}/{level}: expected >= {n_check} rows to sample"
+            for _, r in rows.iterrows():
+                built = r["partner_node_total"]
+                golden = _independent_node_total(base_row, level, r["node_id"], field_ids,
+                                                  field_of_subfield, subfields_by_field, field_name)
+                assert (pd.isna(built) and golden is None) or (int(built) == golden), (
+                    f"{partner_id} {level} node {r['node_id']}: partner_node_total {built} != "
+                    f"golden blob value {golden}"
+                )
+                checked += 1
+    assert checked == 20, f"expected 20 (2 partners x 2 levels x 5 nodes), checked {checked}"
+
+    # vacuity: corrupt the golden parse (flip one digit) on a copy and prove the comparison fails
+    cnrs_row = base.loc[CNRS].copy()
+    original = str(cnrs_row["Pubs breakdown per field (partner total)"])
+    mutated_blob = original.replace(original.split(" | ")[0], "999999999", 1)
+    cnrs_row["Pubs breakdown per field (partner total)"] = mutated_blob
+    mutated_val = _independent_node_total(cnrs_row, "field", field_ids[0], field_ids,
+                                          field_of_subfield, subfields_by_field, field_name)
+    real_val = _independent_node_total(base.loc[CNRS], "field", field_ids[0], field_ids,
+                                       field_of_subfield, subfields_by_field, field_name)
+    assert mutated_val != real_val, "mutation did not change the parsed value -- vacuous check"
+
+
+def test_baseline_partner_share_equals_co_works_over_partner_node_total():
+    """Pins the semantics FIX-1 corrects the CONTRACT wording for (never the built column, which
+    did not change): baseline_partner_share is co_works / partner_node_total (an involvement
+    share), NOT partner_node_total / partner_total_windowed (a portfolio weight). App-wide, every
+    conf_state='all' cell with a positive share."""
+    ptn_fields = table("ptn_fields")
+    cells = ptn_fields[(ptn_fields["conf_state"] == "all") & (ptn_fields["baseline_partner_share"] > 0)]
+    assert len(cells) > 10000, f"expected >10,000 populated cells app-wide, got {len(cells)}"
+
+    implied_total = cells["co_works"] / cells["baseline_partner_share"]
+    rel_err = (implied_total - cells["partner_node_total"]).abs() / cells["partner_node_total"]
+    # capped cells (bps==1.0 exactly, snapshot-vs-live drift already disclosed by the builder) are
+    # a KNOWN, disclosed departure from the formula (co_works can exceed partner_node_total there
+    # by construction of the cap) -- excluded from this tolerance check, counted instead.
+    capped = cells["baseline_partner_share"] >= 1.0
+    n_capped = int(capped.sum())
+    uncapped_rel_err = rel_err[~capped]
+    bad = uncapped_rel_err[uncapped_rel_err >= 0.02]
+    assert len(bad) == 0, (
+        f"{len(bad)} of {len(uncapped_rel_err)} uncapped cells have "
+        f"|co_works/bps - partner_node_total| / partner_node_total >= 2%"
+    )
+    assert n_capped < len(cells) * 0.05, f"unexpectedly many capped cells: {n_capped}/{len(cells)}"
+
+    # vacuity: on a copy, corrupt one row's partner_node_total -- the same check must now fail
+    mutated = cells.copy()
+    idx0 = mutated.index[~capped.values][0]
+    mutated.loc[idx0, "partner_node_total"] = mutated.loc[idx0, "partner_node_total"] * 3 + 1000
+    mutated_err = ((mutated["co_works"] / mutated["baseline_partner_share"])
+                   - mutated["partner_node_total"]).abs() / mutated["partner_node_total"]
+    assert mutated_err.loc[idx0] >= 0.02, "mutation did not break the tolerance check -- vacuous check"
+
+
+def test_cnrs_engineering_partner_node_total_reported_value():
+    """Anchors the exact figure named in the FIX-1 dispatch and the S-LENS lens doc (D1): CNRS
+    Engineering true partner-only = 41,838 (42b node total minus the 2,721-work joint), so
+    partner_node_total must read 44,559."""
+    ptn_fields = table("ptn_fields")
+    row = ptn_fields[(ptn_fields["partner_id"] == CNRS) & (ptn_fields["conf_state"] == "all")
+                     & (ptn_fields["node_level"] == "field")]
+    all_topics = pd.read_parquet(TABLES / "all_topics.parquet", columns=["field_id", "field_name"])
+    eng_id = str(int(all_topics.loc[all_topics["field_name"] == "Engineering", "field_id"].astype(str).astype(int).iloc[0]))
+    eng_row = row[row["node_id"].astype(str) == eng_id]
+    assert len(eng_row) == 1, f"expected exactly 1 CNRS/Engineering/all row, got {len(eng_row)}"
+    total = int(eng_row.iloc[0]["partner_node_total"])
+    joint = int(eng_row.iloc[0]["co_works"])
+    assert total == 44559, f"CNRS Engineering partner_node_total: {total} != 44,559 (lens reported 41,838 true partner-only + {joint} joint)"
+    assert total - joint == 41838, f"CNRS Engineering true partner-only (total-joint): {total - joint} != 41,838"
+
+    # vacuity
+    mutated_total = total + 1
+    assert mutated_total != 44559, "mutation is a no-op -- vacuous check"

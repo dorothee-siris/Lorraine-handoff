@@ -75,6 +75,20 @@ WORDCLOUD_TOP_N = 120
 NO_LAB = "NO LAB"
 
 
+def _ranked_by_count_then_key(counts: pd.Series, n: int) -> pd.Series:
+    """FIX-1 (pass 7a, S-DAT backlog item from the lab_top_partners tie-break diagnosis):
+    deterministic top-N -- sort by count desc, then by the count Series' own index asc. A bare
+    `sort_values(ascending=False)` has no secondary key, so a genuine tie resolves by whatever the
+    pandas/numpy sort implementation happens to do, NOT reproducibly across versions (measured:
+    pandas 2.1.4 vs the pinned venv's 2.3.3 disagree on a real tie -- see
+    tests/test_pass6_data.py::test_lab_top_partners_hand_verify_3_labs and
+    build_lab_top_partners() below, fixed first). Used here for build_lab_top_authors' two methods
+    and build_lab_wordcloud's three levels, which carry the identical latent pattern."""
+    frame = counts.rename_axis("_key").reset_index(name="_count")
+    frame = frame.sort_values(["_count", "_key"], ascending=[False, True], kind="stable")
+    return frame.head(n).set_index("_key")["_count"]
+
+
 def sanitize(value) -> str:
     return str(value).replace(":", " ").replace("|", " ").strip()
 
@@ -194,7 +208,7 @@ def build_lab_top_authors(works: pd.DataFrame, authorships: pd.DataFrame, ul_aut
 
         # ---- maison (SIRIS reconciliation, 45_build_authors.py's person_id clusters) -----------
         maison = own_auth.assign(person_id=own_auth["author_id"].map(author_to_person)).dropna(subset=["person_id"])
-        m_counts = maison.groupby("person_id")["work_id"].nunique().sort_values(ascending=False).head(TOP_N)
+        m_counts = _ranked_by_count_then_key(maison.groupby("person_id")["work_id"].nunique(), TOP_N)
         for rank, (person_id, pubs) in enumerate(m_counts.items(), start=1):
             wids = set(maison.loc[maison["person_id"] == person_id, "work_id"])
             fwci_vals = computed.reindex(list(wids)).dropna()
@@ -207,7 +221,7 @@ def build_lab_top_authors(works: pd.DataFrame, authorships: pd.DataFrame, ul_aut
 
         # ---- orcid_only (strict raw-orcid grouping, no name reconciliation) --------------------
         with_orcid = own_auth.dropna(subset=["orcid"])
-        o_counts = with_orcid.groupby("orcid")["work_id"].nunique().sort_values(ascending=False).head(TOP_N)
+        o_counts = _ranked_by_count_then_key(with_orcid.groupby("orcid")["work_id"].nunique(), TOP_N)
         for rank, (orcid, pubs) in enumerate(o_counts.items(), start=1):
             block = with_orcid[with_orcid["orcid"] == orcid]
             wids = set(block["work_id"])
@@ -243,13 +257,13 @@ def build_lab_wordcloud(works: pd.DataFrame, all_topics: pd.DataFrame, lab_names
         if not len(block):
             continue
 
-        subfield_counts = block["primary_subfield_name"].value_counts().head(WORDCLOUD_TOP_N)
+        subfield_counts = _ranked_by_count_then_key(block["primary_subfield_name"].value_counts(), WORDCLOUD_TOP_N)
         for term, weight in subfield_counts.items():
             if pd.isna(term):
                 continue
             rows.append({"lab": lab, "level": "subfield", "term": term, "weight": int(weight)})
 
-        topic_counts = block["primary_topic_name"].value_counts().head(WORDCLOUD_TOP_N)
+        topic_counts = _ranked_by_count_then_key(block["primary_topic_name"].value_counts(), WORDCLOUD_TOP_N)
         for term, weight in topic_counts.items():
             if pd.isna(term):
                 continue
@@ -264,7 +278,7 @@ def build_lab_wordcloud(works: pd.DataFrame, all_topics: pd.DataFrame, lab_names
                 kw = kw.strip()
                 if kw:
                     kw_weight[kw] = kw_weight.get(kw, 0) + 1
-        kw_series = pd.Series(kw_weight).sort_values(ascending=False).head(WORDCLOUD_TOP_N)
+        kw_series = _ranked_by_count_then_key(pd.Series(kw_weight, dtype="int64"), WORDCLOUD_TOP_N)
         for term, weight in kw_series.items():
             rows.append({"lab": lab, "level": "keyword", "term": term, "weight": int(weight)})
 

@@ -1176,6 +1176,18 @@ def build_ptn_fields(pairs_shipped_all: pd.DataFrame, pairs_shipped_noconf: pd.D
         cells["lq_vs_ul"] = (cells["share_of_pair"] / cells["baseline_ul_share"]).round(4)
         cells["lq_vs_ul_xa"] = (cells["share_of_pair_xa"] / cells["baseline_ul_share_xa"]).round(4)
 
+        # partner_node_total (FIX-1, S-LENS D1, pass 7a): the partner's OWN pub count at this node,
+        # decoded from the 42b blob -- an all-types PARTNER fact, not scoped by UL's own conference
+        # filter, so computed for BOTH conf_state passes (identical value both times for the same
+        # (partner, node) -- asserted below). Exposed as its own column so a caller can derive the
+        # partner's true portfolio weight (partner_node_total / ptn_summary.partner_total_windowed)
+        # or true partner-only volume (partner_node_total - co_works) without re-parsing the blob --
+        # neither of which `baseline_partner_share` itself is (see next block).
+        denom_raw = cells.apply(
+            lambda r: partner_base.node_total(r["partner_id"], r["node_level"], r["node_id"]), axis=1
+        )
+        cells["partner_node_total"] = denom_raw.astype("Int64")
+
         # baseline_partner_share (pass-4 G3, challenge memo #8 applied symmetrically): 42b pulled
         # ONE all-types denominator per (partner, node) -- so, exactly like ptn_summary.share_p,
         # this populates ONLY on conf_state='all' rows; no_conf rows would divide a no-conf
@@ -1183,10 +1195,14 @@ def build_ptn_fields(pairs_shipped_all: pd.DataFrame, pairs_shipped_noconf: pd.D
         # flag column exists in the contract for this table (unlike ptn_summary), so a >1 raw ratio
         # (the same snapshot-vs-live drift as elsewhere) is silently capped at 1.0 and counted for
         # the print/manifest report only -- mirrors 44e's own precedent for the identical drift.
+        # FIX-1 (S-LENS D1): this is an INVOLVEMENT share (co_works / the partner's OWN node total,
+        # i.e. what fraction of the PARTNER's output at this node involves UL) -- the node-grain
+        # twin of ptn_summary.share_p, NOT the node's weight in the partner's own portfolio (that
+        # quantity is partner_node_total / partner_total_windowed, not a column of this table). The
+        # formula below is UNCHANGED by this fix -- only the surrounding docs/contract text was
+        # wrong; disclosed and corrected in docs/data_contract.yaml + docs/foundry/
+        # data_foundation.yaml + docs/contract_fragments/46_ptn_fields.yaml (progress/P7_DAT.md FIX-1).
         if conf_state == "all":
-            denom_raw = cells.apply(
-                lambda r: partner_base.node_total(r["partner_id"], r["node_level"], r["node_id"]), axis=1
-            )
             has_denom = denom_raw.notna() & (denom_raw.fillna(0) > 0)
             raw_share = cells["co_works"].astype(float) / denom_raw.astype("float64")
             capped_mask = has_denom & (raw_share > 1.0)
@@ -1230,7 +1246,7 @@ def build_ptn_fields(pairs_shipped_all: pd.DataFrame, pairs_shipped_noconf: pd.D
         "partner_id", "node_level", "node_id", "conf_state", "co_works", "co_works_xa",
         "n_phares", "n_phares_xa",
         "share_of_pair", "share_of_pair_xa", "baseline_ul_share", "baseline_ul_share_xa",
-        "baseline_partner_share", "baseline_france_share", "lq_vs_ul", "lq_vs_ul_xa",
+        "baseline_partner_share", "partner_node_total", "baseline_france_share", "lq_vs_ul", "lq_vs_ul_xa",
         "co_works_isite", "share_of_pair_isite",
         "mom_class", "mom_p_value", "mom_eligible_flag", "snapshot_date",
     ]]
@@ -1257,6 +1273,25 @@ def build_ptn_fields(pairs_shipped_all: pd.DataFrame, pairs_shipped_noconf: pd.D
     assert (bps_all.dropna() > 0).all() and (bps_all.dropna() <= 1.0).all(), (
         "baseline_partner_share must be in (0, 1] wherever non-null -- NEVER 0 (D53)"
     )
+
+    # FIX-1 (S-LENS D1): partner_node_total is an all-types PARTNER fact, not conf-scoped -- must
+    # be IDENTICAL on the 'all' and 'no_conf' rows of the same (partner_id, node_level, node_id).
+    pnt_all = out.loc[out["conf_state"] == "all"].set_index(["partner_id", "node_level", "node_id"])["partner_node_total"]
+    pnt_noconf = out.loc[out["conf_state"] == "no_conf"].set_index(["partner_id", "node_level", "node_id"])["partner_node_total"]
+    shared_idx = pnt_all.index.intersection(pnt_noconf.index)
+    # cast to plain float64 numpy (NaN for missing) so '!=' gives ordinary IEEE semantics --
+    # nullable Int64's own '!=' returns a nullable-boolean-with-NA, which numpy cannot use as an
+    # index mask directly (ValueError). NaN != NaN is True elementwise under this cast, so a
+    # both-NULL cell would false-flag -- excluded explicitly below.
+    a = pnt_all.loc[shared_idx].to_numpy(dtype="float64", na_value=float("nan"))
+    b = pnt_noconf.loc[shared_idx].to_numpy(dtype="float64", na_value=float("nan"))
+    differs = (a != b) & ~(pd.isna(a) & pd.isna(b))
+    real_mismatch = shared_idx[differs]
+    assert len(real_mismatch) == 0, (
+        f"partner_node_total differs between conf_state='all' and 'no_conf' for "
+        f"{len(real_mismatch)} (partner,node) cell(s) -- it must be an all-types constant"
+    )
+    print(f"partner_node_total conf_state-invariance (FIX-1): PASS ({len(shared_idx):,} shared cells)")
     print(f"ptn_fields baseline_partner_share populated-state invariant: PASS "
           f"({bps_populated_total:,} of {int((out['conf_state'] == 'all').sum()):,} conf_state=all "
           f"cells populated, {bps_capped_total:,} capped at 1.0; "
