@@ -65,3 +65,6 @@ __pycache__/
 !/docs/TOOLTIP_SPEC.md
 !/docs/FRONTIERNESS_METHOD.md
 !/docs/contract_fragments/
+
+# --- client-facing access doc README links to (whitelist gap found at the pass-7a close) ---
+!/docs/ACCES_STREAMLIT.md
