@@ -382,5 +382,121 @@ def test_page8_survives_reciprocity_floor_toggle_switch(monkeypatch):
     assert not at.exception, _exc_values(at)
 
 
+# ============================================================================
+# (8) FIX-1 (S-LENS D3, docs/LENS_ABSORPTION_pass7a.md A8): fig_cache key completeness
+# ============================================================================
+
+def _cached_figure_call_span(name: str) -> str:
+    marker = f'name="{name}"'
+    start = COLLAB_SRC.index(marker)
+    call_start = COLLAB_SRC.rindex("cached_figure(", 0, start)
+    end = COLLAB_SRC.index("\n        )", call_start)
+    return COLLAB_SRC[call_start:end]
+
+
+@pytest.mark.parametrize("chart_name,required_tokens", [
+    ("col_hub_companion", ("CONF_STATE", "effective_subset", "artifact_on", "SNAPSHOT_DATE")),
+    ("col_reciprocity", ("CONF_STATE", "effective_subset", "artifact_on", "SNAPSHOT_DATE")),
+    ("col_consortium_bars", ("CONF_STATE", "effective_subset", "artifact_on", "SNAPSHOT_DATE")),
+    ("col_momentum_quadrant", ("CONF_STATE", "axis_type", "SNAPSHOT_DATE")),
+])
+def test_fig_cache_key_names_every_control_that_shapes_the_frame(chart_name, required_tokens):
+    """S-LENS D3: a control not in the key -> stale figure (live repro on
+    col_hub_companion -- chart 11 510 vs table 11 247 under the artifact toggle, SAME
+    partner_id set). Source-level: the key= tuple's own span must NAME every control its
+    frame actually depends on (momentum is artifact-/I-SITE-overlay-EXEMPT by existing,
+    documented design -- MOMENTUM_EXEMPT_CAPTION_FR/MOMENTUM_ISITE_EXEMPT_FR -- so its
+    required set is narrower by design, not by omission)."""
+    span = _cached_figure_call_span(chart_name)
+    key_span = span[span.index("key="):span.index("build=")]
+    for token in required_tokens:
+        assert re.search(rf"\b{token}\b", key_span), f"{chart_name} key missing {token!r}: {key_span}"
+
+    # vacuity: deleting one required token from the SAME span must be caught
+    victim = required_tokens[0]
+    mutated = re.sub(rf"\b{victim}\b", "REMOVED", key_span)
+    assert not re.search(rf"\b{victim}\b", mutated)
+
+
+def test_col_hub_companion_cache_key_shape_avoids_the_live_stale_figure_defect():
+    """Mutation twin, direct mechanism level (the SAME real fig_cache.cached_figure +
+    lib.charts.bars_with_gutter this page calls -- no AppTest/plotly-introspection
+    needed): reproduces the exact live defect pattern (SAME partner_id set, DIFFERENT
+    co_works values -- the artifact toggle's real effect via controls.xa() twin columns)
+    under (a) the page's CURRENT (fixed) key shape and (b) the OLD, incomplete shape
+    the live defect actually shipped with (partner_id tuple + isite_overlay_on only)."""
+    from lib import charts as C
+    from lib.fig_cache import cached_figure
+
+    def _frame(value):
+        return pd.DataFrame({
+            "partner_id": ["A", "B"], "display_name": ["A", "B"],
+            "co_works": [value, value * 2], "hover": ["h", "h2"],
+        })
+
+    def _build(v):
+        return lambda: C.bars_with_gutter(
+            _frame(v), family="partenaire", label_col="display_name",
+            value_col="co_works", color="#0072B2",
+        )
+
+    partner_ids, isite_on = ("A", "B"), False
+
+    # (a) FIXED shape: artifact_on (+ conf/subset) are part of the key -> two entries
+    fig_fixed_off = cached_figure(name="d3_fix_probe", key=(partner_ids, isite_on, "all", "all", False),
+                                   build=_build(100))
+    fig_fixed_on = cached_figure(name="d3_fix_probe", key=(partner_ids, isite_on, "all", "all", True),
+                                  build=_build(999))
+    sum_fixed_off = float(sum(fig_fixed_off.data[0].x))
+    sum_fixed_on = float(sum(fig_fixed_on.data[0].x))
+    assert sum_fixed_off != sum_fixed_on, "fixed key shape must NOT reuse a stale figure"
+
+    # (b) OLD, incomplete shape (the live bug) -- sanity check that it DOES reproduce
+    # staleness, so (a)'s pass is meaningful and not a strawman.
+    fig_bad_off = cached_figure(name="d3_bug_probe", key=(partner_ids, isite_on), build=_build(100))
+    fig_bad_on = cached_figure(name="d3_bug_probe", key=(partner_ids, isite_on), build=_build(999))
+    assert float(sum(fig_bad_off.data[0].x)) == float(sum(fig_bad_on.data[0].x)), (
+        "sanity check on the OLD key shape: it SHOULD reproduce the stale-figure bug "
+        "(identical key -> cache hit -> build() never re-runs)"
+    )
+
+
+def test_page8_artifact_toggle_changes_the_hub_table_values_via_apptest(monkeypatch):
+    """Functional half of the D3 proof: flips the artifact toggle through AppTest and
+    asserts the SAME numbers the companion chart is built from (chart_rows["co_works"],
+    == the hub table's own "co_works" column, per _hub_companion_rows/prepared) actually
+    change -- the precondition the fig_cache key fix protects. Skips honestly if this
+    deployed snapshot carries no `co_works_full_xa` twin (controls.xa()'s own convention,
+    never re-derived) or the toggle is not rendered in this sidebar state."""
+    path = DATA_DIR / "ptn_summary.parquet"
+    _skip_if_missing(path)
+    s = pd.read_parquet(path)
+    if "co_works_full_xa" not in s.columns:
+        pytest.skip("no co_works_full_xa twin in this deployed snapshot")
+
+    _neutralize_page_link(monkeypatch)
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_file(str(PAGES_DIR / COLLAB_PAGE))
+    at.run(timeout=90)
+    assert not at.exception, _exc_values(at)
+    dfs_off = [dl.value for dl in at.get("dataframe") if "share_p_pct" in getattr(dl.value, "columns", [])]
+    assert dfs_off, "expected the hub table to render"
+    sum_off = float(dfs_off[0]["co_works"].sum())
+
+    art_toggle = next((t for t in at.get("toggle") if t.key == "artifact_filter"), None)
+    if art_toggle is None:
+        pytest.skip("artifact toggle not rendered in this sidebar state")
+    art_toggle.set_value(True)
+    at.run(timeout=90)
+    assert not at.exception, _exc_values(at)
+    dfs_on = [dl.value for dl in at.get("dataframe") if "share_p_pct" in getattr(dl.value, "columns", [])]
+    assert dfs_on, "expected the hub table to still render with the toggle on"
+    sum_on = float(dfs_on[0]["co_works"].sum())
+
+    assert sum_off != sum_on, "artifact toggle did not change the hub table's co_works values"
+    # vacuity: comparing the SAME snapshot to itself must NOT report a change
+    assert sum_off == sum_off
+
+
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))

@@ -640,7 +640,18 @@ else:
         reading_line("col_hub_companion", window=window_label())
         fig_hub = cached_figure(
             name="col_hub_companion",
-            key=(tuple(chart_rows["partner_id"].tolist()), isite_overlay_on),
+            # S-LENS D3 fix: every control that shapes `chart_rows` -- partner_id tuple
+            # (row set) + isite_overlay_on were NOT enough on their own: CONF_STATE/
+            # effective_subset/artifact_on can change the SAME partners' co_works VALUE
+            # (controls.xa() twin columns) without changing the row SET, which is exactly
+            # how a stale figure survived the artifact toggle (live repro: 11 510 vs 11 247).
+            key=(
+                tuple(chart_rows["partner_id"].tolist()), isite_overlay_on,
+                CONF_STATE, effective_subset, bool(artifact_on),
+                tuple(sorted(type_filter)), floor,
+                st.session_state.get("hub_query", ""), st.session_state.get("hub_hide_members", False),
+                SNAPSHOT_DATE,
+            ),
             build=lambda: C.bars_with_gutter(
                 chart_rows, family="partenaire", label_col="display_name", value_col="co_works",
                 color=H.UL_COLOR, hover_col="hover",
@@ -740,9 +751,13 @@ with col_recip:
 
             fig_recip = cached_figure(
                 name="col_reciprocity",
-                key=(floor_val, CONF_STATE, effective_subset,
+                # S-LENS D3 fix: artifact_on + snapshot added (same completeness audit
+                # as col_hub_companion, even though this frame reads share_p/share_ul/
+                # co_works_full WITHOUT controls.xa() today -- defensive, not vacuous:
+                # a future xa()-ification of this frame would otherwise reopen D3 silently).
+                key=(floor_val, CONF_STATE, effective_subset, bool(artifact_on),
                      st.session_state.get("hub_hide_members", False),
-                     tuple(sorted(highlight_ids)) if highlight_ids else None),
+                     tuple(sorted(highlight_ids)) if highlight_ids else None, SNAPSHOT_DATE),
                 build=lambda: C.site_reciprocity_scatter(d, floor=floor_val, highlight_ids=highlight_ids),
             )
             reading_line("col_reciprocity", mode=floor_choice, floor=fr_int(floor_val))
@@ -815,7 +830,10 @@ with col_consort:
         reading_line("col_consortium_bars", window=window_label())
         fig_consort = cached_figure(
             name="col_consortium_bars",
-            key=(tuple(cw_chart["member_label"].tolist()), CONF_STATE),
+            # S-LENS D3 fix: effective_subset/artifact_on/isite_overlay_on/snapshot added
+            # (same completeness audit as col_hub_companion).
+            key=(tuple(cw_chart["member_label"].tolist()), CONF_STATE, effective_subset,
+                 bool(artifact_on), isite_overlay_on, SNAPSHOT_DATE),
             build=lambda: C.bars_with_gutter(
                 cw_chart, family="partenaire", label_col="member_label",
                 value_col="co_works_distinct", color=H.UL_COLOR,
@@ -883,43 +901,55 @@ with tab_quadrant:
         if not dfq.empty:
             dfq["hover"] = _hover_col("col_momentum_quadrant", _quad_hover_mode, _quadrant_rows(dfq))
 
-        fig = go.Figure()
-        if not dfq.empty:
-            sizeref = _area_sizeref(dfq["co_works_full"])
-            for cls in ["ns", "stable", "down", "up"]:  # ns first: background, never hides others
-                d = dfq[dfq["mom_class"] == cls]
-                if d.empty:
-                    continue
-                label, sym = MOM_LABELS[cls]
+        def _build_quadrant_fig():
+            fig = go.Figure()
+            if not dfq.empty:
+                sizeref = _area_sizeref(dfq["co_works_full"])
+                for cls in ["ns", "stable", "down", "up"]:  # ns first: background, never hides others
+                    d = dfq[dfq["mom_class"] == cls]
+                    if d.empty:
+                        continue
+                    label, sym = MOM_LABELS[cls]
+                    fig.add_trace(go.Scatter(
+                        x=d["mom_w1_share"], y=d["mom_w2_share"], mode="markers",
+                        marker=dict(
+                            size=d["co_works_full"], sizemode="area", sizeref=sizeref, sizemin=3,
+                            color=MOM_COLORS[cls], line=dict(width=0.5, color="white"),
+                        ),
+                        name=f"{sym} {label} ({len(d)})",
+                        customdata=d["hover"], hovertemplate=hv.HOVERTEMPLATE,
+                    ))
+                xmin = float(dfq["mom_w1_share"].min())
+                xmax = float(dfq["mom_w1_share"].max())
+                xs = np.geomspace(max(xmin, 1e-4), max(xmax, xmin * 1.01, 1e-3), 60)
                 fig.add_trace(go.Scatter(
-                    x=d["mom_w1_share"], y=d["mom_w2_share"], mode="markers",
-                    marker=dict(
-                        size=d["co_works_full"], sizemode="area", sizeref=sizeref, sizemin=3,
-                        color=MOM_COLORS[cls], line=dict(width=0.5, color="white"),
-                    ),
-                    name=f"{sym} {label} ({len(d)})",
-                    customdata=d["hover"], hovertemplate=hv.HOVERTEMPLATE,
+                    x=xs, y=xs * median, mode="lines", line=dict(color="#333333", dash="dot"),
+                    name=f"médiane recentrée ({_fr_float(median, 4)})", hoverinfo="skip",
                 ))
-            xmin = float(dfq["mom_w1_share"].min())
-            xmax = float(dfq["mom_w1_share"].max())
-            xs = np.geomspace(max(xmin, 1e-4), max(xmax, xmin * 1.01, 1e-3), 60)
-            fig.add_trace(go.Scatter(
-                x=xs, y=xs * median, mode="lines", line=dict(color="#333333", dash="dot"),
-                name=f"médiane recentrée ({_fr_float(median, 4)})", hoverinfo="skip",
-            ))
-            band_x = list(xs) + list(xs[::-1])
-            band_y = list(xs * median * (1 + band_pct)) + list(xs[::-1] * median * (1 - band_pct))
-            fig.add_trace(go.Scatter(
-                x=band_x, y=band_y, fill="toself", fillcolor="rgba(51,51,51,0.08)",
-                line=dict(width=0), name=f"bande ±{band_pct * 100:.0f}%", hoverinfo="skip",
-            ))
-        # Item #7 (docs/YEAR_UPDATE_DESIGN.md S5.3: "the worst site is yours", L573-574):
-        # axis titles named FROM DATA (mom_w1_label/mom_w2_label), never hardcoded --
-        # after a period-window change the axes would otherwise state the wrong
-        # periods while plotting the right data, the most dangerous failure mode.
-        fig.update_xaxes(type=axis_type, title=f"Part fenêtre 1 ({mom_w1_label})")
-        fig.update_yaxes(type=axis_type, title=f"Part fenêtre 2 ({mom_w2_label})")
-        fig.update_layout(height=560, legend=dict(orientation="h", y=-0.15), margin=dict(t=20))
+                band_x = list(xs) + list(xs[::-1])
+                band_y = list(xs * median * (1 + band_pct)) + list(xs[::-1] * median * (1 - band_pct))
+                fig.add_trace(go.Scatter(
+                    x=band_x, y=band_y, fill="toself", fillcolor="rgba(51,51,51,0.08)",
+                    line=dict(width=0), name=f"bande ±{band_pct * 100:.0f}%", hoverinfo="skip",
+                ))
+            # Item #7 (docs/YEAR_UPDATE_DESIGN.md S5.3: "the worst site is yours", L573-574):
+            # axis titles named FROM DATA (mom_w1_label/mom_w2_label), never hardcoded --
+            # after a period-window change the axes would otherwise state the wrong
+            # periods while plotting the right data, the most dangerous failure mode.
+            fig.update_xaxes(type=axis_type, title=f"Part fenêtre 1 ({mom_w1_label})")
+            fig.update_yaxes(type=axis_type, title=f"Part fenêtre 2 ({mom_w2_label})")
+            fig.update_layout(height=560, legend=dict(orientation="h", y=-0.15), margin=dict(t=20))
+            return fig
+
+        # S-LENS D3 fix: quadrant now goes through fig_cache too, keyed on its OWN real
+        # dependencies -- CONF_STATE, q_floor, axis_type, snapshot. subset_id is
+        # hardcoded "all" in dfq's own filter (not a variable); momentum is artifact- AND
+        # I-SITE-overlay-EXEMPT by existing, documented design (MOMENTUM_EXEMPT_CAPTION_FR /
+        # MOMENTUM_ISITE_EXEMPT_FR below) -- correctly omitted, not missing.
+        fig = cached_figure(
+            name="col_momentum_quadrant", key=(CONF_STATE, q_floor, axis_type, SNAPSHOT_DATE),
+            build=_build_quadrant_fig,
+        )
         reading_line("col_momentum_quadrant", mode=_quad_hover_mode, window=window_label())
         st.plotly_chart(fig, width="stretch")
 
