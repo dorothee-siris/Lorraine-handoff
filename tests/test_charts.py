@@ -52,22 +52,43 @@ STREAMLIT_DIR = ROOT / "Streamlit"
 DATA_DIR = STREAMLIT_DIR / "data"
 CHARTS_FILE = STREAMLIT_DIR / "lib" / "charts.py"
 
-# F-SYSMOD (tests/conftest.py) : deux paquets nommes `lib` coexistent dans ce
-# depot ; le basculement doit avoir lieu AVANT `import lib.charts`, au niveau
-# MODULE (les decorateurs parametrize lisent les constantes).
+# F-SYSMOD (tests/conftest.py) : deux paquets nommes `lib` coexistent dans ce depot ;
+# le basculement doit avoir lieu AVANT `import lib.charts`, au niveau MODULE (les
+# decorateurs parametrize lisent les constantes).
+#
+# FIX-2 (inspection D1) : la restauration est IMMEDIATE, pas differee a
+# `teardown_module`. Un `sys.modules['lib']` laisse pointe sur `Streamlit/lib`
+# pendant toute la COLLECTE empoisonne les fichiers qui ont besoin du `lib` RACINE
+# (`test_contract_tables.py`, `test_invariants.py`, `test_pass6_data.py`,
+# `test_pass7_data.py` -> ModuleNotFoundError lib.snapshot) des que la suite entiere
+# est collectee : leur import de module tourne AVANT que le teardown de ce fichier
+# n'ait lieu. Les OBJETS deja importes (C, H, HV) restent lies dans cet espace de
+# noms -- seul `sys.modules` est rendu. Meme correctif que S-EVAL a applique a
+# `tests/test_chart_layout.py`.
 from conftest import restore_lib, swap_lib_to_streamlit  # noqa: E402
 
 _saved_lib_modules: dict = swap_lib_to_streamlit()
-
 import lib.charts as C    # noqa: E402
 import lib.helpers as H   # noqa: E402
 import lib.hover as HV    # noqa: E402
+restore_lib(_saved_lib_modules)  # restauree IMMEDIATEMENT -- pas de teardown_module differe
 
-import _registry as R     # noqa: E402  (tests/ meme -- pas de paquet, import nu)
+import _registry as R     # noqa: E402  (tests/ meme -- pas de paquet, import nu ;
+#                            n'importe `lib` que dans le corps de ses propres callables)
+
+# ... et le basculement est REFAIT pour la duree du RUN de ce fichier seulement : les
+# composeurs de trames appeles nus par ces tests (`R.frame_*`) font `from lib import
+# hover` dans leur corps, contrairement aux `R.build_*` qui basculent eux-memes.
+_saved_for_run: dict = {}
+
+
+def setup_module(_module) -> None:
+    global _saved_for_run
+    _saved_for_run = swap_lib_to_streamlit()
 
 
 def teardown_module(_module) -> None:
-    restore_lib(_saved_lib_modules)
+    restore_lib(_saved_for_run)
 
 
 HEX_RX = re.compile(r"#[0-9A-Fa-f]{6}\b")
