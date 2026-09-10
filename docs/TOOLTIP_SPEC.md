@@ -47,14 +47,15 @@ viennent de deux périmètres différents est un défaut, pas une réserve à é
 | FWCI sur moins de trois travaux couverts | la ligne FWCI n'est pas dessinée du tout |
 | Ratio reposant sur moins de dix travaux | le chiffre garde une dague, et le compte est montré à côté |
 | Paire sous le plancher de la relation | le compte conjoint lit « non affiché sous cinq co-publications », jamais zéro |
-| Volume propre du partenaire dérivé | une ligne drapeau le dit, et le côté droit porte la mention *(dérivé)* |
+| Volume propre du partenaire | une ligne drapeau nomme sa provenance : le décompte propre du partenaire sur ce nœud, jamais une projection de son poids de portefeuille |
 | FWCI ou publications phares du partenaire indisponibles | une ligne drapeau annonce la lecture à un seul côté |
 | Topic hors référentiel | une ligne drapeau, en écho à la teinte plus claire de la marque (P11) |
 | Topic que le plan ne peut pas placer | il n'est pas dessiné ; la légende en donne le nombre |
 | Pays du seau « non renseigné » | une ligne drapeau, pour qu'il ne se lise pas comme un pays |
 
-**Aucun chiffre dans un libellé.** La fenêtre, les périodes de la référence de frontière et
-les planchers viennent de la donnée ou des constantes de méthode (P6-R2) : un libellé qui les
+**Aucun chiffre dans un libellé, aucune constante retapée.** La fenêtre, les périodes de la
+référence de frontière, les planchers et le plafond d'identifiants d'une liste (`{max_ids}`,
+rempli depuis `links.IDLIST_MAX`) viennent de la donnée ou des constantes de méthode (P6-R2) : un libellé qui les
 écrirait à la main deviendrait faux à la première mise à jour. Là où un plancher doit être
 dit dans une phrase de réserve, il s'écrit **en mots** (« sous cinq co-publications ») : c'est
 une constante de méthode, pas une valeur lue, et la règle du chiffre littéral reste tenue.
@@ -62,8 +63,8 @@ une constante de méthode, pas une valeur lue, et la règle du chiffre littéral
 **Trois formats font le travail difficile.** `fwci_paire_2d` imprime médiane, moyenne et le
 nombre de travaux derrière elles sur une seule ligne, dague comprise — une ligne qui porte à
 la fois un chiffre et son propre plancher. `paire_volumes` met les deux volumes propres, de
-part et d'autre de la relation, sur une seule ligne, avec la mention *(dérivé)* du côté qui
-l'est : c'est ce qui permet aux barres miroir de tenir en sept lignes. `conjoint_ou_seuil`
+part et d'autre de la relation, sur une seule ligne : c'est ce qui permet aux barres miroir
+de tenir en sept lignes. `conjoint_ou_seuil`
 imprime le compte conjoint **ou** la phrase de plancher, jamais un zéro trompeur. Deux formats
 du registre — `dec_1` et `rang_partenaire` — sont définis mais pas encore consommés : ils
 appartiennent au vocabulaire de l'application, que la passe 7b étendra aux pages restantes.
@@ -78,9 +79,15 @@ entre les deux fenêtres quand elle est calculée. Sur le portage interne, la li
 est celle des travaux **sans** structure attribuée : elle dit que le rapport affiché a un
 dénominateur plus petit que la relation.
 
-**Nuages de réciprocité (page 8, page 9, page 6).** Les deux axes sont deux parts à
+**Nuages de réciprocité (page 8, page 9, page 6).** Les deux axes portent deux parts à
 dénominateurs différents ; c'est tout l'objet du graphique, et le survol nomme les deux
-dénominateurs plutôt que de les laisser deviner. Il ajoute ce que la géométrie cache : le
+dénominateurs plutôt que de les laisser deviner. Sur la page 9, les deux axes portent
+désormais deux **poids de portefeuille** de même nature — le poids du nœud chez l'UL et le
+poids du même nœud chez le partenaire (son décompte propre sur le nœud, rapporté à sa
+production sur la fenêtre) : c'est la condition pour que la diagonale « poids égal » veuille
+dire quelque chose. La *part de la production du partenaire qui implique l'UL* est une
+quantité différente, portée par les nuages de la page 6 sous son propre libellé, et elle
+n'est jamais tracée sur ces axes. Il ajoute ce que la géométrie cache : le
 volume derrière l'aire, la production propre du partenaire derrière la part verticale, et le
 drapeau de part plafonnée qui explique un carré à la place d'un disque. Sur la page 8, le
 plancher est un mode : la ligne de lecture du plancher bas prévient que les deux parts y sont
@@ -92,8 +99,10 @@ bruts, parce qu'une classe sans sa base ne peut pas être vérifiée. « Non sig
 une classe, jamais une absence de donnée, et les aides le disent dans ces mots-là.
 
 **Barres miroir (page 9).** Trois modes, trois quantités différentes sur la même géométrie :
-le survol est donc écrit **par mode**. En volume, il porte les trois volumes et les parts des
-deux portefeuilles, et il déclare le côté partenaire comme dérivé. En FWCI, il porte le FWCI
+le survol est donc écrit **par mode**. En volume, il porte les trois volumes et les
+poids des deux portefeuilles, et il nomme la provenance du côté partenaire : son propre
+décompte sur le nœud, diminué des co-publications — jamais une projection de son poids de
+portefeuille sur son volume total. En FWCI, il porte le FWCI
 conjoint (avec sa base) face au FWCI propre de l'UL, et déclare que le côté partenaire n'est
 pas disponible — la lecture est à un seul côté, et c'est dit dans le survol comme dans la
 ligne de lecture. En publications phares, même structure, même aveu du côté manquant, plus la
@@ -107,6 +116,10 @@ période contre la précédente — en verticale. Les deux composantes sont lues
 période disponible, dont les libellés viennent de la donnée (`{bin_prev}`, `{bin_last}`), et
 le score composite affiché ailleurs dans l'outil moyenne **toutes** les périodes : les deux ne
 se comparent pas, et `CAPTIONS["FRONTIER_VINTAGES"]` le dit sur chaque surface de frontière.
+La ligne « score de frontière de la dernière période » et le sélecteur « Frontière (dernière
+période) » portent donc la **composante** de la dernière période, jamais le composite — les
+deux se corrèlent sans se confondre, et le libellé du sélecteur nomme la période pour que la
+confusion ne puisse pas se réinstaller.
 Le sélecteur de topics est un mode, et sa seule conséquence est le biais de sélection : la
 ligne de lecture de chaque mode le nomme (un tri par FWCI fait monter des topics minces, un
 tri par publications phares favorise les topics volumineux).

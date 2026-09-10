@@ -200,16 +200,22 @@ charts:
         - {field: vol_ul_only, label: "travaux propres de chaque côté, hors relation",
            format: paire_volumes,
            note: "vol_ul_only et vol_partner_only sur une seule ligne ; le cote partenaire
-             vaut partner_total_windowed x baseline_partner_share - co_works, plancher a
-             zero, et porte la mention (derive) ; une valeur absente s'ecrit avec un tiret"}
-        - {field: partner_only_derived, label: "", format: drapeau,
-           when: "partner_only_derived vrai",
-           note: "phrase : volume du partenaire derive de sa part propre, non compte travail
-             par travail"}
+             vaut partner_node_total - co_works, plancher a zero, ou partner_node_total =
+             co_works / baseline_partner_share est le denominateur PAR NOEUD du decompte
+             partenaire (lens D1 : partner_total_windowed x baseline_partner_share etait la
+             mauvaise quantite) ; une valeur absente s'ecrit avec un tiret"}
+        - {field: partner_node_total, label: "", format: drapeau,
+           when: "partner_node_total non nul",
+           note: "phrase affichee : « volume propre du partenaire dans ce noeud, mesure sur
+             son propre decompte par noeud » -- la provenance est l'etape de decompte
+             partenaire, dont le NOM ne peut pas etre affiche (ban-list section 4) ; ce
+             volume n'est plus presente comme derive (lens D1)"}
         - {field: share_of_pair, label: "part de la relation", format: pct_1d}
         - {field: baseline_ul_share, label: "part du portefeuille propre de l'UL", format: pct_1d}
-        - {field: baseline_partner_share, label: "part du portefeuille propre du partenaire",
-           format: pct_1d, when: "baseline_partner_share non nul"}
+        - {field: partner_node_share,
+           label: "poids du nœud dans le portefeuille propre du partenaire",
+           format: pct_1d, when: "partner_node_share non nul",
+           note: "le poids de portefeuille du partenaire, calcule sur la page comme partner_node_total / partner_total_windowed (partner_node_total = co_works / baseline_partner_share) ; `baseline_partner_share` LUI-MEME est une part d'IMPLICATION (la production du partenaire sur ce noeud qui implique l'UL) et n'est pas affichee ici (lens D1/D2)"}
       "volume|sous_champ": *bb_volume
       "fwci|champ": &bb_fwci
         - {field: node_name, label: "", format: texte}
@@ -279,10 +285,12 @@ charts:
       - {field: acceleration, label: "accélération sur la dernière période", format: score_2d,
          note: "elan recent : dernier intervalle face au precedent"}
       - {field: co_works, label: "co-publications de la relation, tous types", format: entier}
-      - {field: frontier_score_std, label: "score de frontière de la dernière période",
-         format: score_2d, when: "frontier_score_std non nul",
-         note: "composante de la derniere periode -- distincte du score composite affiche
-           ailleurs dans l'outil, qui moyenne toutes les periodes"}
+      - {field: frontier, label: "score de frontière de la dernière période",
+         format: score_2d, when: "frontier non nul",
+         note: "COMPOSANTE de la derniere periode, lue dans la ligne is_latest de
+           dim_frontier_components (lens D6 : ptn_topics.frontier_score_std est le score
+           COMPOSITE moyenne sur toutes les periodes et ne doit pas alimenter cette ligne,
+           ni le tri du selecteur de frontiere)"}
       - {field: artifact_flag, label: "", format: drapeau, when: "artifact_flag vrai"}
 
   zoom_field_companion:
@@ -294,8 +302,10 @@ charts:
       - {field: co_works, label: "co-publications de la relation, tous types", format: entier}
       - {field: share_of_pair, label: "part de la relation", format: pct_1d}
       - {field: baseline_ul_share, label: "part du portefeuille propre de l'UL", format: pct_1d}
-      - {field: baseline_partner_share, label: "part du portefeuille propre du partenaire",
-         format: pct_1d, when: "baseline_partner_share non nul"}
+      - {field: partner_node_share,
+         label: "poids du nœud dans le portefeuille propre du partenaire",
+         format: pct_1d, when: "partner_node_share non nul",
+         note: "le poids de portefeuille du partenaire, calcule sur la page comme partner_node_total / partner_total_windowed (partner_node_total = co_works / baseline_partner_share) ; `baseline_partner_share` LUI-MEME est une part d'IMPLICATION (la production du partenaire sur ce noeud qui implique l'UL) et n'est pas affichee ici (lens D1/D2)"}
       - {field: lq_vs_ul,
          label: "intensité de la relation dans ce champ, rapportée au portefeuille de l'UL",
          format: score_2d, when: "lq_vs_ul non nul"}
@@ -312,8 +322,10 @@ charts:
       - {field: co_works, label: "co-publications de la relation, tous types", format: entier}
       - {field: share_of_pair, label: "part de la relation", format: pct_1d}
       - {field: baseline_ul_share, label: "part du portefeuille propre de l'UL", format: pct_1d}
-      - {field: baseline_partner_share, label: "part du portefeuille propre du partenaire",
-         format: pct_1d, when: "baseline_partner_share non nul"}
+      - {field: partner_node_share,
+         label: "poids du nœud dans le portefeuille propre du partenaire",
+         format: pct_1d, when: "partner_node_share non nul",
+         note: "le poids de portefeuille du partenaire, calcule sur la page comme partner_node_total / partner_total_windowed (partner_node_total = co_works / baseline_partner_share) ; `baseline_partner_share` LUI-MEME est une part d'IMPLICATION (la production du partenaire sur ce noeud qui implique l'UL) et n'est pas affichee ici (lens D1/D2)"}
       - {field: mom_class, label: "tendance entre les deux fenêtres", format: texte,
          when: "mom_eligible_flag vrai"}
 
@@ -339,9 +351,11 @@ charts:
       - {field: node_name, label: "", format: texte}
       - {field: field_name, label: "champ", format: texte, when: "niveau sous-champ"}
       - {field: baseline_ul_share, label: "part du portefeuille propre de l'UL", format: pct_1d}
-      - {field: baseline_partner_share, label: "part du portefeuille propre du partenaire",
+      - {field: partner_node_share,
+         label: "poids du nœud dans le portefeuille propre du partenaire",
          format: pct_1d,
-         note: "seul denominateur disponible : le corpus entier du partenaire, tous types"}
+         note: "AXE HORIZONTAL. le poids de portefeuille du partenaire, calcule sur la page comme partner_node_total / partner_total_windowed (partner_node_total = co_works / baseline_partner_share) ; `baseline_partner_share` LUI-MEME est une part d'IMPLICATION (la production du partenaire sur ce noeud qui implique l'UL) et n'est pas affichee ici (lens D1/D2) -- la diagonale « poids egal » ne compare deux poids de
+           meme nature qu'a cette condition"}
       - {field: co_works, label: "co-publications de la relation, tous types", format: entier}
       - {field: share_of_pair, label: "part de la relation", format: pct_1d}
       - {field: domain_name, label: "domaine", format: texte}
@@ -569,4 +583,4 @@ tiles:
     help_lines:
       - "Co-publications de la relation situées dans le décile le plus cité de leur propre strate française, sur {window}."
       - "Strate : sous-champ × année de publication × type de document ; articles et revues seulement, et seuls les travaux dont l'indicateur est calculé entrent au numérateur comme au dénominateur."
-      - "La flèche ouvre la liste vivante de ces publications ; au-delà de cent identifiants elle ouvre la liste des co-publications les plus citées, qui est un substitut d'accès et non la règle du décile."
+      - "La flèche ouvre la liste vivante de ces publications ; au-delà de {max_ids} identifiants elle ouvre la liste des co-publications les plus citées, qui est un substitut d'accès et non la règle du décile."

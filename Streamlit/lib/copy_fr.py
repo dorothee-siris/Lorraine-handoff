@@ -29,7 +29,12 @@ CONTRAT (BUILD_PLAN P2/P3, ruling P7-R6)
     - `{bin_prev}` / `{bin_last}` libelles des deux dernieres periodes de la
       reference de frontiere, nommes depuis la donnee ;
     - `{floor}`      plancher de co-publications du controle en vigueur ;
-    - `{n_hidden}`   nombre de lignes ecartees faute de mesure disponible.
+    - `{n_hidden}`   nombre de lignes affichees dont la mesure partenaire manque ;
+    - `{max_ids}`    plafond d'identifiants d'une liste (`links.IDLIST_MAX`), jamais retape
+      en mots (lens D14).
+  `KPI_HELP` et `CAPTIONS` portent aussi des trous : ils sont declares dans
+  `KPI_PLACEHOLDERS` et `CAPTION_PLACEHOLDERS`, sur le meme contrat que READING (une page
+  qui affiche l'un de ces textes appelle `.format(**fills)` avec exactement ces cles).
 * AUCUNE valeur de donnee, AUCUNE annee, AUCUN chiffre litteral (hors jetons de
   liste blanche : « top 10 % », « >= 10 »), AUCUN terme de la ban-list
   (`docs/contract_fragments/narrative_banlist.txt`) : les planchers dont le
@@ -119,13 +124,14 @@ READING: dict[str, dict[str, str]] = {
         "volume|champ": (
             "Une ligne par champ : au centre les co-publications de la relation, de part et "
             "d'autre les travaux propres de chaque établissement hors relation. Le côté "
-            "partenaire est dérivé de sa part propre appliquée à sa production sur {window}, "
-            "il n'est pas compté travail par travail."
+            "partenaire est mesuré sur le décompte propre du partenaire dans ce nœud, jamais "
+            "projeté depuis le poids de ce nœud dans son portefeuille."
         ),
         "volume|sous_champ": (
             "Les mêmes trois volumes sur les sous-champs les plus fournis de la relation, "
-            "classés par volume conjoint. {n_hidden} sous-champs dont le poids propre du "
-            "partenaire n'est pas mesuré sont écartés de la vue."
+            "classés par volume conjoint. Parmi eux, {n_hidden} n'ont pas de volume "
+            "partenaire mesuré : leur côté droit reste vide, et ils gardent leur volume "
+            "conjoint."
         ),
         "fwci|champ": (
             "Une ligne par champ : le FWCI médian des co-publications de la relation, face à "
@@ -136,7 +142,8 @@ READING: dict[str, dict[str, str]] = {
         "fwci|sous_champ": (
             "Même lecture sur les sous-champs les plus fournis de la relation, où les strates "
             "sont plus minces : un écart y bascule avec quelques travaux, et une cellule sous "
-            "son plancher n'affiche pas de valeur."
+            "son plancher n'affiche pas de valeur. Parmi les sous-champs affichés, {n_hidden} "
+            "n'ont pas de mesure du côté partenaire."
         ),
         "phares|champ": (
             "Une ligne par champ : les publications phares de la relation, face à celles du "
@@ -145,7 +152,9 @@ READING: dict[str, dict[str, str]] = {
         ),
         "phares|sous_champ": (
             "Même lecture sur les sous-champs les plus fournis de la relation ; sous le "
-            "plancher de la relation, le compte n'est pas affiché plutôt que ramené à zéro."
+            "plancher de la relation, le compte n'est pas affiché plutôt que ramené à zéro. "
+            "Parmi les sous-champs affichés, {n_hidden} n'ont pas de mesure du côté "
+            "partenaire."
         ),
     },
     "zoom_plane_impact": {
@@ -161,9 +170,10 @@ READING: dict[str, dict[str, str]] = {
             "cette lecture."
         ),
         "frontiere": (
-            "Mêmes axes, sélection différente : les topics au score de frontière le plus "
-            "élevé, un critère indépendant du volume comme de la citation. Un topic peut donc "
-            "être émergent et peu cité."
+            "Mêmes axes, sélection différente : les topics dont la composante de frontière "
+            "de la dernière période disponible est la plus élevée, un critère indépendant du "
+            "volume comme de la citation. Ce n'est pas le score composite moyenné sur toutes "
+            "les périodes, qui est affiché ailleurs dans l'outil."
         ),
         "phares": (
             "Mêmes axes, sélection différente : les topics portant le plus de publications "
@@ -185,8 +195,9 @@ READING: dict[str, dict[str, str]] = {
         ),
         "frontiere": (
             "Mêmes axes : l'expansion de longue durée en horizontale, l'élan récent "
-            "({bin_prev} face à {bin_last}) en verticale. La sélection retient les topics au "
-            "score de frontière le plus élevé, mesuré sur la dernière période disponible."
+            "({bin_prev} face à {bin_last}) en verticale. La sélection retient les topics "
+            "dont la composante de frontière de la dernière période est la plus élevée, "
+            "jamais le score composite moyenné sur toutes les périodes."
         ),
         "phares": (
             "Mêmes axes : l'expansion de longue durée en horizontale, l'élan récent "
@@ -216,13 +227,13 @@ READING: dict[str, dict[str, str]] = {
         "champ": (
             "Chaque bulle est un champ : l'axe horizontal donne le poids de ce champ dans le "
             "portefeuille propre de {partenaire}, l'axe vertical son poids dans le portefeuille "
-            "propre de l'UL. La diagonale marque un poids identique des deux côtés, et l'aire "
-            "suit le volume conjoint."
+            "propre de l'UL — deux poids de même nature, c'est ce qui rend la diagonale "
+            "lisible. L'aire suit le volume conjoint."
         ),
         "sous_champ": (
-            "Les mêmes deux poids sur les sous-champs les plus fournis de la relation ; "
-            "{n_hidden} sous-champs dont le poids propre du partenaire n'est pas mesuré sont "
-            "écartés de la vue."
+            "Les mêmes deux poids sur les sous-champs les plus fournis de la relation. Parmi "
+            "les sous-champs affichés, {n_hidden} n'ont pas de poids partenaire mesuré et ne "
+            "portent donc pas de bulle."
         ),
     },
     "zoom_portage": {
@@ -330,7 +341,7 @@ READING_PLACEHOLDERS: dict[str, tuple[str, ...]] = {
     "col_momentum_quadrant": ("window",),
     "zoom_yearly": ("partenaire",),
     "zoom_share_spark": ("partenaire",),
-    "zoom_balance_bars": ("window", "partenaire", "n_hidden"),
+    "zoom_balance_bars": ("partenaire", "n_hidden"),
     "zoom_plane_impact": (),
     "zoom_plane_frontier": ("bin_prev", "bin_last"),
     "zoom_field_companion": (),
@@ -346,6 +357,33 @@ READING_PLACEHOLDERS: dict[str, tuple[str, ...]] = {
     "lab_sdg_bars": (),
     "pf_sdg_bars": (),
     "pf_sdg_peers_scatter": (),
+}
+
+
+# Trous attendus par les aides de tuile et par les legendes (meme contrat que
+# READING_PLACEHOLDERS : la page appelle `.format(**fills)` avec exactement ces cles).
+KPI_PLACEHOLDERS: dict[str, tuple[str, ...]] = {
+    'col_kpi_partners': ('window',),
+    'col_kpi_intl': ('window',),
+    'col_kpi_company': ('window',),
+    'col_kpi_collab': ('window',),
+    'zoom_kpi_copubs': ('window',),
+    'zoom_kpi_share_ul': ('window',),
+    'zoom_kpi_share_p': ('window',),
+    'zoom_kpi_fwci': (),
+    'zoom_kpi_isite': ('window',),
+    'zoom_kpi_momentum': ('window',),
+    'zoom_kpi_phares': ('window', 'max_ids'),
+}
+
+CAPTION_PLACEHOLDERS: dict[str, tuple[str, ...]] = {
+    'PHARES_PROXY': ('max_ids',),
+    'DERIVED_PARTNER_VOLUME': (),
+    'FRONTIER_VINTAGES': (),
+    'SUBFIELD_NULL_SHARE': (),
+    'PLANE_UNSCORED': (),
+    'THIN_PARTNER': (),
+    'JOINT_UNDER_FLOOR': (),
 }
 
 # ---------------------------------------------------------------------------
@@ -427,7 +465,7 @@ KPI_HELP: dict[str, str] = {
         "strate française, sur {window}. Strate : sous-champ × année de publication × type de "
         "document ; articles et revues seulement, et seuls les travaux dont l'indicateur est "
         "calculé entrent au numérateur comme au dénominateur. La flèche ouvre la liste vivante "
-        "de ces publications ; au-delà de cent identifiants elle ouvre la liste des "
+        "de ces publications ; au-delà de {max_ids} identifiants elle ouvre la liste des "
         "co-publications les plus citées, qui est un substitut d'accès et non la règle du décile."
     ),
 }
@@ -437,14 +475,15 @@ KPI_HELP: dict[str, str] = {
 # ---------------------------------------------------------------------------
 CAPTIONS: dict[str, str] = {
     "PHARES_PROXY": (
-        "Au-delà de cent identifiants, le lien ouvre la liste des co-publications les plus "
+        "Au-delà de {max_ids} identifiants, le lien ouvre la liste des co-publications les plus "
         "citées de la relation, et non le décile lui-même : c'est un substitut d'accès, jamais "
         "la définition de l'indicateur."
     ),
     "DERIVED_PARTNER_VOLUME": (
-        "Le volume propre du partenaire par nœud est dérivé de sa part propre appliquée à sa "
-        "production sur la fenêtre, puis diminué des co-publications ; il n'est jamais compté "
-        "travail par travail, et il est ramené à zéro plutôt que rendu négatif."
+        "Le volume propre du partenaire par nœud vient de son propre décompte sur ce nœud, "
+        "diminué des co-publications ; il n'est pas projeté depuis le poids de ce nœud dans "
+        "son portefeuille. Quand ce décompte manque, le côté partenaire reste vide plutôt que "
+        "ramené à zéro."
     ),
     "FRONTIER_VINTAGES": (
         "Deux lectures de la frontière cohabitent, et ne se comparent pas : le score composite "
@@ -453,9 +492,10 @@ CAPTIONS: dict[str, str] = {
         "nommée avec le graphique."
     ),
     "SUBFIELD_NULL_SHARE": (
-        "Les sous-champs pour lesquels le poids propre du partenaire n'est pas mesuré sont "
-        "écartés de la vue plutôt que ramenés à zéro ; leur nombre est indiqué avec le "
-        "graphique."
+        "Le nombre annoncé compte les sous-champs AFFICHÉS pour lesquels la mesure du côté "
+        "partenaire manque : ils gardent leur volume conjoint et leur côté lorrain, et leur "
+        "côté partenaire reste vide. Les sous-champs situés au-delà de la coupe ne sont pas "
+        "comptés là : la coupe est un choix d'affichage, pas une donnée manquante."
     ),
     "PLANE_UNSCORED": (
         "Les topics que le plan ne peut pas placer, faute de score disponible, ne sont pas "
@@ -483,7 +523,7 @@ LABELS: dict[str, object] = {
     "PLANE_SELECT": {
         "volume": "Volume conjoint",
         "fwci": "FWCI médian (réf. France)",
-        "frontiere": "Score de frontière",
+        "frontiere": "Frontière (dernière période)",
         "phares": "Publications phares",
     },
     "PHARES": "publications phares (top 10 % France)",
@@ -583,7 +623,7 @@ HOVER_LABELS: dict[str, dict[str, list[str]]] = {
             '',
             'part de la relation',
             "part du portefeuille propre de l'UL",
-            'part du portefeuille propre du partenaire',
+            'poids du nœud dans le portefeuille propre du partenaire',
         ],
         'volume|sous_champ': [
             '',
@@ -592,7 +632,7 @@ HOVER_LABELS: dict[str, dict[str, list[str]]] = {
             '',
             'part de la relation',
             "part du portefeuille propre de l'UL",
-            'part du portefeuille propre du partenaire',
+            'poids du nœud dans le portefeuille propre du partenaire',
         ],
         'fwci|champ': [
             '',
@@ -713,7 +753,7 @@ HOVER_LABELS: dict[str, dict[str, list[str]]] = {
             'co-publications de la relation, tous types',
             'part de la relation',
             "part du portefeuille propre de l'UL",
-            'part du portefeuille propre du partenaire',
+            'poids du nœud dans le portefeuille propre du partenaire',
             "intensité de la relation dans ce champ, rapportée au portefeuille de l'UL",
             'tendance entre les deux fenêtres',
         ],
@@ -725,7 +765,7 @@ HOVER_LABELS: dict[str, dict[str, list[str]]] = {
             'co-publications de la relation, tous types',
             'part de la relation',
             "part du portefeuille propre de l'UL",
-            'part du portefeuille propre du partenaire',
+            'poids du nœud dans le portefeuille propre du partenaire',
             'tendance entre les deux fenêtres',
         ],
     },
@@ -742,7 +782,7 @@ HOVER_LABELS: dict[str, dict[str, list[str]]] = {
             '',
             'champ',
             "part du portefeuille propre de l'UL",
-            'part du portefeuille propre du partenaire',
+            'poids du nœud dans le portefeuille propre du partenaire',
             'co-publications de la relation, tous types',
             'part de la relation',
             'domaine',
@@ -751,7 +791,7 @@ HOVER_LABELS: dict[str, dict[str, list[str]]] = {
             '',
             'champ',
             "part du portefeuille propre de l'UL",
-            'part du portefeuille propre du partenaire',
+            'poids du nœud dans le portefeuille propre du partenaire',
             'co-publications de la relation, tous types',
             'part de la relation',
             'domaine',
@@ -886,4 +926,3 @@ HOVER_LABELS: dict[str, dict[str, list[str]]] = {
         ],
     },
 }
-

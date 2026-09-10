@@ -245,10 +245,16 @@ def _holes(text: str) -> set[str]:
     return {f for _, f, _, _ in string.Formatter().parse(text) if f}
 
 
-def offenders_placeholders(reading: dict, declared: dict) -> list[str]:
+def _texts_of(value) -> list[str]:
+    """READING est {cle: {mode: texte}} ; KPI_HELP et CAPTIONS sont {cle: texte}."""
+    return list(value.values()) if isinstance(value, dict) else [value]
+
+
+def offenders_placeholders(texts: dict, declared: dict) -> list[str]:
     out = []
-    for key, modes in reading.items():
-        used = set().union(*(_holes(t) for t in modes.values())) if modes else set()
+    for key, value in texts.items():
+        bodies = _texts_of(value)
+        used = set().union(*(_holes(t) for t in bodies)) if bodies else set()
         decl = set(declared.get(key, ()))
         for hole in sorted(used - decl):
             out.append(f"{key} : trou {{{hole}}} non declare dans READING_PLACEHOLDERS")
@@ -436,18 +442,50 @@ def test_hover_labels_equal_the_yaml() -> None:
     assert offenders_hover_labels(SPEC, COPY.HOVER_LABELS) == []
 
 
-def test_every_placeholder_is_documented_and_used() -> None:
-    assert offenders_placeholders(COPY.READING, COPY.READING_PLACEHOLDERS) == []
+PLACEHOLDER_SURFACES = ("READING", "KPI_HELP", "CAPTIONS")
 
 
-def test_reading_texts_format_with_their_declared_holes() -> None:
-    """Le contrat de `reading_text` est `.format(**fills)` : chaque texte doit se rendre
-    avec les seuls trous declares, sans KeyError ni accolade orpheline."""
-    for key, modes in COPY.READING.items():
-        fills = {h: "X" for h in COPY.READING_PLACEHOLDERS[key]}
-        for mode, text in modes.items():
+def _surface(name: str) -> tuple[dict, dict]:
+    declared = {"READING": "READING_PLACEHOLDERS", "KPI_HELP": "KPI_PLACEHOLDERS",
+                "CAPTIONS": "CAPTION_PLACEHOLDERS"}[name]
+    return getattr(COPY, name), getattr(COPY, declared)
+
+
+@pytest.mark.parametrize("surface", PLACEHOLDER_SURFACES)
+def test_every_placeholder_is_documented_and_used(surface: str) -> None:
+    texts, declared = _surface(surface)
+    assert offenders_placeholders(texts, declared) == []
+
+
+@pytest.mark.parametrize("surface", PLACEHOLDER_SURFACES)
+def test_texts_format_with_their_declared_holes(surface: str) -> None:
+    """Contrat commun de `reading_text` et des aides/legendes : `.format(**fills)` avec les
+    seuls trous declares, sans KeyError ni accolade orpheline."""
+    texts, declared = _surface(surface)
+    for key, value in texts.items():
+        fills = {h: "X" for h in declared[key]}
+        for i, text in enumerate(_texts_of(value)):
             rendered = text.format(**fills)
-            assert "{" not in rendered and "}" not in rendered, f"{key} [{mode}] : {rendered!r}"
+            assert "{" not in rendered and "}" not in rendered, f"{key} [{i}] : {rendered!r}"
+
+
+def test_no_constant_is_retyped_in_words() -> None:
+    """lens D14 : `links.IDLIST_MAX` etait retape « cent identifiants » a trois endroits ;
+    une phrase qui reecrit une constante devient fausse en silence."""
+    bad = [f"{n} : {t[:80]!r}" for n, t in displayed_strings(COPY)
+           if "cent identifiant" in t.lower()]
+    assert bad == [], bad
+
+
+def test_partner_weight_and_involvement_share_are_never_confused() -> None:
+    """lens D1/D2 : « part du portefeuille propre du partenaire » nommait, selon la ligne,
+    un poids de portefeuille OU une part d'implication. Les deux libelles sont desormais
+    distincts, et l'ancien libelle ambigu ne doit plus exister."""
+    labels = [lb for modes in COPY.HOVER_LABELS.values() for lbs in modes.values()
+              for lb in lbs]
+    assert "part du portefeuille propre du partenaire" not in labels
+    assert any(lb.startswith("poids du n") for lb in labels), "le poids de portefeuille a disparu"
+    assert any("qui implique l" in lb for lb in labels), "la part d'implication a disparu"
 
 
 def test_required_captions_and_labels_exist() -> None:
@@ -591,6 +629,32 @@ def test_vacuity_placeholders() -> None:
     mutated[key]["default"] = mutated[key]["default"] + " Fenetre : {window}."
     assert offenders_placeholders(mutated, COPY.READING_PLACEHOLDERS), \
         "un trou non declare doit etre signale"
+    # aides et legendes : meme controle, meme mutation
+    kpi = dict(COPY.KPI_HELP)
+    kpi["zoom_kpi_fwci"] = kpi["zoom_kpi_fwci"] + " Plafond : {max_ids}."
+    assert offenders_placeholders(kpi, COPY.KPI_PLACEHOLDERS)
+    caps = dict(COPY.CAPTIONS)
+    caps["THIN_PARTNER"] = caps["THIN_PARTNER"] + " Plancher : {floor}."
+    assert offenders_placeholders(caps, COPY.CAPTION_PLACEHOLDERS)
+    # un trou declare mais jamais employe est signale aussi
+    assert offenders_placeholders(COPY.CAPTIONS, {**COPY.CAPTION_PLACEHOLDERS,
+                                                 "THIN_PARTNER": ("floor",)})
+
+
+def test_vacuity_retyped_constant() -> None:
+    assert offenders_narrative(displayed_strings(COPY)) == []
+    fake = [("CAPTIONS", "Au-dela de cent identifiants, le lien ouvre autre chose.")]
+    bad = [f"{n} : {t[:80]!r}" for n, t in fake if "cent identifiant" in t.lower()]
+    assert bad, "l epingle D14 doit attraper une constante retapee en mots"
+
+
+def test_vacuity_partner_label_split() -> None:
+    labels = [lb for modes in COPY.HOVER_LABELS.values() for lbs in modes.values()
+              for lb in lbs]
+    assert "part du portefeuille propre du partenaire" not in labels
+    assert "part du portefeuille propre du partenaire" in (
+        labels + ["part du portefeuille propre du partenaire"]
+    ), "controle inverse : la chaine cherchee est bien detectable quand elle est presente"
 
 
 def test_vacuity_narrative() -> None:
