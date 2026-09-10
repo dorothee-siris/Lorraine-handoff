@@ -116,7 +116,8 @@ def test_orphan_guard_is_not_vacuous(tmp_path):
 # ============================================================================
 
 # Seeded 2026-09-10 (P12/S7): every @st.cache_data(...) app-wide, over a parametrised
-# function (>=1 non-underscore param), that does NOT pass max_entries= today (12 total).
+# function (>=1 non-underscore param), that does NOT pass max_entries= today (10 total --
+# 12 seeded, 2 removed by S-SDG/W3: the page-2 S1 lines now carry max_entries=64).
 # RATCHET below: every entry here must still exist AND still violate, or the test fails
 # -- a fixed entry left in this list is caught, not silently tolerated.
 EXEMPT: set[tuple[str, str]] = {
@@ -126,9 +127,7 @@ EXEMPT: set[tuple[str, str]] = {
     ("lib/thematic.py", "_recompute_sublevels"),
     ("pages/2_🏭_Laboratoires.py", "_load_table"),
     ("pages/2_🏭_Laboratoires.py", "_lab_set"),
-    ("pages/2_🏭_Laboratoires.py", "_lab_works_slice"),  # S1 (P12): S-SDG lands max_entries=64 in W3
     ("pages/2_🏭_Laboratoires.py", "recomputed_structure_counts"),
-    ("pages/2_🏭_Laboratoires.py", "_lab_wordcloud_slice"),  # S1 (P12): S-SDG lands max_entries=64 in W3
     ("pages/4_🔬_Portefeuille_thématique.py", "_load_table"),
     ("pages/4_🔬_Portefeuille_thématique.py", "sdg_assignments"),
     ("pages/5_📍_Positionnement.py", "_load_table"),

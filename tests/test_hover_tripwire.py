@@ -180,8 +180,12 @@ def _path_for(relkey: str) -> Path:
 # VIZ_SPEC_pass6.md §0.1) -- seules 5 pages violent encore. Retirez votre
 # ligne des que votre page/lib est migree vers lib/hover.py.
 # ---------------------------------------------------------------------------
+# S-SDG (pass 7a, W2): pages/2 removed 2026-09-10 -- its only violation was the
+# lab_sdg_bars hovertemplate (`%{x:.1f}`), now customdata + HOVERTEMPLATE; the scanner
+# itself confirms zero remaining offenders on this page. pages/4 STAYS: the SDG bar +
+# peers-scatter sites are fixed, but the page's many OTHER charts (treemap, boxplots,
+# zero-fill tables, specialisation view) are untouched this pass -- 7b's job.
 EXEMPT_PAGES: set[str] = {
-    "pages/2_🏭_Laboratoires.py",
     "pages/4_🔬_Portefeuille_thématique.py",
     "pages/5_📍_Positionnement.py",
     "pages/6_🔎_Exploration_thématique.py",

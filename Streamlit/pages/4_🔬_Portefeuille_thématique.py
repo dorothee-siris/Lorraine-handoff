@@ -38,7 +38,9 @@ from lib.data_cache import (
 )
 from lib.thematic import excluded_counts_from_facts, get_overview, get_treemap
 from lib import controls, exports
-from lib.overlay import darken
+from lib.overlay import darken, GROUPED_LEGEND_INK
+from lib.hover import hover_lines, HOVERTEMPLATE
+from lib import copy_fr
 from lib.links import openalex_url
 from lib.ranked import ranked_table, fr_int, fr_pct
 from lib.helpers import (
@@ -64,6 +66,7 @@ from lib.helpers import (
     window_label,
     FR_THIN_SPACE,
     MOMENTUM_GLYPHS,
+    SDG_LABELS_FR, sdg_color, darken_hex, SDG_TEXT_DARKEN,
 )
 
 # =============================================================================
@@ -978,33 +981,8 @@ if _ARTIFACT_ON and _n_topics_dropped_artifact:
 # =============================================================================
 # Section 6: Sustainable Development Goals (D51)
 # =============================================================================
-# R12: presentational text -> FR. Official UN French SDG titles (a controlled,
-# published vocabulary with a standard FR translation -- unlike the OpenAlex
-# taxonomy names elsewhere on this page, which stay English per R12's own named
-# exception because no such standard FR form exists for them).
-SDG_NAMES = {
-    1: "Pas de pauvreté",
-    2: "Faim « zéro »",
-    3: "Bonne santé et bien-être",
-    4: "Éducation de qualité",
-    5: "Égalité entre les sexes",
-    6: "Eau propre et assainissement",
-    7: "Énergie propre et d'un coût abordable",
-    8: "Travail décent et croissance économique",
-    9: "Industrie, innovation et infrastructure",
-    10: "Inégalités réduites",
-    11: "Villes et communautés durables",
-    12: "Consommation et production responsables",
-    13: "Mesures relatives à la lutte contre les changements climatiques",
-    14: "Vie aquatique",
-    15: "Vie terrestre",
-    16: "Paix, justice et institutions efficaces",
-    17: "Partenariats pour la réalisation des objectifs",
-}
-
-# One flat hue: this is one series (publications per goal), so identity is carried
-# by the axis labels, not by colour. Sequential-by-value would encode rank twice.
-SDG_BAR_COLOR = "#3E7CB1"
+# SDG identity (P17): SDG_LABELS_FR / sdg_color / darken_hex / SDG_TEXT_DARKEN now come
+# from lib.helpers (single source, S-LIB-B) -- the page-local dict + flat hue are retired.
 
 
 @st.cache_data
@@ -1095,15 +1073,28 @@ de configuration, il ne demande aucune reconstruction.)*
     if counts.empty:
         st.info("Aucune attribution ODD avec la méthode sélectionnée.")
     else:
-        labels = [f"SDG {i} · {SDG_NAMES.get(i, '')}" for i in counts.index]
+        labels = [SDG_LABELS_FR.get(i, f"ODD {i}") for i in counts.index]
+        _share_of_corpus_pf = counts.values / corpus_total * 100
+        _hl_pf_sdg = copy_fr.HOVER_LABELS["pf_sdg_bars"]["default"]
+        _customdata_pf_sdg = [
+            hover_lines([
+                (_hl_pf_sdg[0], lab),
+                (_hl_pf_sdg[1], fr_int(n)),
+                (_hl_pf_sdg[2], fr_pct(share)),
+                (_hl_pf_sdg[3], sdg_label()),
+            ])
+            for lab, n, share in zip(labels, counts.values, _share_of_corpus_pf)
+        ]
         fig_sdg = go.Figure(go.Bar(
             y=labels,
             x=counts.values,
             orientation="h",
-            marker_color=SDG_BAR_COLOR,
-            text=[f"{v:,}" for v in counts.values],
+            marker_color=[sdg_color(i) for i in counts.index],
+            text=[fr_int(v) for v in counts.values],
             textposition="outside",
-            hovertemplate="<b>%{y}</b><br>Publications : %{x:,}<extra></extra>",
+            textfont=dict(color=GROUPED_LEGEND_INK),
+            customdata=_customdata_pf_sdg,
+            hovertemplate=HOVERTEMPLATE,
         ))
         fig_sdg.update_layout(
             height=max(400, len(counts) * 28 + 120),
@@ -1192,7 +1183,7 @@ st.markdown(
 _sdg_pick_labs = st.selectbox(
     "Objectif de développement durable :",
     list(range(1, 17)),
-    format_func=lambda i: f"ODD {i} · {SDG_NAMES.get(i, '')}",
+    format_func=lambda i: SDG_LABELS_FR.get(i, f"ODD {i}"),
     key="sdg_labs_pick",
 )
 _sdg_labs_rows = _sdg_methods_state[_sdg_methods_state["sdg"] == _sdg_pick_labs].copy()
@@ -1286,33 +1277,76 @@ st.caption(
     "qui porte la liste des topics exclus.]"
 )
 
-_FOCAL_BLUE_SDG = "#0072B2"
-_sdg_label_order = [f"ODD {i} · {SDG_NAMES.get(i, '')}" for i in range(1, 18)]
-_bsdg["sdg_label"] = _bsdg["sdg"].map(lambda i: f"ODD {int(i)} · {SDG_NAMES.get(int(i), '')}")
+_sdg_label_order = [SDG_LABELS_FR.get(i, f"ODD {i}") for i in range(1, 18)]
+_bsdg["sdg_label"] = _bsdg["sdg"].map(lambda i: SDG_LABELS_FR.get(int(i), f"ODD {int(i)}"))
 # Re-sliced AFTER sdg_label is added -- _ul_row_sdg above was captured for the caption
 # only, before this column existed, and must not be reused for the chart traces.
 _ul_row_sdg = _bsdg[_bsdg["rung"] == "FOCAL"]
 
-fig_bsdg = go.Figure()
+def _sdg_chip_legend(goals: list[int]) -> None:
+    """Legend chip strip above the peers-scatter (VIZ_SPEC_pass7 §5.20 -- 17 marks is
+    above the direct-label budget). Text colour is the ONE SDG-specific exception to the
+    app's usual neutral chip ink: darken_hex(sdg_color(n), SDG_TEXT_DARKEN) clears 4.5:1
+    for all 17 goals (§3.1), where the app's generic legend text stays neutral ink."""
+    chips = "".join(
+        f'<span style="display:inline-flex;align-items:center;margin-right:14px;margin-bottom:4px;">'
+        f'<span style="width:12px;height:12px;background:{sdg_color(g)};border-radius:3px;'
+        f'margin-right:6px;"></span>'
+        f'<span style="font-size:12px;color:{darken_hex(sdg_color(g), SDG_TEXT_DARKEN)};">'
+        f'{SDG_LABELS_FR.get(g, f"ODD {g}")}</span></span>'
+        for g in goals
+    )
+    st.markdown(f'<div style="margin:4px 0 10px 0;">{chips}</div>', unsafe_allow_html=True)
+
+
+_sdg_goals_present = sorted(int(g) for g in _bsdg["sdg"].unique())
+_sdg_chip_legend(_sdg_goals_present)
+st.caption(
+    ":grey[◆ Université de Lorraine · ● pairs — la forme distingue l'établissement, la "
+    "couleur code l'objectif (jamais l'établissement).]"
+)
+
 _peer_rows_sdg = _bsdg[_bsdg["rung"] != "FOCAL"]
+_hl_bsdg = copy_fr.HOVER_LABELS["pf_sdg_peers_scatter"]["default"]
+
+
+def _bsdg_hover(rows: pd.DataFrame) -> list[str]:
+    return [
+        hover_lines([
+            (_hl_bsdg[0], name),
+            (_hl_bsdg[1], lab),
+            (_hl_bsdg[2], fr_pct(share)),
+            (_hl_bsdg[3], str(rung)),
+        ])
+        for name, lab, share, rung in zip(
+            rows["entity_name"], rows["sdg_label"], rows["share_of_entity_works"] * 100, rows["rung"],
+        )
+    ]
+
+
+fig_bsdg = go.Figure()
 fig_bsdg.add_trace(go.Scatter(
     x=_peer_rows_sdg["share_of_entity_works"] * 100, y=_peer_rows_sdg["sdg_label"], mode="markers",
-    marker=dict(color=controls.DEFERRED_GREY, size=8, line=dict(width=0.5, color="white")),
-    customdata=_peer_rows_sdg["entity_name"],
-    hovertemplate="<b>%{customdata}</b><br>Part : %{x:.1f}%<extra></extra>",
+    marker=dict(color=[sdg_color(g) for g in _peer_rows_sdg["sdg"]], size=8,
+                line=dict(width=0.5, color="white")),
+    customdata=_bsdg_hover(_peer_rows_sdg),
+    hovertemplate=HOVERTEMPLATE,
     name=f"Pairs ({fr_int(_peer_rows_sdg['entity_id'].nunique())})",
+    showlegend=False,
 ))
 fig_bsdg.add_trace(go.Scatter(
     x=_ul_row_sdg["share_of_entity_works"] * 100, y=_ul_row_sdg["sdg_label"], mode="markers",
-    marker=dict(color=_FOCAL_BLUE_SDG, size=11, symbol="diamond", line=dict(width=0.5, color="white")),
-    hovertemplate="<b>Université de Lorraine</b><br>Part : %{x:.1f}%<extra></extra>",
+    marker=dict(color=[sdg_color(g) for g in _ul_row_sdg["sdg"]], size=11, symbol="diamond",
+                line=dict(width=0.5, color="white")),
+    customdata=_bsdg_hover(_ul_row_sdg),
+    hovertemplate=HOVERTEMPLATE,
     name="Université de Lorraine",
+    showlegend=False,
 ))
 fig_bsdg.update_layout(
     xaxis=dict(title="Part du total de l'entité (%)", showgrid=True, gridcolor="#e0e0e0"),
     yaxis=dict(title="", categoryorder="array", categoryarray=list(reversed(_sdg_label_order))),
     height=640, margin=dict(t=10, l=10, r=10, b=40), template="plotly_white",
-    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
 )
 st.plotly_chart(fig_bsdg, use_container_width=True)
 exports.attach_download(

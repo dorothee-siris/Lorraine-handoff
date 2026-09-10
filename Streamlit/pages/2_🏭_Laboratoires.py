@@ -30,8 +30,10 @@ from lib.data_cache import get_structures_df, get_topics_df, get_pubs_slim, get_
 from lib.app_config import get_app_config
 from lib.thematic import excluded_counts_from_facts
 from lib import controls, exports
-from lib.overlay import overlay_bars, overlay_grouped_bars, GROUPED_BARS_HOWTOREAD_FR
+from lib.overlay import overlay_bars, overlay_grouped_bars, GROUPED_BARS_HOWTOREAD_FR, GROUPED_LEGEND_INK
 from lib.ranked import ranked_table
+from lib.hover import hover_lines, HOVERTEMPLATE
+from lib import copy_fr
 from lib.lazy import read_keyed
 from lib.links import openalex_url, link_icon_html
 from lib.countries_fr import country_label
@@ -49,6 +51,7 @@ from lib.helpers import (
     get_field_id_to_domain_id,
     # Colors
     get_domain_color, get_field_color,
+    SDG_LABELS_FR, sdg_color,
     # Parsers
     safe_int, safe_float,
     parse_pipe_int_list, parse_pipe_float_list,
@@ -90,20 +93,8 @@ _STRUCTURE_TYPE_FR = {
     "lab": "Laboratoire", "other": "Autre", "experimental": "Expérimental", "department": "Pôle",
 }
 
-# Official UN French SDG titles (a controlled, published vocabulary — same list used
-# verbatim on pages/4_*.py's own ODD panel; duplicated here rather than imported
-# because importing another PAGE module would re-execute its whole Streamlit script).
-SDG_NAMES = {
-    1: "Pas de pauvreté", 2: "Faim « zéro »", 3: "Bonne santé et bien-être",
-    4: "Éducation de qualité", 5: "Égalité entre les sexes",
-    6: "Eau propre et assainissement", 7: "Énergie propre et d'un coût abordable",
-    8: "Travail décent et croissance économique",
-    9: "Industrie, innovation et infrastructure", 10: "Inégalités réduites",
-    11: "Villes et communautés durables", 12: "Consommation et production responsables",
-    13: "Mesures relatives à la lutte contre les changements climatiques",
-    14: "Vie aquatique", 15: "Vie terrestre",
-    16: "Paix, justice et institutions efficaces",
-}
+# SDG identity (P17): SDG_LABELS_FR / sdg_color now come from lib.helpers (single
+# source, S-LIB-B) — the page-local duplicate dict is retired.
 
 # ============================================================================
 # DATA LOADING
@@ -159,7 +150,7 @@ def _lab_set(table_name: str) -> frozenset:
     return frozenset(df["lab"].unique()) if "lab" in df.columns else frozenset()
 
 
-@st.cache_data
+@st.cache_data(max_entries=64)
 def _lab_works_slice(lab_key: str) -> pd.DataFrame:
     """Per-lab lazy slice of lab_works.parquet (predicate pushdown via
     lib.lazy.read_keyed) -- the source for every per-indicator download on the
@@ -495,7 +486,7 @@ def _term_domain_map() -> dict:
     return mapping
 
 
-@st.cache_data
+@st.cache_data(max_entries=64)
 def _lab_wordcloud_slice(lab_key: str, level: str) -> pd.DataFrame:
     df = _load_table("lab_wordcloud")
     out = df[(df["lab"] == lab_key) & (df["level"] == level)]
@@ -1378,13 +1369,26 @@ else:
     if _valid.empty:
         st.info(f"{selected_structure} : aucun ODD au-dessus du seuil de fiabilité pour cette méthode.")
     else:
-        _labels_sdg = [f"ODD {int(i)} · {SDG_NAMES.get(int(i), '')}" for i in _valid["sdg"]]
+        _labels_sdg = [SDG_LABELS_FR.get(int(i), f"ODD {int(i)}") for i in _valid["sdg"]]
+        _n_col_sdg = "n_siris" if _is_siris else "n_aurora"
+        _hl_lab_sdg = copy_fr.HOVER_LABELS["lab_sdg_bars"]["default"]
+        _customdata_lab_sdg = [
+            hover_lines([
+                (_hl_lab_sdg[0], lab),
+                (_hl_lab_sdg[1], fr_pct(share * 100)),
+                (_hl_lab_sdg[2], fr_int(n) if pd.notna(n) else None),
+                (_hl_lab_sdg[3], _method_pick),
+            ])
+            for lab, share, n in zip(_labels_sdg, _valid[_share_col], _valid[_n_col_sdg])
+        ]
         fig_sdg = go.Figure(go.Bar(
             y=_labels_sdg, x=(_valid[_share_col] * 100).round(1), orientation="h",
-            marker_color="#3E7CB1",
+            marker_color=[sdg_color(i) for i in _valid["sdg"]],
             text=[fr_pct(v) for v in (_valid[_share_col] * 100)],
             textposition="outside",
-            hovertemplate="<b>%{y}</b><br>Part : %{x:.1f}%<extra></extra>",
+            textfont=dict(color=GROUPED_LEGEND_INK),
+            customdata=_customdata_lab_sdg,
+            hovertemplate=HOVERTEMPLATE,
         ))
         fig_sdg.update_layout(
             height=max(320, len(_valid) * 28 + 80), margin=dict(t=10, l=10, r=60, b=10),
