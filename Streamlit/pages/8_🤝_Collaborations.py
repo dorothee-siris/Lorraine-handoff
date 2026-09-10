@@ -81,7 +81,8 @@ from lib import links
 from lib.countries_fr import country_label
 from lib.data_cache import DATA_DIR, get_corpus_facts_df
 from lib.fig_cache import cached_figure
-from lib.helpers import fr_int, fr_pct, log_linear_toggle, momentum_display, window_label
+from lib.helpers import (MOMENTUM_DOWN_COLOR, MOMENTUM_NEUTRAL_COLOR, MOMENTUM_STABLE_COLOR, MOMENTUM_UP_COLOR,
+                         TEXT_PRIMARY, fr_int, fr_pct, log_linear_toggle, momentum_display, window_label)
 from lib.reading import reading_line
 
 # =============================================================================
@@ -184,7 +185,7 @@ MOM_LABELS = {
     "new": ("nouveau partenaire", "＋"),
     "dormant": ("partenaire dormant", "◦"),
 }
-MOM_COLORS = {"up": "#009E73", "down": "#D55E00", "stable": "#5A5F66", "ns": "#8C9196"}
+MOM_COLORS = {"up": MOMENTUM_UP_COLOR, "down": MOMENTUM_DOWN_COLOR, "stable": MOMENTUM_STABLE_COLOR, "ns": MOMENTUM_NEUTRAL_COLOR}
 
 # Fixed order (indicator_plan_FINAL.md §0 decision summary), NOT the deployed table's own
 # row order -- consortium_weights carries 7 EXTERNAL members (id_set_size 1/1/1/1/1/3/6),
@@ -923,7 +924,7 @@ with tab_quadrant:
                 xmax = float(dfq["mom_w1_share"].max())
                 xs = np.geomspace(max(xmin, 1e-4), max(xmax, xmin * 1.01, 1e-3), 60)
                 fig.add_trace(go.Scatter(
-                    x=xs, y=xs * median, mode="lines", line=dict(color="#333333", dash="dot"),
+                    x=xs, y=xs * median, mode="lines", line=dict(color=TEXT_PRIMARY, dash="dot"),
                     name=f"médiane recentrée ({_fr_float(median, 4)})", hoverinfo="skip",
                 ))
                 band_x = list(xs) + list(xs[::-1])

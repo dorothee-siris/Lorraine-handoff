@@ -110,7 +110,6 @@ EXEMPT_PAGES: set[str] = {
     "pages/5_📍_Positionnement.py",
     "pages/6_🔎_Exploration_thématique.py",
     "pages/7_🎯_I-SITE.py",
-    "pages/8_🤝_Collaborations.py",
     "pages/12_👤_Profil_auteur.py",
     "pages/13_🪪_Identifiants_et_couverture.py",
     "pages/14_🧭_Benchmark.py",

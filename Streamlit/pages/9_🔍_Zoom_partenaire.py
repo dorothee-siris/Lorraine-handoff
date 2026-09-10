@@ -785,6 +785,7 @@ else:
             )
             st.plotly_chart(fig_imp, width="stretch")
         reading.reading_line("zoom_plane_impact", plane_mode)
+        st.caption(copy_fr.CAPTIONS["TOPIC_LIVE_DRIFT"])
         if imp_dropped:
             st.caption(_caption("PLANE_UNSCORED"))
     with p_col2:
@@ -800,6 +801,7 @@ else:
         # FIX-1 D7: bin labels read live from the table, never typed as a page constant.
         _bin_last, _bin_prev = PF.latest_and_previous_bin_labels(_load_frontier_components())
         reading.reading_line("zoom_plane_frontier", plane_mode, bin_prev=_bin_prev, bin_last=_bin_last)
+        st.caption(copy_fr.CAPTIONS["TOPIC_LIVE_DRIFT"])
         if fr_dropped:
             st.caption(_caption("PLANE_UNSCORED"))
     st.caption(_caption("FRONTIER_VINTAGES"))
@@ -1308,6 +1310,7 @@ else:
     )
     st.plotly_chart(fig_portage, width="stretch")
     reading.reading_line("zoom_portage")
+    st.caption(copy_fr.CAPTIONS["TOPIC_LIVE_DRIFT"])
     if not portage_expanded and len(top20) > PORTAGE_DEFAULT_N:
         if st.button("afficher plus", key="v2_portage_more_btn"):
             st.session_state["v2_portage_expanded"] = True
