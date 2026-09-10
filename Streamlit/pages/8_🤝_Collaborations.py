@@ -73,9 +73,16 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from lib import controls, exports, overlay, ranked
+from lib import charts as C
+from lib import copy_fr
+from lib import helpers as H
+from lib import hover as hv
+from lib import links
 from lib.countries_fr import country_label
 from lib.data_cache import DATA_DIR, get_corpus_facts_df
+from lib.fig_cache import cached_figure
 from lib.helpers import fr_int, fr_pct, log_linear_toggle, momentum_display, window_label
+from lib.reading import reading_line
 
 # =============================================================================
 # Page config
@@ -184,7 +191,88 @@ MOM_COLORS = {"up": "#009E73", "down": "#D55E00", "stable": "#5A5F66", "ns": "#8
 # not the plan's rounded "8" (UL itself is excluded from this satellite by construction).
 CONSORTIUM_ORDER = ["CNRS", "INRAE", "AgroParisTech", "Inserm", "CHRU Nancy", "Georgia Tech", "Inria"]
 
-HUB_BASE_COLOR = "#0072B2"  # shared base hue for the hub's companion overlay bar chart
+HUB_BASE_COLOR = H.UL_COLOR  # pass 7a (P1): token, not a literal -- hub + consortium bars
+RECIP_CAPPED_FLAG_TEXT = (
+    "part propre plafonnée — le dénominateur mesuré du partenaire est plus petit que la "
+    "relation elle-même"
+)
+
+
+def _hover_col(chart_key: str, mode: str, rows) -> list:
+    """Production-side mirror of tests/_registry.py's own `_hover_col` helper: one
+    pre-formatted hover string per row, labels from `copy_fr.HOVER_LABELS` (single
+    source, equality-checked against docs/tooltip_spec.yaml by test_hover_spec.py),
+    values already formatted by lib.hover -- never a raw value, never a format spec."""
+    labels = list(copy_fr.HOVER_LABELS[chart_key][mode])
+    return [hv.hover_lines(list(zip(labels, values))) for values in rows]
+
+
+def _hub_companion_rows(d: pd.DataFrame, co_col: str, share_ul_col: str,
+                        fwci_med_col: str, fwci_mean_col: str, isite_on: bool):
+    for _, r in d.iterrows():
+        share_p_val = r["share_p"]
+        yield (
+            r["display_name"],
+            hv.fmt_int(r[co_col]),
+            hv.fmt_pct(float(r[share_ul_col]) * 100.0),
+            (hv.fmt_pct_dagger(float(share_p_val) * 100.0, int(r["works_with_indicators"] or 0))
+             if pd.notna(share_p_val) else None),
+            hv.fmt_fwci_pair(r[fwci_med_col], r[fwci_mean_col], int(r["works_with_indicators"] or 0)),
+            (hv.fmt_int(int(r["n_phares"])) if pd.notna(r["n_phares"]) and r["n_phares"] > 0 else None),
+            (hv.fmt_int(int(r["isite_co_works"])) if isite_on else None),
+            (country_label(r["country_code"]) if pd.notna(r["country_code"]) else "—"),
+        )
+
+
+def _reciprocity_rows(d: pd.DataFrame):
+    """`d` already carries `share_ul`/`share_p` on the 0-100 SCALE (overwritten in
+    place, matching tests/_registry.py::frame_site_reciprocity's own convention)."""
+    for _, r in d.iterrows():
+        yield (
+            r["display_name"],
+            hv.fmt_pct(float(r["share_ul"])),
+            hv.fmt_pct_dagger(float(r["share_p"]), int(r["works_with_indicators"] or 0)),
+            (RECIP_CAPPED_FLAG_TEXT if bool(r.get("share_p_capped_flag") or False) else None),
+            hv.fmt_int(r["co_works_full"]),
+            (hv.fmt_int(int(r["partner_total_windowed"]))
+             if pd.notna(r["partner_total_windowed"]) else None),
+            str(r["type_openalex"]),
+            (country_label(r["country_code"]) if pd.notna(r["country_code"]) else "—"),
+        )
+
+
+def _consortium_rows(d: pd.DataFrame):
+    for _, r in d.iterrows():
+        yield (
+            r["member_label"],
+            hv.fmt_int(r["co_works_distinct"]),
+            hv.fmt_pct(float(r["share_of_scope"]) * 100.0),
+            (MOM_LABELS.get(str(r["mom_class"]), (str(r["mom_class"]), ""))[0]
+             if r["mom_class"] is not None else None),
+        )
+
+
+def _quadrant_rows(d: pd.DataFrame):
+    for _, r in d.iterrows():
+        elig = r.get("mom_eligible_flag")
+        elig_bool = bool(elig) if pd.notna(elig) else False
+        yield (
+            r["display_name"],
+            hv.fmt_pct(float(r["mom_w1_share"]) * 100.0),
+            hv.fmt_pct(float(r["mom_w2_share"]) * 100.0),
+            MOM_LABELS.get(str(r["mom_class"]), (str(r["mom_class"]), ""))[0],
+            (_fr_float(r["mom_p_value"], 3) if elig_bool else None),
+            _mom_copubs_display(r["mom_count_arrow"]),
+            hv.fmt_int(r["co_works_full"]),
+        )
+
+
+# Page-workbook sheets (P16) -- set inside each section below when it actually renders;
+# stay empty (never recomputed, never guessed) when a section's own gate keeps it off.
+_workbook_hub_df = pd.DataFrame()
+_workbook_recip_df = pd.DataFrame()
+_workbook_consortium_df = pd.DataFrame()
+_workbook_quadrant_df = pd.DataFrame()
 
 
 def _fr_float(val, decimals: int = 2) -> str:
@@ -199,22 +287,22 @@ def _fr_float(val, decimals: int = 2) -> str:
 # Data (this page reads ptn_summary / ptn_mom_facts / consortium_weights -- eager per
 # data_contract.yaml: ptn_summary "eager pin", consortium_weights "eager_load: true")
 # =============================================================================
-@st.cache_resource
+@st.cache_data(ttl=1800, max_entries=2)
 def _load_ptn_summary() -> pd.DataFrame:
     return pd.read_parquet(DATA_DIR / "ptn_summary.parquet")
 
 
-@st.cache_resource
+@st.cache_data(ttl=1800, max_entries=2)
 def _load_ptn_mom_facts() -> pd.DataFrame:
     return pd.read_parquet(DATA_DIR / "ptn_mom_facts.parquet")
 
 
-@st.cache_resource
+@st.cache_data(ttl=1800, max_entries=2)
 def _load_consortium_weights() -> pd.DataFrame:
     return pd.read_parquet(DATA_DIR / "consortium_weights.parquet")
 
 
-@st.cache_resource
+@st.cache_data(ttl=1800, max_entries=2)
 def _load_ptn_denominators() -> pd.DataFrame:
     """Item #39/P4 -- one row per partner_id, (all,all)-basis share families
     (docs/data_contract.yaml #49). Page 8 only reads the France-hors-site share; the
@@ -300,6 +388,11 @@ _EXPORT_STATE_EXEMPT = exports.ExportState(
 ptn_all = _load_ptn_summary()
 ptn_active = ptn_all[(ptn_all["subset_id"] == effective_subset) & (ptn_all["conf_state"] == CONF_STATE)].copy()
 CO_COL = controls.xa(ptn_active, "co_works_full")
+# pass 7a: resolved once, reused by both the table (below) and the new hover builders
+# (_hub_companion_rows) so the two never drift on which artifact-toggle variant they read.
+SHARE_UL_COL = controls.xa(ptn_active, "share_ul")
+FWCI_MED_COL = controls.xa(ptn_active, "fwci_fr_median")
+FWCI_MEAN_COL = controls.xa(ptn_active, "fwci_fr_mean")
 
 # Momentum facts (ptn_mom_facts), loaded ONCE and shared by the hub table's quantified
 # momentum column (S8.3) and the quadrant tab below -- mom_w1_label/mom_w2_label (S-DAT,
@@ -331,11 +424,17 @@ collab_works = float(_fv("corpus_collaborative_works"))
 pct_collab = (collab_works / corpus_works * 100) if corpus_works else float("nan")
 france_intl = float(_frow["france_intl_share"]) * 100
 
+_kpi_window = window_label()
 c1, c2, c3, c4 = st.columns(4)
-c1.metric("Partenaires (≥10 co-publications)", fr_int(n_partners_ge10))
-c2.metric("% travaux internationaux", fr_pct(pct_intl), help=f"Repère France : {fr_pct(france_intl)}")
-c3.metric("% travaux avec une entreprise", fr_pct(pct_company))
-c4.metric("% travaux collaboratifs", fr_pct(pct_collab) if not math.isnan(pct_collab) else "n/a")
+c1.metric("Partenaires (≥10 co-publications)", fr_int(n_partners_ge10),
+          help=copy_fr.KPI_HELP["col_kpi_partners"].format(window=_kpi_window))
+c2.metric("% travaux internationaux", fr_pct(pct_intl),
+          help=copy_fr.KPI_HELP["col_kpi_intl"].format(window=_kpi_window))
+c3.metric("% travaux avec une entreprise", fr_pct(pct_company),
+          help=copy_fr.KPI_HELP["col_kpi_company"].format(window=_kpi_window))
+c4.metric("% travaux collaboratifs", fr_pct(pct_collab) if not math.isnan(pct_collab) else "n/a",
+          help=copy_fr.KPI_HELP["col_kpi_collab"].format(window=_kpi_window))
+st.caption(f":grey[Repère France (% international) : {fr_pct(france_intl)}.]")
 if effective_subset != "all":
     st.caption(
         ":grey[Les trois dernières tuiles portent sur le corpus entier ; seul le nombre "
@@ -371,6 +470,13 @@ _base_sorted = _base[_base[CO_COL] >= floor].sort_values(CO_COL, ascending=False
 _base_sorted = _base_sorted.merge(
     _load_ptn_denominators()[["partner_id", "share_of_ul_france_copubs_hors_site"]],
     on="partner_id", how="left",
+)
+# pass 7a (col_hub_companion, VIZ_SPEC_pass7 §5.1): one pre-formatted hover string per
+# row, computed once here so both the table's hidden column and the companion chart
+# below read the identical string (never rebuilt, never drifting).
+_base_sorted["hover"] = _hover_col(
+    "col_hub_companion", "default",
+    _hub_companion_rows(_base_sorted, CO_COL, SHARE_UL_COL, FWCI_MED_COL, FWCI_MEAN_COL, isite_overlay_on),
 )
 
 if _n_below_floor:
@@ -435,9 +541,12 @@ else:
         ],
         # VIZ_SPEC_pass6 S8.3's hidden companion column: "Co-pubs (P1 -> P2)".
         "mom_copubs": _base_sorted["mom_count_arrow"].apply(_mom_copubs_display),
+        # pass 7a (col_hub_companion): pre-formatted hover, hidden from the on-screen
+        # table (mean_cols below) but carried on `visible` for the companion chart.
+        "hover": _base_sorted["hover"],
     })
 
-    _hidden_cols = ["partner_id", "fwci_mean_text", "mom_copubs"]  # R14 mean-hidden + S8.3 pair
+    _hidden_cols = ["partner_id", "fwci_mean_text", "mom_copubs", "hover"]  # R14 mean-hidden + S8.3 pair + pass-7a hover
     if not isite_overlay_on:
         # R1 overlay-off neutrality: the ISITE decomposition columns disappear entirely
         # when the global toggle is off, same as the companion chart below.
@@ -519,22 +628,24 @@ else:
         st.caption(f":grey[**{FRANCE_HORS_SITE_COL_LABEL_FR}.** {FRANCE_HORS_SITE_HELP_FR}]")
     st.caption(HUB_TABLE_ZOOM_POINTER_FR)
 
-    # -- Companion overlay bar chart (R1, docs/OVERLAY_MATRIX.md §8: ptn_summary.isite_co_works
-    # is the reference "EXISTING (same-row)" case this whole pass generalises from) -- the
-    # currently visible partners (mask + query + depth already applied by ranked_table()),
-    # capped for legibility (LEGIBILITY_BUDGETS convention already used elsewhere on this page).
+    _workbook_hub_df = visible
+
+    # -- Companion chart (col_hub_companion, VIZ_SPEC_pass7 §5.1; R1/OVERLAY_MATRIX §8:
+    # ptn_summary.isite_co_works is the reference "EXISTING (same-row)" case this pass
+    # generalises from) -- the currently visible partners (mask + query + depth already
+    # applied by ranked_table()), capped for legibility (LEGIBILITY_BUDGETS convention).
     chart_rows = visible.head(HUB_CHART_CAP).sort_values("co_works", ascending=True)
     if not chart_rows.empty:
         st.markdown("###### Volume des partenaires affichés")
-        fig_hub = overlay.overlay_bars(
-            categories=chart_rows["display_name"].tolist(),
-            totals=chart_rows["co_works"].tolist(),
-            isite=chart_rows["isite_co_works"].tolist(),
-            colors=HUB_BASE_COLOR, isite_on=isite_overlay_on, orientation="h",
-        )
-        fig_hub.update_layout(
-            height=max(220, 26 * len(chart_rows)), margin=dict(t=10, l=10, r=20, b=30),
-            xaxis_title="Co-publications", showlegend=isite_overlay_on,
+        reading_line("col_hub_companion", window=window_label())
+        fig_hub = cached_figure(
+            name="col_hub_companion",
+            key=(tuple(chart_rows["partner_id"].tolist()), isite_overlay_on),
+            build=lambda: C.bars_with_gutter(
+                chart_rows, family="partenaire", label_col="display_name", value_col="co_works",
+                color=H.UL_COLOR, hover_col="hover",
+                isite_col=("isite_co_works" if isite_overlay_on else None), isite_on=isite_overlay_on,
+            ),
         )
         st.plotly_chart(fig_hub, width="stretch")
         if isite_overlay_on:
@@ -590,20 +701,58 @@ col_recip, col_consort = st.columns(2)
 
 with col_recip:
     st.markdown("### Réciprocité")
-    st.caption(
-        "Ce panneau ne porte pas encore de graphique : la mesure existe -- elle est "
-        "visible dans la colonne « Part partenaire » du tableau ci-dessus -- mais sa "
-        "représentation visuelle n'est pas encore construite."
-    )
     if CONF_STATE == "all" and effective_subset == "all":
-        _n_recip = int(ptn_active["share_p"].notna().sum())
-        st.success(
-            f"La part du partenaire est mesurée pour {fr_int(_n_recip)} des "
-            f"{fr_int(len(ptn_active))} partenaires de ce périmètre : elle demande, pour "
-            "chacun, le volume propre du partenaire hors périmètre lorrain. Les "
-            "partenaires pour lesquels cette mesure n'existe pas affichent « — », "
-            "jamais un zéro."
+        # col_reciprocity (VIZ_SPEC_pass7 §5.2, P7-R3(a)) -- share_p/share_ul are only
+        # populated on this exact (all,all) basis (same gate the old disclosure used).
+        floor_choice = st.radio(
+            "Plancher (réciprocité)", options=["p20", "p10"],
+            format_func=lambda k: "≥ 20 co-publications" if k == "p20" else "≥ 10 co-publications",
+            horizontal=True, key="col_recip_floor",
         )
+        floor_val = 20 if floor_choice == "p20" else 10
+        _recip_pool = ptn_all[(ptn_all["subset_id"] == "all") & (ptn_all["conf_state"] == "all")]
+        _recip_pool = _recip_pool[_recip_pool["co_works_full"] >= floor_val]
+        # A NULL/zero share_p or share_ul cannot be PLACED on either axis -- dropped and
+        # counted below, never plotted at zero (VIZ_SPEC_pass7 §5.2 empty/thin rule).
+        _placeable = _recip_pool[
+            _recip_pool["share_p"].notna() & _recip_pool["share_ul"].notna()
+            & (_recip_pool["share_p"] > 0) & (_recip_pool["share_ul"] > 0)
+        ].reset_index(drop=True)
+        _n_recip_missing = len(_recip_pool) - len(_placeable)
+
+        # highlight-plus-mute (§2.4): the hub table's OWN query box, read back from its
+        # widget key -- never a second search box on this panel.
+        _hub_query_now = st.session_state.get("hub_query", "")
+        if _hub_query_now:
+            _matched = ranked.filter_by_query(_placeable, _hub_query_now, ["display_name"])
+            highlight_ids = frozenset(_matched["partner_id"].astype(str)) or None
+        else:
+            highlight_ids = None
+
+        if _placeable.empty:
+            st.info("Aucun partenaire plaçable à ce plancher.")
+        else:
+            d = _placeable.copy()
+            d["share_ul"] = d["share_ul"] * 100.0
+            d["share_p"] = d["share_p"] * 100.0
+            d["hover"] = _hover_col("col_reciprocity", floor_choice, _reciprocity_rows(d))
+            _workbook_recip_df = d
+
+            fig_recip = cached_figure(
+                name="col_reciprocity",
+                key=(floor_val, CONF_STATE, effective_subset,
+                     st.session_state.get("hub_hide_members", False),
+                     tuple(sorted(highlight_ids)) if highlight_ids else None),
+                build=lambda: C.site_reciprocity_scatter(d, floor=floor_val, highlight_ids=highlight_ids),
+            )
+            reading_line("col_reciprocity", mode=floor_choice, floor=fr_int(floor_val))
+            st.plotly_chart(fig_recip, width="stretch")
+            if _n_recip_missing:
+                st.caption(
+                    f":grey[{fr_int(_n_recip_missing)} partenaire(s) au-delà de ce plancher sans "
+                    "poids partenaire mesuré, non représenté(s) -- jamais placé(s) à zéro.]"
+                )
+            exports.attach_download(st, d, "v1-collaboration", "reciprocity", _EXPORT_STATE)
     else:
         st.caption(SHARE_P_NULL_BY_DESIGN_FR)
 
@@ -618,6 +767,7 @@ with col_consort:
     cw_isite["_order"] = cw_isite["member"].astype(str).map({m: i for i, m in enumerate(CONSORTIUM_ORDER)}).fillna(99)
     cw_isite = cw_isite.sort_values("_order")
 
+    _consort_chart_rows = []
     for _, r in cw_isite.iterrows():
         with st.container(border=True):
             cc1, cc2 = st.columns([3, 2])
@@ -634,14 +784,44 @@ with col_consort:
                     "La variante de référence reste une décision de l'établissement.]"
                 )
             _match = ptn_active[ptn_active["display_name"].str.lower() == str(r["member_label"]).lower()]
+            _mom_class_val = None
             if int(r["id_set_size"]) == 1 and not _match.empty:
-                if st.button("→ Ouvrir la fiche partenaire", key=f"consort_open_{r['member']}"):
-                    pid = _match.iloc[0]["partner_id"]
-                    st.session_state["nav_partner_id"] = pid
-                    st.query_params["partner_id"] = pid
+                _pid = _match.iloc[0]["partner_id"]
+                if pd.notna(_match.iloc[0]["mom_class"]):
+                    _mom_class_val = str(_match.iloc[0]["mom_class"])
+                bcol, lcol = st.columns([3, 1])
+                if bcol.button("→ Ouvrir la fiche partenaire", key=f"consort_open_{r['member']}"):
+                    st.session_state["nav_partner_id"] = _pid
+                    st.query_params["partner_id"] = _pid
                     st.switch_page("pages/9_🔍_Zoom_partenaire.py")
+                with lcol:
+                    # KPI ↗ link (deliverable 3): single-id members only -- multi-id
+                    # unions keep the "pas de fiche unique" caption below, unchanged.
+                    links.link_icon(links.copubs_url(_pid))
             else:
                 st.caption(":grey[Regroupe plusieurs identifiants -- pas de fiche partenaire unique.]")
+            _consort_chart_rows.append({
+                "member_label": str(r["member_label"]),
+                "co_works_distinct": float(r["co_works_distinct"]),
+                "share_of_scope": float(r["share_of_scope"]),
+                "mom_class": _mom_class_val,
+            })
+
+    cw_chart = pd.DataFrame(_consort_chart_rows)
+    if not cw_chart.empty:
+        cw_chart["hover"] = _hover_col("col_consortium_bars", "default", _consortium_rows(cw_chart))
+        _workbook_consortium_df = cw_isite.drop(columns="_order")
+        st.markdown("###### Volume des signataires")
+        reading_line("col_consortium_bars", window=window_label())
+        fig_consort = cached_figure(
+            name="col_consortium_bars",
+            key=(tuple(cw_chart["member_label"].tolist()), CONF_STATE),
+            build=lambda: C.bars_with_gutter(
+                cw_chart, family="partenaire", label_col="member_label",
+                value_col="co_works_distinct", color=H.UL_COLOR,
+            ),
+        )
+        st.plotly_chart(fig_consort, width="stretch")
 
     st.caption(CONSORTIUM_CAPTION_FR)
     if artifact_on:
@@ -697,6 +877,12 @@ with tab_quadrant:
         dfq = dfq[dfq["_inwin"] >= q_floor].copy()
         dfq = dfq[(dfq["mom_w1_share"] > 0) & (dfq["mom_w2_share"] > 0)]
 
+        # pass 7a hover grammar (col_momentum_quadrant, P2/P14): one pre-formatted string
+        # per point, computed once on the whole frame before the per-class slicing below.
+        _quad_hover_mode = "log" if axis_type == "log" else "lineaire"
+        if not dfq.empty:
+            dfq["hover"] = _hover_col("col_momentum_quadrant", _quad_hover_mode, _quadrant_rows(dfq))
+
         fig = go.Figure()
         if not dfq.empty:
             sizeref = _area_sizeref(dfq["co_works_full"])
@@ -712,21 +898,7 @@ with tab_quadrant:
                         color=MOM_COLORS[cls], line=dict(width=0.5, color="white"),
                     ),
                     name=f"{sym} {label} ({len(d)})",
-                    # VIZ_SPEC_pass6 S0.1: hovertemplate format specs are locale-blind
-                    # (%{customdata:.3f} renders "0.030", an English decimal point in a
-                    # FR UI) -- pre-format the p-value into customdata, bare %{} in the
-                    # template, no format spec.
-                    customdata=np.stack(
-                        [
-                            d["display_name"], d["mom_count_arrow"].fillna(""),
-                            d["mom_p_value"].apply(lambda p: _fr_float(p, 3) if pd.notna(p) else "n/a"),
-                        ],
-                        axis=-1,
-                    ),
-                    hovertemplate=(
-                        "<b>%{customdata[0]}</b><br>Fenêtre 1→2 : %{customdata[1]}"
-                        "<br>p=%{customdata[2]}<extra></extra>"
-                    ),
+                    customdata=d["hover"], hovertemplate=hv.HOVERTEMPLATE,
                 ))
             xmin = float(dfq["mom_w1_share"].min())
             xmax = float(dfq["mom_w1_share"].max())
@@ -748,22 +920,13 @@ with tab_quadrant:
         fig.update_xaxes(type=axis_type, title=f"Part fenêtre 1 ({mom_w1_label})")
         fig.update_yaxes(type=axis_type, title=f"Part fenêtre 2 ({mom_w2_label})")
         fig.update_layout(height=560, legend=dict(orientation="h", y=-0.15), margin=dict(t=20))
+        reading_line("col_momentum_quadrant", mode=_quad_hover_mode, window=window_label())
         st.plotly_chart(fig, width="stretch")
 
         _counts = {c: int((dfq["mom_class"] == c).sum()) for c in ["up", "down", "stable", "ns"]}
         st.caption(
             f"{fr_int(len(dfq))} partenaire(s) au seuil ≥{fr_int(q_floor)} co-publications en fenêtre -- "
             + ", ".join(f"{MOM_LABELS[c][0]} {fr_int(n)}" for c, n in _counts.items())
-        )
-        st.caption(
-            "**Comment lire.** Échelle logarithmique par défaut ; la bascule « échelle "
-            "linéaire » donne un rendu à écart absolu. La diagonale marque la médiane "
-            "recentrée, la bande couvre le bruit normal attendu. « Non significatif » "
-            "(gris) est une classe, pas une absence de donnée, et un partenaire situé à "
-            "la marge du seuil peut changer de classe d'une mesure à l'autre. Une "
-            "fenêtre qui recouvre une année atypique (arrêt d'activité, fusion "
-            "d'établissement) déplace mécaniquement les deux parts : la classe se lit "
-            "avec le calendrier du partenaire en tête."
         )
 
         dfnd = ptn_all[
@@ -781,10 +944,40 @@ with tab_quadrant:
             "partner_id", "display_name", "mom_class", "mom_category", "mom_w1_share",
             "mom_w2_share", "mom_p_value", "mom_count_arrow", "co_works_full",
         ]
+        _workbook_quadrant_df = dfq[_quad_export_cols] if not dfq.empty else dfq
         exports.attach_download(
-            st, dfq[_quad_export_cols] if not dfq.empty else dfq,
-            "v1-collaboration", "momentum-quadrant", _EXPORT_STATE_EXEMPT,
+            st, _workbook_quadrant_df, "v1-collaboration", "momentum-quadrant", _EXPORT_STATE_EXEMPT,
         )
 
 st.markdown("---")
 st.caption(f"Instantané : {SNAPSHOT_DATE} · fenêtre {window_label()}.")
+
+# =============================================================================
+# Section 5 -- page workbook (P16): one download covering every panel above,
+# frames already computed on the page -- no recompute, no new read.
+# =============================================================================
+_lecture_rows = [
+    ("Conférences incluses", "oui" if include_conference else "non"),
+    ("Filtre référentiel (artefacts)", "actif" if artifact_on else "inactif"),
+    ("Surcouche I-SITE", "active" if isite_overlay_on else "inactive"),
+    ("Type de partenaire (hub)", ", ".join(type_filter) if type_filter else "tous"),
+    ("Seuil hub (co-publications)", fr_int(floor)),
+    ("Recherche (hub)", st.session_state.get("hub_query", "") or "—"),
+    ("Instantané", SNAPSHOT_DATE),
+    ("Fenêtre", window_label()),
+    ("Page", "Collaborations"),
+]
+_wb_bytes, _wb_name = exports.page_workbook(
+    {
+        "hub": _workbook_hub_df,
+        "réciprocité": _workbook_recip_df,
+        "consortium": _workbook_consortium_df,
+        "quadrant": _workbook_quadrant_df,
+    },
+    _lecture_rows, view="collaborations",
+)
+st.download_button(
+    copy_fr.LABELS["PAGE_WORKBOOK"], data=_wb_bytes, file_name=_wb_name,
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    key="dl_col_page_workbook",
+)

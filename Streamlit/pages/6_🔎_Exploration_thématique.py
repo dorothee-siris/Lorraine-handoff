@@ -41,7 +41,18 @@ from lib.data_cache import (
 from lib.thematic import excluded_counts_from_facts, get_overview, get_sublevels
 from lib import controls, exports
 from lib.overlay import overlay_bars
-from lib.ranked import ranked_table, fr_int, fr_pct, mask_members, CONSORTIUM_IDS, HIDE_MEMBERS_LABEL
+from lib.ranked import (
+    ranked_table, fr_int, fr_pct, mask_members, CONSORTIUM_IDS, HIDE_MEMBERS_LABEL, link_column,
+)
+
+# Pass 7a (P-EX, BUILD_PLAN P3/P4/P5) -- partner sections only: reading line, hover
+# grammar, OpenAlex deep links and the site_reciprocity_scatter chart grammar.
+from lib import copy_fr
+from lib import fig_cache
+from lib import hover as hv
+from lib import links
+from lib import reading
+from lib.charts import site_reciprocity_scatter
 
 # =============================================================================
 # Page config
@@ -87,6 +98,32 @@ _EXPORT_STATE = exports.ExportState(
 )
 
 NODE_LEVEL_PREFIX = {"domain": "d", "field": "f", "subfield": "sf", "topic": "t"}
+
+
+def _link_node(level, element_id):
+    """
+    `lib.links._NODE_FILTER_KEY` only expresses field/subfield/topic (OpenAlex has
+    no `primary_topic.domain.id` filter) -- a domain-level view omits the node
+    filter rather than guessing one or skipping the link entirely: `copubs_url`
+    still returns a correct, live UL x partner link, just not node-scoped.
+    """
+    if level in ("field", "subfield", "topic"):
+        return (level, element_id)
+    return None
+
+
+def _fwci_pair_or_na(fwci, n):
+    """
+    `hv.fmt_fwci_pair` reused with the SAME scalar as median and mean: the
+    partner-node blobs (top_int_partners / top_fr_partners / reciprocity_partners)
+    carry exactly ONE fwci value per row, never a separate mean or sample size --
+    fabricating either would be a fabricated denominator (house rule). `n` (the
+    co-publication count, already on every row) stands in for the sample size,
+    same substitution S-LIB-A's tests/_registry.py::frame_country_companion uses
+    for the analogous single-scalar case. NA_MARK, never a bare dash, below the
+    three-work floor (VIZ_SPEC_pass7 SS5.15: "NA_MARK for a missing indicator").
+    """
+    return hv.fmt_fwci_pair(fwci, fwci, n, floor_draw=3, floor_dagger=10) or NA_MARK
 
 
 @st.cache_data
@@ -798,7 +835,16 @@ else:
         int_display[_pct_ul_col] = int_display[_pct_ul_col] * 100
         int_display["% des collaborations"] = int_display["% des collaborations"] * 100
         int_display[_pct_partner_col] = int_display[_pct_partner_col] * 100
-        int_display["FWCI (réf. France)"] = int_display["FWCI (réf. France)"].apply(lambda x: f"{x:.2f}" if pd.notna(x) else "—")
+        # P7-R6/VIZ_SPEC_pass7 SS5.15 fwci_paire_2d convention (see _fwci_pair_or_na).
+        int_display["FWCI (réf. France)"] = [
+            _fwci_pair_or_na(fw, cp) for fw, cp in zip(int_df["fwci"], int_df["copubs"])
+        ]
+        # P7-R4/BUILD_PLAN P4: live OpenAlex link, ADDED alongside the existing columns
+        # (never replacing "Partenaire" -- test_page6_partner_ranked_table_defaults_to_top_ten
+        # keys off that column's presence).
+        int_display["Lien"] = [
+            links.copubs_url(pid, node=_link_node(level, element_id)) for pid in int_display["id"]
+        ]
 
         _visible_int = ranked_table(
             int_display,
@@ -821,6 +867,10 @@ else:
             # (omitted from column_order, still user-addable), reused here to hide an
             # id column rather than a mean -- both are "hidden by default" cases.
             mean_cols=["id"],
+            # P7-R4: the ↗ link column (deliverable 2) -- kwarg appended LAST so the
+            # has_members=False pin above stays at its original character offset
+            # (test_page6_international_partners_table_has_no_member_mask_toggle).
+            link_cols={"Lien": {"help": links.LINK_TOOLTIP_FR, "display_text": links.LINK_ICON_GLYPH}},
         )
         exports.attach_download(
             st, _visible_int.drop(columns=["id"]), "thematic-drilldown", "international-partners", _EXPORT_STATE,
@@ -869,7 +919,14 @@ else:
         fr_display[_pct_ul_col] = fr_display[_pct_ul_col] * 100
         fr_display["% des collaborations"] = fr_display["% des collaborations"] * 100
         fr_display[_pct_partner_col] = fr_display[_pct_partner_col] * 100
-        fr_display["FWCI (réf. France)"] = fr_display["FWCI (réf. France)"].apply(lambda x: f"{x:.2f}" if pd.notna(x) else "—")
+        # P7-R6/VIZ_SPEC_pass7 SS5.15 fwci_paire_2d convention (see _fwci_pair_or_na).
+        fr_display["FWCI (réf. France)"] = [
+            _fwci_pair_or_na(fw, cp) for fw, cp in zip(fr_df["fwci"], fr_df["copubs"])
+        ]
+        # P7-R4/BUILD_PLAN P4: live OpenAlex link (deliverable 2).
+        fr_display["Lien"] = [
+            links.copubs_url(pid, node=_link_node(level, element_id)) for pid in fr_display["id"]
+        ]
 
         _visible_fr = ranked_table(
             fr_display,
@@ -883,6 +940,10 @@ else:
                 _pct_partner_col: {"help": "Part de la production propre du partenaire à ce niveau qui implique l'UL"},
             },
             mean_cols=["id"],
+            # kwarg appended LAST -- keeps has_members=True at its original offset
+            # (test_page6_international_partners_table_has_no_member_mask_toggle checks
+            # the FR call too, within [:300] of the key= literal).
+            link_cols={"Lien": {"help": links.LINK_TOOLTIP_FR, "display_text": links.LINK_ICON_GLYPH}},
         )
         exports.attach_download(
             st, _visible_fr.drop(columns=["id"]), "thematic-drilldown", "french-partners", _EXPORT_STATE,
@@ -923,17 +984,9 @@ if level in ["domain", "field", "subfield"] and partner_data is not None:
             icon="ℹ️",
         )
     else:
-        st.markdown(f"""
-        **Comment lire ce graphique**
-
-        - Chaque bulle est un partenaire. Sa **taille** est proportionnelle au volume
-          total de ce partenaire dans **{element_name}**.
-        - La **position verticale** (axe y) est la part du volume de l'UL dans
-          {element_name} co-signée avec ce partenaire.
-        - La **position horizontale** (axe x) est la part du volume **propre du
-          partenaire** dans {element_name} qui implique l'UL.
-        - La **diagonale grise** indique une relation équilibrée.
-        """)
+        # P7-R6/BUILD_PLAN P3: the static "Comment lire" bullet list is REPLACED by
+        # ONE mode-aware reading line (built once the mode is known, below, right
+        # above the figure) -- "Pourquoi cet indicateur" STAYS, unmoved in wording.
         st.caption(
             ":grey[**Pourquoi cet indicateur.** Une relation peut être décisive "
             "pour l'un des deux partenaires et marginale pour l'autre. Croiser "
@@ -953,7 +1006,16 @@ if level in ["domain", "field", "subfield"] and partner_data is not None:
         recip_df = recip_df[recip_df["partner_total"] > 0]
 
         def geo_category(country):
-            if country == "France":
+            # BUGFIX (P-EX, found while wiring the mode-aware reading line): the
+            # `reciprocity_partners` blob's country field is an ISO-2 CODE ("FR"),
+            # never the literal string "France" -- verified against
+            # thematic_detail_partners.parquet at domain/subfield grain (probe:
+            # progress/P7_EX.md). The old `== "France"` comparison never matched,
+            # so "France uniquement" always emptied and "International uniquement"
+            # silently included French partners too -- pre-existing, in-fence,
+            # fixed here (both toggles are named in deliverable 1's "keep the
+            # existing filters", which means keep them WORKING, not silently inert).
+            if country == "FR":
                 return "France"
             if pd.isna(country) or country in ["", "None"]:
                 return "Pays inconnu"
@@ -1026,6 +1088,13 @@ if level in ["domain", "field", "subfield"] and partner_data is not None:
             "d'une part réellement supérieure au total.]"
         )
 
+        # site_reciprocity_scatter is log-log (P7-R3(a)): a share of exactly zero
+        # cannot be placed on either axis -- dropped and counted here (VIZ_SPEC_pass7
+        # SS5.14 "Empty/thin"), rather than left to plotly's own silent log-axis drop.
+        _n_before_log_drop = len(recip_df)
+        recip_df = recip_df[(recip_df["share_ul"] > 0) & (recip_df["share_partner"] > 0)]
+        _n_hidden_log = _n_before_log_drop - len(recip_df)
+
         if recip_df.empty:
             st.info("Aucun partenaire ne correspond à ces filtres.")
         else:
@@ -1037,75 +1106,80 @@ if level in ["domain", "field", "subfield"] and partner_data is not None:
                 value=min(30, max_partners),
             )
 
-            recip_df = recip_df.nlargest(n_partners, "copubs")
+            recip_df = recip_df.nlargest(n_partners, "copubs").reset_index(drop=True)
 
-            fig_recip = px.scatter(
-                recip_df,
-                x="share_partner",
-                y="share_ul",
-                size="partner_total",
-                size_max=40,
-                color="geo",
-                color_discrete_map={
-                    "France": "blue",
-                    "International": "red",
-                    "Pays inconnu": "#888888",
-                },
-                hover_name="name",
-                custom_data=["country", "type", "copubs", "share_ul", "share_int", "share_partner", "partner_total", "fwci"],
+            # -------------------------------------------------------------
+            # P7-R3(a) / VIZ_SPEC_pass7 SS5.14: onto site_reciprocity_scatter's
+            # shared grammar -- log-log, UL_COLOR at 60% opacity, area = co-pub
+            # volume (NOT partner_total: copy_fr's own reading text says "L'aire
+            # suit le volume de co-publications"), square marker on a capped
+            # share. No hub/search selection exists on this page (unlike page 8's
+            # hub table), so no highlight_ids -- every mark keeps the builder's
+            # uniform base opacity.
+            # -------------------------------------------------------------
+            plot_df = recip_df.copy()
+            # Cap BOTH shares at 100 % -- the caption above already discloses this
+            # generically (snapshot-vs-live drift can push either ratio over 1.0);
+            # the flag catches either side, and the PLOTTED/hover value is the
+            # capped one so the visual and the hover never disagree.
+            plot_df["share_p_capped_flag"] = (
+                (plot_df["share_partner"] > 1.0) | (plot_df["share_ul"] > 1.0)
             )
+            plot_df["share_ul"] = plot_df["share_ul"].clip(upper=1.0)
+            plot_df["share_p"] = plot_df["share_partner"].clip(upper=1.0)
+            plot_df["co_works_full"] = plot_df["copubs"]
 
-            fig_recip.update_traces(
-                marker=dict(line=dict(color="black", width=0.5)),
-                hovertemplate=(
-                    "<b>%{hovertext}</b><br><br>"
-                    "Pays : %{customdata[0]}<br>"
-                    "Type : %{customdata[1]}<br>"
-                    "Co-publications : %{customdata[2]:,}<br>"
-                    f"% du volume UL en {element_name} : " + "%{customdata[3]:.1%}<br>"
-                    "% de la collaboration : %{customdata[4]:.1%}<br>"
-                    f"% du volume propre du partenaire en {element_name} : " + "%{customdata[5]:.1%}<br>"
-                    f"Volume total du partenaire en {element_name} : " + "%{customdata[6]:,}<br>"
-                    "FWCI (réf. France) : %{customdata[7]:.2f}<extra></extra>"
+            _type_mode = "education" if sorted(type_filter) == ["education"] else "tous"
+            _scope_mode = {
+                "France et international": "fr_intl",
+                "France uniquement": "fr",
+                "International uniquement": "intl",
+            }[geo_scope]
+            _recip_mode = f"{_type_mode}|{_scope_mode}"
+            _recip_labels = copy_fr.HOVER_LABELS["ex_partner_reciprocity"][_recip_mode]
+
+            _hover_rows = []
+            for _, r in plot_df.iterrows():
+                _share_p_val = (
+                    None if pd.isna(r["share_p"])
+                    else hv.fmt_pct_dagger(r["share_p"] * 100.0, int(r["partner_total"]))
                 )
-            )
+                # "when: perimetre international" read at the ROW's own geography
+                # (share_int is structurally ~0/meaningless for a French partner --
+                # progress/P7_EX.md decision 9): shown whenever THIS bubble is
+                # international, independent of the page's own scope-toggle state.
+                _share_int_val = (
+                    hv.fmt_pct(r["share_int"] * 100.0)
+                    if r["geo"] == "International" and pd.notna(r["share_int"]) else None
+                )
+                _fwci_val = hv.fmt_fwci_pair(r["fwci"], r["fwci"], int(r["copubs"]))
+                _hover_rows.append(hv.hover_lines(list(zip(_recip_labels, [
+                    r["name"],
+                    hv.fmt_int(r["copubs"]),
+                    hv.fmt_pct(r["share_ul"] * 100.0),
+                    _share_p_val,
+                    _share_int_val,
+                    _fwci_val,
+                    str(r["country"]),
+                    str(r["type"]),
+                ]))))
+            plot_df["hover"] = _hover_rows
 
-            max_val = max(recip_df["share_ul"].max(), recip_df["share_partner"].max()) * 1.1
-            fig_recip.add_shape(
-                type="line",
-                x0=0, y0=0,
-                x1=max_val, y1=max_val,
-                line=dict(color="gray", dash="dash"),
-            )
+            reading.reading_line("ex_partner_reciprocity", _recip_mode)
+            if _n_hidden_log:
+                st.caption(
+                    f":grey[{fr_int(_n_hidden_log)} partenaire(s) sans part mesurable "
+                    "sur l'un des deux axes ne sont pas représentés ici.]"
+                )
 
-            fig_recip.update_layout(
-                height=550,
-                margin=dict(t=30, l=50, r=30, b=50),
-                xaxis=dict(
-                    title=f"Part du volume propre du partenaire en {element_name}",
-                    tickformat=".0%",
-                    range=[0, max_val],
-                ),
-                yaxis=dict(
-                    title=f"Part du volume UL en {element_name}",
-                    tickformat=".0%",
-                    range=[0, max_val],
-                ),
-                showlegend=False,
+            # fig_cache keyed on (element, toggles) -- P7_EX deliverable 1 / P12:
+            # every control value that shapes the figure, never the frame itself.
+            fig_recip = fig_cache.cached_figure(
+                name="ex_partner_reciprocity",
+                key=(level, element_id, tuple(sorted(type_filter)), geo_scope,
+                     recip_hide_members, remove_outliers, n_partners),
+                build=lambda: site_reciprocity_scatter(plot_df, floor=0),
             )
-
-            st.markdown(
-                """
-                <div style="margin-bottom: 0.5rem;">
-                  <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background-color:blue;margin-right:4px;"></span>
-                  <span style="margin-right:12px;">France</span>
-                  <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background-color:red;margin-right:4px;"></span>
-                  <span style="margin-right:12px;">International</span>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
             st.plotly_chart(fig_recip, use_container_width=True)
             exports.attach_download(
                 st, recip_df, "thematic-drilldown", "reciprocity", _EXPORT_STATE,

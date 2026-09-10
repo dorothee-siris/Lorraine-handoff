@@ -3,61 +3,75 @@ Partner Drilldown (V2) -- docs/indicator_plan_FINAL.md §3 (I1,I5,I6,I7,I8,I9,I1
 §6.6 / docs/studio/VIZ_SPEC.md §2.6. NEW page, chain pass 3, Assembly Line stream P2.
 
 Pass-6 stream P-ZP (2026-08-19): grill items #40-#46 (docs/NARRATIVE_CONTRACT_pass6.md
-section 2.10, docs/studio/VIZ_SPEC_pass6.md §1.5/§1.6/§7/§8, BUILD_PLAN.md P4/P5/P12):
-(1) #40 remaining partner-metric families from ptn_denominators.parquet (share of UL's
-whole corpus, of UL's international copubs, of UL's copubs with the partner's own
-country); (2) #41 granularity parity vs pages 8/10 (country FR name, labs-involved count,
-fractional count folded into the identity caption); (3) #42 the unanchored "part du
-collaboratif UL" line chart is retired in favour of the two-window aggregate the header's
-quantified momentum block already carries, plus a small zero-anchored two-bar comparison,
-honestly labelled per the traced ratio (partner co-works / UL total collaborative
-co-works, reports/pass6_probes.md probe 4); (4) #43 ergonomics -- primary-styled
-descendre/remonter controls, the member-mask toggle and the topic search box removed
-(useless below the ranked_table() N>=50 threshold), momentum quantified via
-lib.helpers.momentum_display(), and a per-theme annual zoom (field/subfield/topic) built
-straight from the already-lazy-loaded ptn_works rows so the I-SITE decomposition is real
-even though ptn_yearly/ptn_topics carry no isite twin; (5) #44 the full pair worklist is
-no longer rendered as an on-screen table -- a 5-row preview plus a lazy CSV download
-(lib.helpers.lazy_slice_csv_bytes) carrying doi/year/type/in_isite/sdg_tags/artifact_flag;
-(6) #45 portage depth raised to top 20 (10 shown, "afficher plus"), "Autres" in the
-app-wide neutral grey (NEUTRAL_GREY); (7) #46 a per-field réciprocité scatter for this
-partner vs the UL, built from ptn_fields' own baseline_ul_share/baseline_partner_share
-(conf_state='all' only -- probe 7 confirmed the partner-side share already exists for the
-42b-pulled partners, $0, no group_by top-up needed); partners outside that set get an
-honest disclosure, never a fabricated point. Narrative sweep pastes
-NARRATIVE_CONTRACT_pass6.md section 2.10 verbatim except where a later, more specific
-ruling (the #42 root-cause fix) supersedes an earlier draft -- see progress/PZP.md.
+section 2.10, docs/studio/VIZ_SPEC_pass6.md §1.5/§1.6/§7/§8, BUILD_PLAN.md P4/P5/P12) --
+see git history for the full pass-6 note; superseded in most particulars by pass 7a below.
 
-Authority (binding): VIZ_SPEC §2.6 + §1.1-1.6 + §3 · indicator_plan_FINAL §3/§6.3/§6.6 ·
-data_foundation.yaml rev 3.1 (ptn_yearly/ptn_fields/ptn_labs/ptn_works/ptn_topics) ·
-data_contract.yaml (deployed schemas -- verified against the actual parquet) ·
-docs/SPRINT_KICKOFF_pass5.md (R1/R5/R11/R12/R14/R19) · docs/OVERLAY_MATRIX.md §9. Every
-shared behaviour goes through Streamlit/lib/{controls,exports,lazy,ranked,overlay,
-helpers,countries_fr}.py -- `lib.links` was consulted (pass-3 audit) but is NOT imported:
-nothing on this page maps onto its filter shape, so no icon is rendered anywhere (silence,
-per its own "never invent filter grammar" contract).
+Pass-7a stream P-ZOOM (2026-09-10, BUILD_PLAN.md P1-P22, docs/studio/VIZ_SPEC_pass7.md,
+docs/contract_fragments/{chart_keys_pass7,lib_api_pass7}.md, docs/tooltip_spec.yaml,
+docs/OVERLAY_MATRIX.md §0/§9): the BenchUp-signature partner views land on this page.
+  1. Header KPI row gains « publications phares » (ptn_summary.n_phares) with a live
+     OpenAlex deep-link (lib.links.phares_url) and `help=` text from every KPI_HELP key.
+  2. Volume: the yearly bars keep the grouped I-SITE-overlay grammar (lib.overlay, same
+     mechanism the per-theme zoom already used) with totals/I-SITE counts now computed
+     PAGE-SIDE from partner_works (ptn_yearly carries no I-SITE twin, OVERLAY_MATRIX §9);
+     the old two-window comparison bar is replaced by a share-of-UL-collaborative
+     sparkline (ptn_yearly.share_of_ul_collab).
+  3. Balance bars (NEW, P10): UL-only | joint | partner-only mirror per field/top-30
+     subfield, three modes (volume / FWCI médian / publications phares), a linked
+     "Co-pubs" column, via lib.charts.balance_bars.
+  4. Topic planes (NEW, P9): impact (co-pubs × FWCI) and frontier (expansion ×
+     accélération) scatters over pair×topic cells, four selector modes + N slider, via
+     lib.charts.fig_plane_impact/fig_plane_frontier.
+  5. Profil thématique (existing field->subfield->topic descent): unchanged mechanics
+     (session-state keys preserved for the cross-page navigation test), hover grammar +
+     reading lines added, per-theme zoom keeps its own real I-SITE decomposition.
+  6. Réciprocité stratégique: same data (ptn_fields, conf_state='all' fixed -- baseline_
+     partner_share is only measured there), now built through lib.charts.reciprocity_scatter
+     (BenchUp form: squared axes, dotted diagonal) instead of a page-local go.Figure.
+  7. Portage: same top-20/"afficher plus" pagination, now rendered through
+     lib.charts.bars_with_gutter (family="labo_court", gutter = raw co-works per lab --
+     tests/_registry.py::build_zoom_portage is the lifted, tested reference for this
+     exact value_col choice; VIZ_SPEC's share-vs-gutter split is not mechanically
+     expressible through the single-value_col builder contract).
+  8. Hover grammar (lib.hover, tooltip_spec.yaml-sourced labels from lib.copy_fr.HOVER_
+     LABELS) and reading lines (lib.reading) replace the old "**Comment lire.**"
+     paragraphs wherever a chart_key now exists for that panel; the descent's own
+     orientation paragraph (not tied to one chart) is kept, since removing it would
+     leave that UX unexplained with no registered replacement text.
+  9. Page workbook (P16, lib.exports.page_workbook) at the end of the changed sections:
+     identité/KPI, volume annuel, équilibre, plans, profil thématique, réciprocité,
+     portage, with a Lecture sheet naming every active toggle/level/mode/selector.
+  Every existing number is unchanged (regression pins in tests/test_page_pa.py /
+  test_page_pf.py stay green) -- pass-7a only adds columns/sections and swaps chart
+  builders, it never re-derives a quantity pass-6 already computed.
+
+Authority (binding): VIZ_SPEC §2.6 + §1.1-1.6 + §3 · VIZ_SPEC_pass7.md (all sections) ·
+indicator_plan_FINAL §3/§6.3/§6.6 · data_foundation.yaml rev 3.1+pass7_delta ·
+data_contract.yaml (deployed schemas) · docs/OVERLAY_MATRIX.md §0/§9 ·
+docs/contract_fragments/{chart_keys_pass7,lib_api_pass7}.md · docs/tooltip_spec.yaml.
+Every shared behaviour goes through Streamlit/lib/{controls,exports,lazy,ranked,overlay,
+helpers,countries_fr,charts,hover,reading,links,fig_cache,copy_fr}.py.
 
 Decision sentence (VIZ_SPEC 2.6): after this view a porteur can say what binds UL to
 partner P -- which fields, which labs carry it, whether it is rising -- and pull the exact
 publications behind any cell.
 
-Composition (profile card, argument order):
+Composition (profile card, argument order -- pass-7a additions marked NEW):
   1. Header: identity + consortium tag + KPI row (co-works . share_UL . share_P . median
-     FWCI_FR . ISITE) + the partner's weight in other comparison perimeters (ptn_denominators)
-     + the quantified momentum block.
-  2. Volume panel: yearly bars (left) + a zero-anchored two-window comparison of the
-     partner's weight in UL's collaborative output (right) -- the #42 replacement for the
-     unanchored per-year sparkline.
-  3. Profil thématique -- the centre. Drill-in-place: field row -> subfield rows
+     FWCI_FR . ISITE . NEW publications phares) + other-perimeters weights + momentum.
+  2. Volume: yearly bars (grouped I-SITE overlay) + NEW share-of-UL-collaborative sparkline.
+  3. NEW Équilibre de la relation (balance bars, P10).
+  4. NEW Plans thématiques (topic planes, P9).
+  5. Profil thématique -- the centre. Drill-in-place: field row -> subfield rows
      (floored) -> topic rows (I11, scoped to the selected subfield), plus a per-theme
      annual zoom at every level (built from the lazy partner-works rows, real I-SITE
      decomposition).
-  4. Réciprocité stratégique par champ (item #46): per-field scatter, this partner vs UL,
-     from ptn_fields' own two baselines.
-  5. Portage (I7): top 20 labs' share of lab-attributed works (10 shown, "afficher plus")
+  6. Réciprocité stratégique par champ/sous-champ (BenchUp form).
+  7. Portage (I7): top 20 labs' share of lab-attributed works (10 shown, "afficher plus")
      + "Autres" (neutral grey) + a NO-LAB disclosure line, never a league column.
-  6. Publications: a 5-row preview + a lazy CSV download carrying enrichment metadata,
-     never the full on-screen list (item #44).
+  8. NEW Export complet de la page (page workbook).
+  9. Publications: a 5-row preview + a lazy CSV download carrying enrichment metadata,
+     never the full on-screen list (item #44, unchanged this pass).
 """
 from __future__ import annotations
 
@@ -66,11 +80,11 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from lib import controls, exports, lazy, overlay, ranked
+from lib import charts as C, controls, copy_fr, exports, fig_cache, hover as hv, lazy, links, overlay, ranked, reading
 from lib.countries_fr import country_label
 from lib.data_cache import DATA_DIR, get_corpus_facts_df, get_topics_df
 from lib.helpers import (
-    YEARS, DOMAIN_EMOJI, NEUTRAL_GREY,
+    YEARS, DOMAIN_EMOJI, NEUTRAL_GREY, UL_COLOR,
     MOMENTUM_DOWN_COLOR, MOMENTUM_METHOD_HELP_FR, MOMENTUM_NEUTRAL_COLOR,
     MOMENTUM_STABLE_COLOR, MOMENTUM_UP_COLOR,
     fr_int, fr_pct, lazy_slice_csv_bytes, momentum_display, window_label,
@@ -95,6 +109,14 @@ NODE_BASE_COLOR = "#0072B2"
 PORTAGE_DEFAULT_N = 10
 PORTAGE_MAX_N = 20
 
+# Pass-7a (P-ZOOM) constants
+JOINT_FLOOR = 5             # P8: under-floor relation, matches hv.fmt_joint_or_floor's default
+PLANE_FLOOR = 5              # P9: pair x topic cell floor
+PLANE_N_DEFAULT = 25
+LEVEL_KEYS = ["field", "subfield"]     # copy_fr.LABELS["LEVEL_TOGGLE"] index order
+PLANE_FRONTIER_BIN_LAST = "2022-23"    # dim_frontier_components.is_latest bin (P6 disclosure)
+PLANE_FRONTIER_BIN_PREV = "2019-21"    # previous chronological bin, for the reading line's {bin_prev}
+
 QUESTION_FR = (
     "Qu'est-ce qui relie l'Université de Lorraine à ce partenaire -- quels champs, quels "
     "laboratoires -- et la relation progresse-t-elle ?"
@@ -105,17 +127,13 @@ S10_BANNER_FR = (
     "classement des partenaires entre eux."
 )
 NO_MATCH_MSG_FR = "Aucun partenaire ne correspond à cette recherche."
-YEARLY_ISITE_NA_FR = (
-    ":grey[Pas de décomposition I-SITE sur ce panneau : les données annuelles de cette "
-    "paire ne portent pas la distinction I-SITE.]"
+TOPIC_ISITE_NA_FR = (
+    ":grey[Pas de décomposition I-SITE à ce niveau : le croisement partenaire × topic ne "
+    "porte pas la distinction I-SITE.]"
 )
 PORTAGE_ISITE_NA_FR = (
     ":grey[Lecture structurelle : comme pour le filtre « hors référentiel », la surcouche "
     "I-SITE ne s'applique pas à ce panneau.]"
-)
-TOPIC_ISITE_NA_FR = (
-    ":grey[Pas de décomposition I-SITE à ce niveau : le croisement partenaire × topic ne "
-    "porte pas la distinction I-SITE.]"
 )
 SHARE_P_NULL_BY_DESIGN_FR = (
     ":grey[La colonne « Part partenaire » n'est renseignée que sur le corpus entier, tous "
@@ -162,38 +180,58 @@ def _area_sizeref(values, max_px: float = 40.0) -> float:
     return 2.0 * vmax / (max_px ** 2)
 
 
+def _kpi_help(key: str) -> str:
+    """copy_fr.KPI_HELP[key] with its {window} placeholder filled -- str.format ignores
+    any kwarg a given template does not reference, so this is safe for every KPI key."""
+    return copy_fr.KPI_HELP[key].format(window=window_label())
+
+
 # =============================================================================
-# Data (eager, small tables -- cache_resource, whole-table load + in-app filter, matching
-# the contract's own distinction: only ptn_works/ptn_topics carry `lazy: true`)
+# Data (eager, small tables -- cache_data w/ max_entries=2, S4/P12: identity-comparison
+# grep-proof recorded in progress/P7_CACHE.md, no `is`/`is not` frame-identity check on
+# any of these six anywhere on this page)
 # =============================================================================
-@st.cache_resource
+@st.cache_data(ttl=1800, max_entries=2)
 def _load_ptn_summary() -> pd.DataFrame:
     return pd.read_parquet(DATA_DIR / "ptn_summary.parquet")
 
 
-@st.cache_resource
+@st.cache_data(ttl=1800, max_entries=2)
 def _load_ptn_yearly() -> pd.DataFrame:
     return pd.read_parquet(DATA_DIR / "ptn_yearly.parquet")
 
 
-@st.cache_resource
+@st.cache_data(ttl=1800, max_entries=2)
 def _load_ptn_fields() -> pd.DataFrame:
     return pd.read_parquet(DATA_DIR / "ptn_fields.parquet")
 
 
-@st.cache_resource
+@st.cache_data(ttl=1800, max_entries=2)
 def _load_ptn_labs() -> pd.DataFrame:
     return pd.read_parquet(DATA_DIR / "ptn_labs.parquet")
 
 
-@st.cache_resource
+@st.cache_data(ttl=1800, max_entries=2)
 def _load_ptn_mom_facts() -> pd.DataFrame:
     return pd.read_parquet(DATA_DIR / "ptn_mom_facts.parquet")
 
 
-@st.cache_resource
+@st.cache_data(ttl=1800, max_entries=2)
 def _load_ptn_denominators() -> pd.DataFrame:
     return pd.read_parquet(DATA_DIR / "ptn_denominators.parquet")
+
+
+# Pass-7a (P-ZOOM) additions: same zero-argument, whole-small-table shape as the six
+# loaders above, so the same S4 cache discipline applies even though P7_CACHE.md's own
+# line list (written before these two sections existed) only names the pre-existing six.
+@st.cache_data(ttl=1800, max_entries=2)
+def _load_thematic_overview() -> pd.DataFrame:
+    return pd.read_parquet(DATA_DIR / "thematic_overview.parquet")
+
+
+@st.cache_data(ttl=1800, max_entries=2)
+def _load_frontier_components() -> pd.DataFrame:
+    return pd.read_parquet(DATA_DIR / "dim_frontier_components.parquet")
 
 
 def _snapshot_date() -> str:
@@ -235,6 +273,7 @@ def _theme_zoom_chart(
     )
     st.plotly_chart(fig, width="stretch")
     st.caption(overlay.GROUPED_BARS_HOWTOREAD_FR)
+    reading.reading_line("zoom_theme_zoom")
 
 
 def _theme_zoom_control(label_prefix: str, options: dict, session_key: str) -> int | None:
@@ -248,6 +287,62 @@ def _theme_zoom_control(label_prefix: str, options: dict, session_key: str) -> i
         st.session_state[session_key] = int(options[pick])
         st.rerun()
     return st.session_state.get(session_key)
+
+
+def _yearly_scope(works_df: pd.DataFrame, include_conference: bool, artifact_on: bool) -> pd.DataFrame:
+    scoped = works_df
+    if not include_conference:
+        scoped = scoped[~scoped["is_conference"].fillna(False)]
+    if artifact_on:
+        scoped = scoped[~scoped["artifact_flag"].fillna(False)]
+    return scoped
+
+
+def _share_spark_fig(yr_p_df: pd.DataFrame) -> go.Figure:
+    """zoom_share_spark (VIZ_SPEC_pass7 §5.6): micro line, UL_COLOR, first/last value
+    labels only, no y axis, no grid, x ticks only at the two ends."""
+    share_col = controls.xa(yr_p_df, "share_of_ul_collab")
+    co_col = controls.xa(yr_p_df, "co_works")
+    xs = yr_p_df["year"].astype(str).tolist()
+    ys = (yr_p_df[share_col].astype(float) * 100.0).tolist()
+    labels_sp = copy_fr.HOVER_LABELS["zoom_share_spark"]["default"]
+    hovers = [
+        hv.hover_lines(list(zip(labels_sp, (x, hv.fmt_pct(y), hv.fmt_int(c)))))
+        for x, y, c in zip(xs, ys, yr_p_df[co_col].tolist())
+    ]
+    fig = go.Figure(go.Scatter(
+        x=xs, y=ys, mode="lines+markers", line=dict(color=UL_COLOR, width=1.5),
+        marker=dict(size=[8] + [0] * max(0, len(xs) - 2) + ([8] if len(xs) > 1 else [])),
+        customdata=hovers, hovertemplate=hv.HOVERTEMPLATE, showlegend=False,
+    ))
+    fig.add_annotation(x=xs[0], y=ys[0], text=hv.fmt_pct(ys[0]), showarrow=False,
+                        yshift=16, font=dict(size=11, color=UL_COLOR))
+    fig.add_annotation(x=xs[-1], y=ys[-1], text=hv.fmt_pct(ys[-1]), showarrow=False,
+                        yshift=16, font=dict(size=11, color=UL_COLOR))
+    fig.update_layout(
+        height=260, margin=dict(t=20, l=40, r=20, b=40), showlegend=False,
+        yaxis=dict(visible=False), xaxis=dict(tickmode="array", tickvals=[xs[0], xs[-1]], title=""),
+    )
+    return fig
+
+
+def _pair_level_control(widget_key: str) -> str:
+    """Shared level toggle for the balance bars AND reciprocity sections (P-ZOOM
+    Addendum: "shared with the reciprocity section via one session key"). Streamlit
+    forbids reusing one widget `key` twice within a single run, so each section renders
+    its OWN radio, but both read their initial `index` from, and both write back to, the
+    SAME `st.session_state["v2_pair_level"]` -- the two controls agree after any rerun,
+    which is the practical meaning of "one session key" in this harness."""
+    current = st.session_state.get("v2_pair_level", "field")
+    idx = LEVEL_KEYS.index(current) if current in LEVEL_KEYS else 0
+    pick_idx = st.radio(
+        "Niveau", options=[0, 1], index=idx, horizontal=True,
+        format_func=lambda i: copy_fr.LABELS["LEVEL_TOGGLE"][i],
+        key=widget_key, label_visibility="collapsed",
+    )
+    level = LEVEL_KEYS[pick_idx]
+    st.session_state["v2_pair_level"] = level
+    return level
 
 
 # =============================================================================
@@ -326,14 +421,34 @@ if st.session_state.get("v2_last_partner") != partner_id:
 partner_row = base_rows[base_rows["partner_id"] == partner_id].iloc[0]
 CO_COL = controls.xa(base_rows, "co_works_full")
 
+# Pass-7a (P-ZOOM): HOISTED above the header -- both are needed before section 3 now
+# (partner_works for the header's phares-KPI deep link; partner_topics for the NEW
+# balance-bars/topic-planes sections, which render before the old drill section).
+partner_works = lazy.read_keyed(PTN_WORKS_PATH, "partner_id", partner_id)
+partner_topics = lazy.read_keyed(PTN_TOPICS_PATH, "partner_id", partner_id)
+
 st.page_link("pages/8_🤝_Collaborations.py", label="← Retour à Collaborations")
 
+# Workbook-feeding placeholders (deliverable 9): always bound so the page_workbook call
+# at the end of the page never NameErrors on a thin partner whose sections render an
+# honest-empty state instead of a frame.
+bb_frame = pd.DataFrame()
+imp_frame = pd.DataFrame()
+fr_frame = pd.DataFrame()
+rc_frame = pd.DataFrame()
+_workbook_thematic_df = pd.DataFrame()
+
 # =============================================================================
-# Section 1 -- header : identité, KPI, autres périmètres (#40), momentum quantifié (#43)
+# Section 1 -- header : identité, KPI (+ NEW publications phares), autres périmètres
+# (#40), momentum quantifié (#43)
 # =============================================================================
 mom_facts_all = _load_ptn_mom_facts()
 _mf_rows = mom_facts_all[mom_facts_all["conf_state"] == CONF_STATE]
 mf_row = _mf_rows.iloc[0] if not _mf_rows.empty else None
+
+n_phares_val = partner_row.get("n_phares")
+_phares_work_ids = partner_works.loc[partner_works["pptop10_fr"].fillna(False), "work_id"].tolist()
+phares_url_val, phares_is_proxy = links.phares_url(_phares_work_ids, partner_id)
 
 with st.container(border=True):
     tag = f" · **{ranked.CONSORTIUM_BADGE_LABEL}**" if bool(partner_row["consortium_member"]) else ""
@@ -347,24 +462,36 @@ with st.container(border=True):
         f"{fr_int(int(partner_row['n_ul_labs']))} laboratoire(s) UL impliqué(s) · "
         f"décompte fractionnel {_fr_float(partner_row.get('co_works_fractional'), 1)}"
     )
-    k1, k2, k3, k4, k5 = st.columns(5)
-    k1.metric("Co-publications", fr_int(int(partner_row[CO_COL])))
-    k2.metric("Part UL", fr_pct(float(partner_row[controls.xa(base_rows, 'share_ul')]) * 100))
+    k1, k2, k3, k4, k5, k6 = st.columns(6)
+    k1.metric("Co-publications", fr_int(int(partner_row[CO_COL])), help=_kpi_help("zoom_kpi_copubs"))
+    k2.metric("Part UL", fr_pct(float(partner_row[controls.xa(base_rows, 'share_ul')]) * 100),
+              help=_kpi_help("zoom_kpi_share_ul"))
     # share_p (42b pull) is populated on this page's own base_rows (subset_id='all' always
     # here) whenever CONF_STATE=='all' -- render the value + its denominator when present,
     # an honest em-dash + reason when NULL by design (no_conf).
     _share_p = partner_row.get("share_p")
     if pd.notna(_share_p):
         _denom = int(partner_row["partner_total_windowed"])
-        k3.metric("Part partenaire", fr_pct(float(_share_p) * 100), delta=f"/ {fr_int(_denom)}", delta_color="off")
+        k3.metric("Part partenaire", fr_pct(float(_share_p) * 100), delta=f"/ {fr_int(_denom)}",
+                  delta_color="off", help=_kpi_help("zoom_kpi_share_p"))
     else:
-        k3.metric("Part partenaire", "—")
-    k4.metric("FWCI médian (réf. France)", _fr_float(partner_row[controls.xa(base_rows, "fwci_fr_median")]))
+        k3.metric("Part partenaire", "—", help=_kpi_help("zoom_kpi_share_p"))
+    k4.metric("FWCI médian (réf. France)", _fr_float(partner_row[controls.xa(base_rows, "fwci_fr_median")]),
+              help=_kpi_help("zoom_kpi_fwci"))
     # Header KPI identity tile -- deliberately NOT gated by the I-SITE overlay toggle (it is
     # a single-value identity fact about this ONE partner, not a decomposed volume bar).
-    k5.metric("Co-pubs ISITE", fr_int(int(partner_row['isite_co_works'])), fr_pct(float(partner_row['isite_share']) * 100))
+    k5.metric("Co-pubs ISITE", fr_int(int(partner_row['isite_co_works'])), fr_pct(float(partner_row['isite_share']) * 100),
+              help=_kpi_help("zoom_kpi_isite"))
+    with k6:
+        st.metric(copy_fr.LABELS["PHARES"].capitalize() if False else "Publications phares",
+                  ("—" if pd.isna(n_phares_val) else fr_int(int(n_phares_val))),
+                  help=_kpi_help("zoom_kpi_phares"))
+        if phares_url_val:
+            links.link_icon(phares_url_val, tooltip=links.LINK_TOOLTIP_FR)
     if pd.isna(_share_p):
         st.caption(SHARE_P_NULL_BY_DESIGN_FR)
+    if phares_url_val and phares_is_proxy:
+        st.caption(copy_fr.CAPTIONS["PHARES_PROXY"])
 
     st.divider()
 
@@ -420,7 +547,7 @@ with st.container(border=True):
 
     st.divider()
 
-    # -- #43: momentum, quantified (VIZ_SPEC_pass6 §8.3) --
+    # -- #43: momentum, quantified (VIZ_SPEC_pass6 §8.3) -- unchanged this pass --
     st.markdown("##### Momentum")
     mom_text, mom_color, _glyph = momentum_display(partner_row, mf_row if mf_row is not None else {})
     st.markdown(
@@ -454,47 +581,52 @@ with st.container(border=True):
 st.markdown("---")
 
 # =============================================================================
-# Section 2 -- volume panel: yearly bars + a zero-anchored two-window comparison (#42)
+# Section 2 -- volume panel: yearly bars (grouped I-SITE overlay) + share-of-UL-collab
+# sparkline (P-ZOOM #2 -- replaces the pass-6 two-window comparison bar)
 # =============================================================================
 st.markdown("### Volume")
-st.markdown(
-    "**Comment lire.** À gauche, le nombre de co-publications par année avec ce "
-    "partenaire, compté depuis zéro. À droite, la part de ce partenaire dans l'ensemble "
-    "des co-publications de l'Université de Lorraine avec n'importe quel partenaire, "
-    "comparée entre deux fenêtres : une part qui monte d'une fenêtre à l'autre signale un "
-    "partenaire qui prend du poids relatif dans le collaboratif de l'UL, pas nécessairement "
-    "un partenaire qui publie davantage en volume absolu."
-)
 yr = _load_ptn_yearly()
 yr_p = yr[(yr["partner_id"] == partner_id) & (yr["conf_state"] == CONF_STATE)].sort_values("year")
 
-col_bars, col_win = st.columns(2)
+_yscope = _yearly_scope(partner_works, include_conference, artifact_on)
+_year_totals, _year_isite = [], []
+for _y in YEARS:
+    _yr_sc = _yscope[_yscope["year"] == _y]
+    _year_totals.append(float(len(_yr_sc)))
+    _year_isite.append(float(_yr_sc["in_isite"].fillna(False).sum()))
+
+col_bars, col_spark = st.columns(2)
 with col_bars:
     st.markdown("#### Volume annuel")
-    co_col_y = controls.xa(yr_p, "co_works")
-    fig_bars = go.Figure(go.Bar(x=yr_p["year"].astype(str), y=yr_p[co_col_y], marker_color="#0072B2"))
-    fig_bars.update_layout(height=260, margin=dict(t=20, l=40, r=20, b=30), yaxis_title="Co-publications", xaxis_title="")
+    fig_bars = overlay.overlay_grouped_bars(
+        groups=[str(y) for y in YEARS], series=["n"], labels={"n": "Co-publications"},
+        colors={"n": UL_COLOR}, totals={"n": _year_totals}, isite={"n": _year_isite},
+        isite_on=isite_overlay_on,
+    )
+    _share_by_year = dict(zip(yr_p["year"], yr_p[controls.xa(yr_p, "share_of_ul_collab")]))
+    _labels_zy = copy_fr.HOVER_LABELS["zoom_yearly"]["default"]
+    _yearly_hover = []
+    for _i, _y in enumerate(YEARS):
+        _share_v = _share_by_year.get(_y)
+        _vals = (str(_y), hv.fmt_int(_year_totals[_i]),
+                 (hv.fmt_int(_year_isite[_i]) if isite_overlay_on else None),
+                 (None if _share_v is None or pd.isna(_share_v) else hv.fmt_pct(float(_share_v) * 100.0)))
+        _yearly_hover.append(hv.hover_lines(list(zip(_labels_zy, _vals))))
+    for _trace in fig_bars.data:
+        _trace.customdata = _yearly_hover
+        _trace.hovertemplate = hv.HOVERTEMPLATE
+    fig_bars.update_layout(height=260, margin=dict(t=20, l=40, r=20, b=40),
+                            yaxis_title="Co-publications", xaxis_title="", showlegend=isite_overlay_on)
     st.plotly_chart(fig_bars, width="stretch")
-with col_win:
-    st.markdown("#### Poids dans le collaboratif annuel de l'UL")
-    if mf_row is not None and pd.notna(_w1s) and pd.notna(_w2s):
-        w1_lbl = str(mf_row.get("mom_w1_label", "—"))
-        w2_lbl = str(mf_row.get("mom_w2_label", "—"))
-        status_color = MOM_STATUS_COLOR.get(str(partner_row.get("mom_category")), MOMENTUM_NEUTRAL_COLOR)
-        fig_win = go.Figure(go.Bar(
-            x=[w1_lbl, w2_lbl], y=[float(_w1s) * 100, float(_w2s) * 100],
-            marker_color=[MOMENTUM_NEUTRAL_COLOR, status_color],
-        ))
-        fig_win.update_layout(
-            height=260, margin=dict(t=20, l=40, r=20, b=30),
-            yaxis_title="Part du collaboratif UL (%)", xaxis_title="",
-            yaxis=dict(rangemode="tozero"),
-        )
-        st.plotly_chart(fig_win, width="stretch")
+    reading.reading_line("zoom_yearly", partenaire=partner_row["display_name"])
+with col_spark:
+    st.markdown("#### Part du collaboratif annuel de l'UL")
+    if len(yr_p) >= 5:
+        st.plotly_chart(_share_spark_fig(yr_p), width="stretch")
+        reading.reading_line("zoom_share_spark", partenaire=partner_row["display_name"])
     else:
         st.caption("—")
-if isite_overlay_on:
-    st.caption(YEARLY_ISITE_NA_FR)
+        st.caption(":grey[Trop peu d'années observées pour une évolution lisible.]")
 st.markdown(
     "**Pourquoi cet indicateur.** Le volume dit si la relation grandit dans l'absolu ; le "
     "poids relatif dit si elle grandit plus vite ou plus lentement que l'ensemble des "
@@ -506,7 +638,267 @@ exports.attach_download(st, yr_p, "v2-partner-drilldown", "yearly", _EXPORT_STAT
 st.markdown("---")
 
 # =============================================================================
-# Section 3 -- Profil thématique : scoped-descent field -> subfield -> topic (I11)
+# Section 3 -- NEW Équilibre de la relation (balance bars, P10)
+# =============================================================================
+st.markdown("### Équilibre de la relation")
+
+fld_all = _load_ptn_fields()
+fld_p = fld_all[(fld_all["partner_id"] == partner_id) & (fld_all["conf_state"] == CONF_STATE)]
+
+
+def _balance_frame(mode: str, level: str):
+    """P8/P10 -- lifted from tests/_registry.py::frame_balance (S-LIB-A, tested), adapted
+    to the page's own already-loaded fld_p / partner_topics / taxonomy maps rather than
+    re-reading all_topics/ptn_fields from disk. `level` in {"field","subfield"}, matching
+    ptn_fields.node_level verbatim. conf_state = the page's ACTIVE toggle (fld_p already
+    is), per the brief's "conf_state as the page uses" for this section."""
+    d = fld_p[fld_p["node_level"] == level].copy()
+    if d.empty:
+        return d, 0
+    d["node_id"] = d["node_id"].astype(int)
+    d["node_name"] = d["node_id"].map(field_id2name if level == "field" else subfield_id2name)
+    d = d.dropna(subset=["node_name"]).reset_index(drop=True)
+
+    ov = _load_thematic_overview()
+    own = ov[ov["level"] == level].copy()
+    own["id"] = own["id"].astype(int)
+    own = own.drop_duplicates("id").set_index("id")
+    d["vol_ul_total"] = d["node_id"].map(own["pubs_total"]).astype(float)
+    d["fwci_ul"] = d["node_id"].map(own["fwci_median"]).astype(float)
+    d["n_phares_ul_total"] = (d["vol_ul_total"] * d["node_id"].map(own["pct_top10"]).astype(float)).round()
+
+    d["vol_joint"] = d["co_works"].astype(float)
+    d["n_phares_joint"] = d["n_phares"].astype(float)
+    d["vol_ul_only"] = (d["vol_ul_total"] - d["vol_joint"]).clip(lower=0.0)
+    # n_phares_ul is the UL side EXCLUDING the relation (mirrors vol_ul_only) -- otherwise
+    # the phares-mode gutter ("UL phares + joint phares") would double-count the joint
+    # phares (P7_LIBA.md NOTE 11's ruling, followed verbatim here).
+    d["n_phares_ul"] = (d["n_phares_ul_total"] - d["n_phares_joint"]).clip(lower=0.0)
+
+    partner_total = (float(partner_row["partner_total_windowed"])
+                      if pd.notna(partner_row.get("partner_total_windowed")) else np.nan)
+    derived = partner_total * d["baseline_partner_share"].astype(float) - d["vol_joint"]
+    d["vol_partner_only"] = derived.clip(lower=0.0)
+    d["partner_only_derived"] = d["vol_partner_only"].notna()
+
+    topics_idx = get_topics_df().set_index("topic_id")
+    cell = partner_topics[partner_topics["conf_state"] == CONF_STATE].copy()
+    key_col = "field_id" if level == "field" else "subfield_id"
+    cell["_k"] = cell["topic_id"].map(topics_idx[key_col])
+    grouped = cell.groupby("_k", observed=True)
+    med, mass = grouped["fwci_fr_median_cell"].median(), grouped["co_works"].sum()
+    d["fwci_joint"] = d["node_id"].map(med).astype(float)
+    d["n_fwci_joint"] = d["node_id"].map(mass).fillna(0.0).astype(float)
+
+    d["under_floor"] = d["vol_joint"] < JOINT_FLOOR
+    d["share_phares_joint"] = np.where(d["vol_joint"] > 0, d["n_phares_joint"] / d["vol_joint"] * 100.0, np.nan)
+    d["fwci_partner_absent"] = True
+    d["phares_partner_absent"] = True
+
+    sort_col = {"volume": "vol_joint", "fwci": "fwci_joint", "phares": "n_phares_joint"}[mode]
+    d = d.sort_values(sort_col, ascending=False).reset_index(drop=True)
+
+    n_hidden = 0
+    if level == "subfield":
+        n_before = len(d)
+        d = d.head(30).reset_index(drop=True)
+        n_hidden = max(0, n_before - len(d))
+    # NULL partner-share rows are KEPT here (UL-only + joint still render, partner side a
+    # dash) -- unlike reciprocity, a balance-bars row never needs to sit on an axis, so
+    # nothing is un-placeable; P8's "dropped and counted" rule is reciprocity's own.
+
+    node_kind = "field" if level == "field" else "subfield"
+    d["url"] = [links.copubs_url(partner_id, node=(node_kind, int(i))) for i in d["node_id"]]
+    d["link_label"] = [hv.fmt_int(v) for v in d["vol_joint"]]
+
+    key_mode = "{0}|{1}".format(mode, "champ" if level == "field" else "sous_champ")
+    labels = copy_fr.HOVER_LABELS["zoom_balance_bars"][key_mode]
+    partner_name = partner_row["display_name"]
+    hovers = []
+    for _, r in d.iterrows():
+        if mode == "volume":
+            vals = (r["node_name"], hv.fmt_joint_or_floor(r["vol_joint"]),
+                    hv.fmt_pair_volumes("UL", r["vol_ul_only"], partner_name, r["vol_partner_only"], derived_b=True),
+                    None, hv.fmt_pct(r["share_of_pair"] * 100.0), hv.fmt_pct(r["baseline_ul_share"] * 100.0),
+                    (None if pd.isna(r["baseline_partner_share"]) else hv.fmt_pct(r["baseline_partner_share"] * 100.0)))
+        elif mode == "fwci":
+            vals = (r["node_name"], hv.fmt_fwci_pair(r["fwci_joint"], r["fwci_joint"], int(r["n_fwci_joint"])),
+                    (None if pd.isna(r["fwci_ul"]) else hv.fmt_score(r["fwci_ul"])),
+                    hv.fmt_joint_or_floor(r["vol_joint"]), hv.fmt_int(r["n_fwci_joint"]), None, None)
+        else:
+            vals = (r["node_name"], hv.fmt_joint_or_floor(r["n_phares_joint"]),
+                    (None if pd.isna(r["n_phares_ul"]) else hv.fmt_int(r["n_phares_ul"])),
+                    hv.fmt_joint_or_floor(r["vol_joint"]),
+                    (None if pd.isna(r["share_phares_joint"]) else hv.fmt_pct_dagger(r["share_phares_joint"], int(r["vol_joint"]))),
+                    None, None)
+        hovers.append(hv.hover_lines(list(zip(labels, vals))))
+    d["hover"] = hovers
+    return d, n_hidden
+
+
+bb_c1, bb_c2 = st.columns(2)
+with bb_c1:
+    bb_level = _pair_level_control("v2_bb_level_radio")
+with bb_c2:
+    bb_mode = st.radio(
+        "Mode", options=list(copy_fr.LABELS["BALANCE_MODES"].keys()),
+        format_func=lambda k: copy_fr.LABELS["BALANCE_MODES"][k],
+        horizontal=True, key="v2_balance_mode",
+    )
+bb_level_word = "champ" if bb_level == "field" else "sous_champ"
+bb_frame, bb_n_hidden = _balance_frame(bb_mode, bb_level)
+reading.reading_line("zoom_balance_bars", f"{bb_mode}|{bb_level_word}",
+                      window=window_label(), partenaire=partner_row["display_name"],
+                      n_hidden=fr_int(bb_n_hidden))
+if bb_frame.empty:
+    st.info(f"Aucun {'champ' if bb_level == 'field' else 'sous-champ'} mesuré pour ce partenaire.")
+else:
+    fig_bb = fig_cache.cached_figure(
+        "zoom_balance_bars", (partner_id, CONF_STATE, bb_mode, bb_level),
+        lambda: C.balance_bars(bb_frame, mode=bb_mode, level=bb_level_word, partner_name=partner_row["display_name"]),
+    )
+    st.plotly_chart(fig_bb, width="stretch")
+    if bb_mode == "volume":
+        st.caption(copy_fr.CAPTIONS["DERIVED_PARTNER_VOLUME"])
+    if bb_level == "subfield" and bb_n_hidden:
+        st.caption(copy_fr.CAPTIONS["SUBFIELD_NULL_SHARE"])
+    # The mirror has no usable 390 px state (VIZ_SPEC_pass7 §5.7; P7_ST NOTE 5: "~110 px
+    # of plot for two segments") -- the narrow-viewport answer is a compact table, always
+    # available here (not gated behind a viewport check Streamlit cannot make server-side).
+    with st.expander("Voir en tableau (lecture recommandée sur petit écran)"):
+        _bb_cols = {"node_name": "Nom", "vol_ul_only": "UL seule", "vol_joint": "Conjoint",
+                    "vol_partner_only": "Partenaire seul (dérivé)", "fwci_ul": "FWCI UL",
+                    "fwci_joint": "FWCI conjoint", "n_phares_ul": "Phares UL",
+                    "n_phares_joint": "Phares conjoints", "link_label": "Co-pubs"}
+        st.dataframe(bb_frame[[c for c in _bb_cols if c in bb_frame.columns]].rename(columns=_bb_cols),
+                     hide_index=True, width="stretch")
+    exports.attach_download(st, bb_frame.drop(columns=["hover", "url"], errors="ignore"),
+                             "v2-partner-drilldown", "balance", _EXPORT_STATE, entity=("p", partner_id))
+
+st.markdown("---")
+
+# =============================================================================
+# Section 4 -- NEW Plans thématiques de la relation (topic planes, P9)
+# =============================================================================
+st.markdown("### Plans thématiques de la relation")
+
+
+def _cell_frame() -> pd.DataFrame:
+    """Pair x topic cells aggregated over the window, floor >= 5 co-pubs (P9) -- common
+    base of both planes. conf_state = the page's active toggle."""
+    d = partner_topics[partner_topics["conf_state"] == CONF_STATE]
+    agg = (d.groupby("topic_id", as_index=False, observed=True)
+           .agg(co_works=("co_works", "sum"), n_phares=("n_phares", "sum"),
+                fwci_median=("fwci_fr_median_cell", "median"),
+                frontier_score_std=("frontier_score_std", "median"),
+                artifact_flag=("artifact_flag", "max")))
+    agg = agg[agg["co_works"] >= PLANE_FLOOR].reset_index(drop=True)
+    topics = get_topics_df().set_index("topic_id")
+    for col in ("topic_name", "keywords", "subfield_name", "domain_id", "domain_name"):
+        agg[col] = agg["topic_id"].map(topics[col])
+    agg["artifact_flag"] = agg["artifact_flag"].fillna(False).astype(bool)
+    return agg
+
+
+PLANE_SORT_COL = {"volume": "co_works", "fwci": "fwci_median", "frontiere": "frontier_score_std", "phares": "n_phares"}
+
+
+def _plane_impact_frame(cells: pd.DataFrame, mode: str, n: int):
+    ranked_cells = cells.sort_values(PLANE_SORT_COL[mode], ascending=False, na_position="last").head(n)
+    d = ranked_cells[ranked_cells["fwci_median"].notna()].reset_index(drop=True)
+    n_dropped = len(ranked_cells) - len(d)
+    labels = copy_fr.HOVER_LABELS["zoom_plane_impact"][mode]
+    hovers = []
+    for _, r in d.iterrows():
+        kw1, kw2 = hv.fmt_keywords_2x5(r["keywords"])
+        kw = "{0}<br>{1}".format(kw1, kw2) if kw2 else kw1
+        vals = (r["topic_name"], kw, hv.fmt_int(r["co_works"]),
+                hv.fmt_fwci_pair(r["fwci_median"], r["fwci_median"], int(r["co_works"])),
+                (None if pd.isna(r["n_phares"]) or r["n_phares"] <= 0 else hv.fmt_int(r["n_phares"])),
+                None, r["subfield_name"])
+        hovers.append(hv.hover_lines(list(zip(labels, vals))))
+    d = d.assign(hover=hovers)
+    return d, n_dropped
+
+
+def _plane_frontier_frame(cells: pd.DataFrame, mode: str, n: int):
+    ranked_cells = cells.sort_values(PLANE_SORT_COL[mode], ascending=False, na_position="last").head(n).copy()
+    comp = _load_frontier_components()
+    latest = comp[comp["is_latest"].astype(bool)].drop_duplicates("topic_id").set_index("topic_id")
+    ranked_cells["expansion"] = ranked_cells["topic_id"].map(latest["expansion"])
+    ranked_cells["acceleration"] = ranked_cells["topic_id"].map(latest["acceleration"])
+    d = ranked_cells[ranked_cells["expansion"].notna() & ranked_cells["acceleration"].notna()].reset_index(drop=True)
+    n_dropped = len(ranked_cells) - len(d)
+    labels = copy_fr.HOVER_LABELS["zoom_plane_frontier"][mode]
+    hovers = []
+    for _, r in d.iterrows():
+        kw1, kw2 = hv.fmt_keywords_2x5(r["keywords"])
+        kw = "{0}<br>{1}".format(kw1, kw2) if kw2 else kw1
+        vals = (r["topic_name"], kw, hv.fmt_score(r["expansion"]), hv.fmt_score(r["acceleration"]),
+                hv.fmt_int(r["co_works"]),
+                (None if pd.isna(r["frontier_score_std"]) else hv.fmt_score(r["frontier_score_std"])),
+                None)
+        hovers.append(hv.hover_lines(list(zip(labels, vals))))
+    d = d.assign(hover=hovers)
+    return d, n_dropped
+
+
+plane_cells = _cell_frame()
+if len(plane_cells) < PLANE_FLOOR:
+    st.caption(copy_fr.CAPTIONS["THIN_PARTNER"])
+else:
+    pl_c1, pl_c2 = st.columns([2, 1])
+    with pl_c1:
+        plane_mode = st.radio(
+            "Topics affichés", options=list(copy_fr.LABELS["PLANE_SELECT"].keys()),
+            format_func=lambda k: copy_fr.LABELS["PLANE_SELECT"][k],
+            horizontal=True, key="v2_plane_select",
+        )
+    with pl_c2:
+        plane_n = st.slider("N", min_value=10, max_value=50, value=PLANE_N_DEFAULT, step=5, key="v2_plane_n")
+
+    imp_frame, imp_dropped = _plane_impact_frame(plane_cells, plane_mode, plane_n)
+    fr_frame, fr_dropped = _plane_frontier_frame(plane_cells, plane_mode, plane_n)
+
+    p_col1, p_col2 = st.columns(2)
+    with p_col1:
+        st.markdown("#### Volume × impact")
+        if imp_frame.empty:
+            st.caption("—")
+        else:
+            fig_imp = fig_cache.cached_figure(
+                "zoom_plane_impact", (partner_id, CONF_STATE, plane_mode, plane_n),
+                lambda: C.fig_plane_impact(imp_frame),
+            )
+            st.plotly_chart(fig_imp, width="stretch")
+        reading.reading_line("zoom_plane_impact", plane_mode)
+        if imp_dropped:
+            st.caption(copy_fr.CAPTIONS["PLANE_UNSCORED"])
+    with p_col2:
+        st.markdown("#### Expansion × accélération")
+        if fr_frame.empty:
+            st.caption("—")
+        else:
+            fig_frt = fig_cache.cached_figure(
+                "zoom_plane_frontier", (partner_id, CONF_STATE, plane_mode, plane_n),
+                lambda: C.fig_plane_frontier(fr_frame),
+            )
+            st.plotly_chart(fig_frt, width="stretch")
+        reading.reading_line("zoom_plane_frontier", plane_mode,
+                              bin_prev=PLANE_FRONTIER_BIN_PREV, bin_last=PLANE_FRONTIER_BIN_LAST)
+        if fr_dropped:
+            st.caption(copy_fr.CAPTIONS["PLANE_UNSCORED"])
+    st.caption(copy_fr.CAPTIONS["FRONTIER_VINTAGES"])
+    exports.attach_download(st, imp_frame.drop(columns=["hover"], errors="ignore"),
+                             "v2-partner-drilldown", "planes", _EXPORT_STATE, entity=("p", partner_id))
+
+st.markdown("---")
+
+# =============================================================================
+# Section 5 -- Profil thématique : scoped-descent field -> subfield -> topic (I11)
+# (existing pass-6 mechanics preserved verbatim -- session-state keys are exercised
+# directly by tests/test_page_pf.py's cross-page navigation smoke test; only hover +
+# reading-line + S4 additions land here)
 # =============================================================================
 st.markdown("### Profil thématique de la relation")
 st.markdown(
@@ -516,10 +908,6 @@ st.markdown(
     "un champ peut peser beaucoup dans la relation et peu dans le portefeuille, et c'est "
     "le cas le plus intéressant."
 )
-
-# The full pair's works, lazy-keyed (Class-1 pruned read) -- feeds the per-theme annual
-# zoom, the suppressed-count disclosures below, and the publications preview/download.
-partner_works = lazy.read_keyed(PTN_WORKS_PATH, "partner_id", partner_id)
 
 drilled_field = st.session_state.get("v2_drill_field")
 drilled_subfield = st.session_state.get("v2_drill_subfield")
@@ -539,9 +927,6 @@ if drilled_field is not None:
         else:
             st.session_state["v2_drill_field"] = None
         st.rerun()
-
-fld_all = _load_ptn_fields()
-fld_p = fld_all[(fld_all["partner_id"] == partner_id) & (fld_all["conf_state"] == CONF_STATE)]
 
 if drilled_field is None:
     # -------------------------------------------------------------------- FIELD level
@@ -573,6 +958,7 @@ if drilled_field is None:
                 "share_of_pair_isite": round(float(r["share_of_pair_isite"]) * 100, 1),
             })
         field_disp = pd.DataFrame(rows)
+        _workbook_thematic_df = field_disp
         if CONF_STATE != "all":
             st.caption(FIELD_SHARE_P_NULL_FR)
 
@@ -611,6 +997,7 @@ if drilled_field is None:
             fig_f.update_layout(height=max(200, 26 * len(chart_f)), margin=dict(t=10, l=10, r=20, b=30),
                                  xaxis_title="Co-publications", showlegend=isite_overlay_on)
             st.plotly_chart(fig_f, width="stretch")
+            reading.reading_line("zoom_field_companion")
 
         st.caption("▸ choisir un champ ci-dessous pour voir ses sous-champs.")
         _opts = {r["field_label"]: r["node_id"] for _, r in visible_f.iterrows()}
@@ -674,6 +1061,7 @@ elif drilled_subfield is None:
                 "share_of_pair_isite": round(float(r["share_of_pair_isite"]) * 100, 1),
             })
         sub_disp = pd.DataFrame(rows)
+        _workbook_thematic_df = sub_disp
 
         _hidden = ["node_id", "subfield_color"]
         if not isite_overlay_on:
@@ -707,6 +1095,7 @@ elif drilled_subfield is None:
             fig_s.update_layout(height=max(200, 26 * len(chart_s)), margin=dict(t=10, l=10, r=20, b=30),
                                  xaxis_title="Co-publications", showlegend=isite_overlay_on)
             st.plotly_chart(fig_s, width="stretch")
+            reading.reading_line("zoom_subfield_companion")
 
         st.caption("▸ choisir un sous-champ ci-dessous pour descendre jusqu'aux topics.")
         _opts = {r["subfield_label"]: r["node_id"] for _, r in visible_s.iterrows()}
@@ -746,9 +1135,9 @@ else:
     if isite_overlay_on:
         st.caption(TOPIC_ISITE_NA_FR)
 
-    partner_topics = lazy.read_keyed(PTN_TOPICS_PATH, "partner_id", partner_id)
     # ptn_topics is conf-keyed (partner x topic x year x conf_state) -- filter on the
-    # ACTIVE conf_state, same session key as every other table on this page.
+    # ACTIVE conf_state, same session key as every other table on this page. `partner_topics`
+    # itself is the hoisted, page-top lazy read (shared with the topic-planes section).
     sub_topics = partner_topics[
         (partner_topics["subfield_id"].astype(str) == str(drilled_subfield))
         & (partner_topics["conf_state"] == CONF_STATE)
@@ -782,6 +1171,7 @@ else:
             agg_shown = agg_shown.assign(topic_name=agg_shown["topic_id"].map(topic_id2name)).sort_values(
                 vol_col, ascending=False,
             )
+            _workbook_thematic_df = agg_shown
 
             # #43: the topic search box is removed here (useless below the ranked_table()
             # N>=50 threshold) -- lib.ranked's PURE depth layer is kept (afficher plus).
@@ -880,75 +1270,78 @@ else:
 st.markdown("---")
 
 # =============================================================================
-# Section RÉCIPROCITÉ -- per-field scatter, this partner vs the UL (item #46)
+# Section 6 -- Réciprocité stratégique (item #46 -> BenchUp form, P-ZOOM #6): SAME level
+# toggle as the balance bars; conf_state='all' FIXED (baseline_partner_share only exists
+# there -- pre-pass-7 behaviour kept, per the brief's "existing caption ... kept").
 # =============================================================================
-st.markdown("### Réciprocité stratégique par champ")
-st.markdown(
-    "**Comment lire.** Chaque point est un champ disciplinaire. L'axe vertical donne le "
-    "poids de ce champ dans le portefeuille propre de l'Université de Lorraine ; l'axe "
-    f"horizontal donne le poids du même champ dans le portefeuille propre de "
-    f"{partner_row['display_name']}. La taille du point suit le volume de "
-    "co-publications entre les deux établissements dans ce champ. La diagonale marque un "
-    "poids identique des deux côtés."
-)
-# baseline_partner_share only exists at conf_state='all' (probe 7) -- this panel is
-# therefore always read on that basis, disclosed below, never approximated from a
-# no_conf-scoped value that does not exist.
-fld_recip = fld_all[
-    (fld_all["partner_id"] == partner_id) & (fld_all["conf_state"] == "all")
-    & (fld_all["node_level"] == "field")
-].copy()
-if fld_recip.empty or fld_recip["baseline_partner_share"].isna().all():
+st.markdown("### Réciprocité stratégique")
+
+
+def _recip_frame(level: str):
+    """zoom_reciprocity (VIZ_SPEC_pass7 §5.13) -- lifted from
+    tests/_registry.py::frame_reciprocity. NULL-share rows are dropped and counted (P8):
+    they cannot be placed on either axis, and a zero would be a lie."""
+    d = fld_all[(fld_all["partner_id"] == partner_id) & (fld_all["conf_state"] == "all")
+                & (fld_all["node_level"] == level)].copy()
+    if d.empty:
+        return d, 0
+    d["node_id"] = d["node_id"].astype(int)
+    d["node_name"] = d["node_id"].map(field_id2name if level == "field" else subfield_id2name)
+    d = d.dropna(subset=["node_name"])
+    n_before = len(d)
+    d = d[d["baseline_partner_share"].notna() & d["baseline_ul_share"].notna()].copy()
+    n_hidden = n_before - len(d)
+    if level == "field":
+        d["domain_id"] = d["node_id"].map(field_id2domain)
+    else:
+        topics_idx2 = get_topics_df().drop_duplicates("subfield_id").set_index("subfield_id")
+        d["domain_id"] = d["node_id"].map(topics_idx2["domain_id"])
+        d["field_name"] = d["node_id"].map(topics_idx2["field_name"])
+    d["domain_name"] = d["domain_id"].map(domain_id2name)
+    d = d.sort_values("co_works", ascending=False).reset_index(drop=True)
+    if level == "subfield":
+        d = d.head(30).reset_index(drop=True)
+    d["share_ul"] = d["baseline_ul_share"] * 100.0
+    d["share_partner"] = d["baseline_partner_share"] * 100.0
+    mode_key = "champ" if level == "field" else "sous_champ"
+    labels = copy_fr.HOVER_LABELS["zoom_reciprocity"][mode_key]
+    hovers = []
+    for _, r in d.iterrows():
+        vals = (r["node_name"], (r["field_name"] if level == "subfield" else None),
+                hv.fmt_pct(r["share_ul"]), hv.fmt_pct(r["share_partner"]),
+                hv.fmt_int(r["co_works"]), hv.fmt_pct(r["share_of_pair"] * 100.0), r["domain_name"])
+        hovers.append(hv.hover_lines(list(zip(labels, vals))))
+    d["hover"] = hovers
+    return d, n_hidden
+
+
+rc_level = _pair_level_control("v2_recip_level_radio")
+rc_level_word = "champ" if rc_level == "field" else "sous_champ"
+rc_frame, rc_n_hidden = _recip_frame(rc_level)
+reading.reading_line("zoom_reciprocity", rc_level_word, partenaire=partner_row["display_name"],
+                      n_hidden=fr_int(rc_n_hidden))
+if rc_frame.empty:
     st.info(
         f"Le poids de {partner_row['display_name']} dans son propre portefeuille n'est "
         "pas mesuré pour ce partenaire : aucune valeur n'est affichée plutôt qu'une "
         "valeur fabriquée."
     )
 else:
-    fld_recip = fld_recip[fld_recip["baseline_partner_share"].notna()].copy()
-    fld_recip["field_id_int"] = fld_recip["node_id"].astype(int)
-    fld_recip["field_name"] = fld_recip["field_id_int"].map(field_id2name)
-    fld_recip["domain_id"] = fld_recip["field_id_int"].map(field_id2domain)
-    fld_recip["domain_name"] = fld_recip["domain_id"].map(domain_id2name)
-
-    sizeref = _area_sizeref(fld_recip["co_works"])
-    fig_recip = go.Figure()
-    for dom_name, d in fld_recip.groupby("domain_name"):
-        color = get_domain_color(d["domain_id"].iloc[0])
-        customdata = np.stack([
-            d["field_name"].astype(str),
-            [fr_pct(v * 100) for v in d["baseline_ul_share"]],
-            [fr_pct(v * 100) for v in d["baseline_partner_share"]],
-            [fr_int(int(v)) for v in d["co_works"]],
-        ], axis=-1)
-        fig_recip.add_trace(go.Scatter(
-            x=d["baseline_partner_share"] * 100, y=d["baseline_ul_share"] * 100,
-            mode="markers", name=str(dom_name),
-            marker=dict(size=d["co_works"], sizemode="area", sizeref=sizeref, sizemin=4,
-                        color=color, line=dict(width=0.5, color="white")),
-            customdata=customdata,
-            hovertemplate=(
-                "<b>%{customdata[0]}</b><br>Poids UL : %{customdata[1]}<br>"
-                "Poids partenaire : %{customdata[2]}<br>"
-                "Co-publications : %{customdata[3]}<extra></extra>"
-            ),
-        ))
-    max_val = float(max(fld_recip["baseline_ul_share"].max(), fld_recip["baseline_partner_share"].max())) * 100 * 1.1
-    fig_recip.add_shape(type="line", x0=0, y0=0, x1=max_val, y1=max_val, line=dict(color="#B0B6BC", dash="dot"))
-    fig_recip.update_layout(
-        height=480, margin=dict(t=20, l=50, r=20, b=50),
-        xaxis=dict(title=f"Poids du champ chez {partner_row['display_name']} (%)", range=[0, max_val]),
-        yaxis=dict(title="Poids du champ à l'UL (%)", range=[0, max_val]),
-        legend=dict(orientation="h", y=-0.2),
+    fig_rc = fig_cache.cached_figure(
+        "zoom_reciprocity", (partner_id, rc_level),
+        lambda: C.reciprocity_scatter(rc_frame, level=rc_level_word, partner_name=partner_row["display_name"]),
     )
-    st.plotly_chart(fig_recip, width="stretch")
+    st.plotly_chart(fig_rc, width="stretch")
+    if rc_n_hidden:
+        _unit = "sous-champ(s)" if rc_level == "subfield" else "champ(s)"
+        st.caption(f":grey[{fr_int(rc_n_hidden)} {_unit} dont le poids propre du partenaire n'est pas mesuré, écarté(s) de la vue.]")
     st.caption(
         ":grey[Calculé sur le corpus entier, tous types de publication confondus, quel que "
         "soit l'état du filtre « papiers de conférence » : le poids du partenaire dans son "
         "propre portefeuille n'est mesuré qu'à cet état.]"
     )
     exports.attach_download(
-        st, fld_recip.drop(columns=["field_id_int", "domain_id"], errors="ignore"),
+        st, rc_frame.drop(columns=["hover"], errors="ignore"),
         "v2-partner-drilldown", "reciprocity-fields", _EXPORT_STATE_EXEMPT, entity=("p", partner_id),
     )
 st.markdown(
@@ -961,15 +1354,10 @@ st.markdown(
 st.markdown("---")
 
 # =============================================================================
-# Section 4 -- Portage interne de la relation (I7), top 20 / 10 par défaut (#45)
+# Section 7 -- Portage interne de la relation (I7), top 20 / 10 par défaut (#45) --
+# same pagination as pass-6, chart rebuilt on lib.charts.bars_with_gutter (P-ZOOM #7)
 # =============================================================================
 st.markdown("### Portage interne de la relation")
-st.markdown(
-    "**Comment lire.** Part de chaque laboratoire lorrain dans les travaux de la relation "
-    "qui sont attribués à une structure ; les structures suivantes sont regroupées sous "
-    "« Autres », dans une couleur distincte. Les travaux sans laboratoire attribué sont "
-    "comptés à part, hors de ce rapport."
-)
 labs_all = _load_ptn_labs()
 labs_p = labs_all[(labs_all["partner_id"] == partner_id) & (labs_all["conf_state"] == CONF_STATE)]
 labs_p = labs_p.sort_values("co_works", ascending=False).reset_index(drop=True)
@@ -982,21 +1370,34 @@ else:
     shown = ranked.depth_slice(top20, expanded=portage_expanded, default_n=PORTAGE_DEFAULT_N)
     autres = labs_p[~labs_p["lab_name"].isin(shown["lab_name"])]
 
-    bar_names = shown["lab_name"].astype(str).tolist()
-    bar_shares = (shown["share_of_lab_attributed"] * 100).tolist()
-    bar_colors = ["#0072B2"] * len(bar_names)
+    port_rows = shown.copy()
+    port_rows["is_other"] = False
     if not autres.empty:
-        bar_names.append(f"Autres ({fr_int(len(autres))} laboratoires)")
-        bar_shares.append(float(autres["share_of_lab_attributed"].sum()) * 100)
-        bar_colors.append(NEUTRAL_GREY)
-
-    fig_portage = go.Figure(go.Bar(y=bar_names, x=bar_shares, orientation="h", marker_color=bar_colors))
-    fig_portage.update_layout(
-        height=max(260, 26 * len(bar_names)), margin=dict(t=10, l=10, r=20, b=30),
-        xaxis_title="% des travaux attribués à un labo (hors NO-LAB)",
-        yaxis=dict(autorange="reversed"),
+        autres_row = pd.DataFrame([{
+            "lab_name": f"Autres ({fr_int(len(autres))} laboratoires)",
+            "co_works": float(autres["co_works"].sum()),
+            "share_of_lab_attributed": float(autres["share_of_lab_attributed"].sum()),
+            "is_other": True,
+        }])
+        port_rows = pd.concat([port_rows, autres_row], ignore_index=True)
+    _labels_pt = copy_fr.HOVER_LABELS["zoom_portage"]["default"]
+    port_rows["hover"] = [
+        hv.hover_lines(list(zip(_labels_pt, (r["lab_name"], hv.fmt_int(r["co_works"]),
+                                              hv.fmt_pct(r["share_of_lab_attributed"] * 100.0)))))
+        for _, r in port_rows.iterrows()
+    ]
+    _colors = [NEUTRAL_GREY if o else UL_COLOR for o in port_rows["is_other"]]
+    # family="labo_court": ptn_labs.lab_name carries ACRONYMS (IJL/CRAN/LORIA/...), not the
+    # ul_labs full-name universe the wider "labo" column (335px) was measured on -- that
+    # column alone would exceed a 390px viewport (P7_LIBA.md NOTE 7/8; "labo_court" landed
+    # to fix exactly this, 90px, confirmed present in charts.FAMILIES before writing this).
+    fig_portage = fig_cache.cached_figure(
+        "zoom_portage", (partner_id, CONF_STATE, len(port_rows), bool(portage_expanded)),
+        lambda: C.bars_with_gutter(port_rows, family="labo_court", label_col="lab_name",
+                                   value_col="co_works", color=_colors),
     )
     st.plotly_chart(fig_portage, width="stretch")
+    reading.reading_line("zoom_portage")
     if not portage_expanded and len(top20) > PORTAGE_DEFAULT_N:
         if st.button("afficher plus", key="v2_portage_more_btn"):
             st.session_state["v2_portage_expanded"] = True
@@ -1024,7 +1425,53 @@ st.markdown(
 st.markdown("---")
 
 # =============================================================================
-# Section 5 -- publications : aperçu (5 lignes) + téléchargement lazy (item #44)
+# Section 8 -- NEW Export complet de la page (page workbook, P16)
+# =============================================================================
+st.markdown("### Export complet de la page")
+_lecture = [
+    ("Partenaire", str(partner_row["display_name"])),
+    ("Identifiant OpenAlex", partner_id),
+    ("Filtre conférence", "avec conférence" if include_conference else "hors conférence"),
+    ("Filtre hors référentiel", "actif" if artifact_on else "inactif"),
+    ("Surcouche I-SITE", "active" if isite_overlay_on else "inactive"),
+    ("Niveau (équilibre / réciprocité)",
+     copy_fr.LABELS["LEVEL_TOGGLE"][LEVEL_KEYS.index(st.session_state.get("v2_pair_level", "field"))]),
+    ("Mode (équilibre)", copy_fr.LABELS["BALANCE_MODES"].get(st.session_state.get("v2_balance_mode", "volume"), "—")),
+    ("Sélecteur (plans)", copy_fr.LABELS["PLANE_SELECT"].get(st.session_state.get("v2_plane_select", "volume"), "—")),
+    ("N (plans)", str(st.session_state.get("v2_plane_n", PLANE_N_DEFAULT))),
+    ("Instantané", SNAPSHOT_DATE),
+    ("Fenêtre", window_label()),
+    ("URL", links.copubs_url(partner_id)),
+]
+_wb_identity = pd.DataFrame([{
+    "Partenaire": partner_row["display_name"], "Co-publications": int(partner_row[CO_COL]),
+    "Part UL": float(partner_row[controls.xa(base_rows, "share_ul")]),
+    "Part partenaire": (None if pd.isna(_share_p) else float(_share_p)),
+    "FWCI médian": float(partner_row[controls.xa(base_rows, "fwci_fr_median")]),
+    "Co-pubs ISITE": int(partner_row["isite_co_works"]),
+    "Publications phares": (None if pd.isna(n_phares_val) else int(n_phares_val)),
+}])
+_wb_sheets = {
+    "Identité et KPI": _wb_identity,
+    "Volume annuel": yr_p,
+    "Équilibre": bb_frame.drop(columns=["hover", "url"], errors="ignore"),
+    "Plans": imp_frame.drop(columns=["hover"], errors="ignore"),
+    "Profil thématique": _workbook_thematic_df,
+    "Réciprocité": rc_frame.drop(columns=["hover"], errors="ignore"),
+    "Portage": labs_p,
+}
+_wb_bytes, _wb_filename = exports.page_workbook(_wb_sheets, _lecture, view="v2-partner-drilldown")
+st.download_button(
+    copy_fr.LABELS["PAGE_WORKBOOK"], data=_wb_bytes, file_name=_wb_filename,
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    key="v2_page_workbook_dl",
+)
+
+st.markdown("---")
+
+# =============================================================================
+# Section 9 -- publications : aperçu (5 lignes) + téléchargement lazy (item #44,
+# unchanged this pass)
 # =============================================================================
 st.markdown("### Publications de la relation")
 st.markdown(
