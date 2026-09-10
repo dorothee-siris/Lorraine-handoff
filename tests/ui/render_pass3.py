@@ -92,6 +92,7 @@ PAGES = [
 results: dict[tuple[str, int], dict] = {}   # (slug, width) -> {exception, scroll_ok, shot}
 state_results: list[str] = []               # human-readable PASS/FAIL lines
 marks_results: list[str] = []
+clip_results: list[str] = []                # pass-7a: clipped-gutter check per page x width
 failures: list[str] = []
 observations: list[str] = []
 checks = 0
@@ -146,6 +147,33 @@ def marks_check(page):
     charts = chart_marks(page)
     empty = [c for c in charts if c["points"] == 0 and not c["empty_state"]]
     return charts, empty
+
+
+# ---------------------------------------------------------------------------
+# pass-7a addition (S-INSP deliverable 2): clipped-gutter check -- count <text>
+# elements of each Plotly figure whose bounding box lies OUTSIDE the figure's own
+# container box (its margin IS part of that box, so a correctly-placed gutter
+# number never counts; only genuine overflow/clipping does).
+# ---------------------------------------------------------------------------
+TEXT_CLIP_PROBE = """() => {
+  return Array.from(document.querySelectorAll('.js-plotly-plot')).map((gd, i) => {
+    const gdBox = gd.getBoundingClientRect();
+    let clipped = 0, total = 0;
+    gd.querySelectorAll('text').forEach((t) => {
+        const b = t.getBoundingClientRect();
+        if (b.width === 0 && b.height === 0) return;  // not laid out -- ignore
+        total += 1;
+        const outside = (b.right < gdBox.left || b.left > gdBox.right ||
+                          b.bottom < gdBox.top || b.top > gdBox.bottom);
+        if (outside) clipped += 1;
+    });
+    return {index: i, clipped: clipped, total: total};
+  });
+}"""
+
+
+def text_clip_check(page):
+    return page.evaluate(TEXT_CLIP_PROBE)
 
 
 def blank_images(page) -> int:
@@ -257,6 +285,22 @@ def run_width_matrix(page, base: str) -> None:
                 )
             if blanks:
                 failures.append(f"{slug}@{width}px: {blanks} blank rendered image(s) (e.g. wordcloud).")
+
+            # pass-7a (S-INSP deliverable 2): clipped-gutter check, every page x every
+            # width (clipping is more likely to bite at 390 px than 1920, so unlike the
+            # marks-check below this is NOT limited to 1920).
+            if cls != "HOME":
+                checks += 1
+                clip_info = text_clip_check(page)
+                total_clipped = sum(c["clipped"] for c in clip_info)
+                if total_clipped:
+                    per_chart = ", ".join(f"#{c['index']}={c['clipped']}/{c['total']}"
+                                           for c in clip_info if c["clipped"])
+                    failures.append(f"{slug}@{width}px: {total_clipped} clipped <text> element(s) "
+                                     f"outside their figure's own box -> {per_chart}")
+                    clip_results.append(f"[FAIL] {slug}@{width}px: {total_clipped} clipped -> {per_chart}")
+                else:
+                    clip_results.append(f"[ok] {slug}@{width}px: 0 clipped ({len(clip_info)} figure(s))")
 
             if width == 1920 and cls != "HOME":
                 charts, empty = marks_check(page)
@@ -598,6 +642,63 @@ def run_author_export_guard(context, base: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Pass F -- pass-7a (S-INSP deliverable 2): Zoom_partenaire "3 partners" requirement.
+# PAGES above already covers CHRU (I4210100260) through the normal per-page x per-width
+# matrix; this pass adds CNRS (the largest partner, every other pass-7 stream's own
+# reference entity) and a thin partner (<20 co-pubs) so all 3 render clean.
+# ---------------------------------------------------------------------------
+ZOOM_EXTRA_PARTNERS = [
+    ("CNRS", "I1294671590"),
+    ("thin_I4210137456", "I4210137456"),  # "Momentum Research" (US), co_works_full=19
+]
+
+
+def run_zoom_partner_matrix(page, base: str) -> None:
+    global checks
+    for label, pid in ZOOM_EXTRA_PARTNERS:
+        for width in WIDTHS:
+            checks += 1
+            goto_width(page, base, f"/Zoom_partenaire?partner_id={pid}", width)
+            broken, detail = has_exception(page)
+            sw, iw, scroll_ok = scroll_check(page)
+            shot = SHOTS / f"Zoom_partenaire_{label}_{width}.png"
+            full_shot(page, shot, width)
+            blanks = blank_images(page)
+            checks += 1
+            clip_info = text_clip_check(page)
+            total_clipped = sum(c["clipped"] for c in clip_info)
+            ok = (not broken) and scroll_ok and not total_clipped
+            status = "PASS" if ok else "FAIL"
+            print(f"[{status}] Zoom_partenaire ({label}) @ {width}px  exception={broken} "
+                  f"scrollWidth={sw} innerWidth={iw} clipped={total_clipped}")
+            if broken:
+                failures.append(f"Zoom_partenaire ({label})@{width}px: exception -- {ascii_(detail)}")
+            if not scroll_ok:
+                failures.append(f"Zoom_partenaire ({label})@{width}px: scrollWidth {sw} > innerWidth {iw}")
+            if blanks:
+                failures.append(f"Zoom_partenaire ({label})@{width}px: {blanks} blank image(s)")
+            if total_clipped:
+                per_chart = ", ".join(f"#{c['index']}={c['clipped']}/{c['total']}"
+                                       for c in clip_info if c["clipped"])
+                failures.append(f"Zoom_partenaire ({label})@{width}px: {total_clipped} clipped <text> -> {per_chart}")
+                clip_results.append(f"[FAIL] Zoom_partenaire ({label})@{width}px: {total_clipped} clipped -> {per_chart}")
+            else:
+                clip_results.append(f"[ok] Zoom_partenaire ({label})@{width}px: 0 clipped ({len(clip_info)} figure(s))")
+
+            if width == 1920:
+                charts, empty = marks_check(page)
+                checks += 1
+                if empty:
+                    detail_m = ", ".join(f"#{c['index']} (traces={c['traces']})" for c in empty)
+                    failures.append(f"Zoom_partenaire ({label})@1920px marks-check: "
+                                     f"{len(empty)}/{len(charts)} chart(s) ZERO points -> {detail_m}")
+                    marks_results.append(f"[FAIL] Zoom_partenaire ({label}): {len(empty)}/{len(charts)} empty -> {detail_m}")
+                else:
+                    marks_results.append(
+                        f"[ok] Zoom_partenaire ({label}): {len(charts)} chart(s), points={[c['points'] for c in charts]}")
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 def main() -> int:
@@ -626,11 +727,36 @@ def main() -> int:
 
             page.close()
 
+            # pass-7a (S-INSP): Passes D/E are pre-existing (pass-3) and exercise
+            # Zoom_partenaire's descent/drill mechanic + Profil_auteur's export guard --
+            # NOT part of this dispatch's own deliverable, and page 9 was mid-rewrite by a
+            # concurrent FIX-1 stream for part of this session (see progress/P7_INSP.md).
+            # A hard crash here must not swallow Pass F (this dispatch's OWN "3 partners"
+            # requirement) or the final summary -- caught, logged, reported as a failure,
+            # never silently absorbed.
             print("\n=== Pass D: page 7 drill path end-to-end ===")
-            run_drill_path(context, base)
+            try:
+                run_drill_path(context, base)
+            except Exception as e:
+                failures.append(f"Pass D (drill path) raised and did not complete: {ascii_(e)}")
+                print(f"[FAIL] Pass D raised: {ascii_(e)}")
 
             print("\n=== Pass E: page 10 author export guard ===")
-            run_author_export_guard(context, base)
+            try:
+                run_author_export_guard(context, base)
+            except Exception as e:
+                failures.append(f"Pass E (author export guard) raised and did not complete: {ascii_(e)}")
+                print(f"[FAIL] Pass E raised: {ascii_(e)}")
+
+            print("\n=== Pass F (pass-7a, S-INSP): Zoom_partenaire 3-partner coverage ===")
+            page2 = context.new_page()
+            page2.set_default_timeout(60_000)
+            try:
+                run_zoom_partner_matrix(page2, base)
+            except Exception as e:
+                failures.append(f"Pass F (Zoom_partenaire 3-partner coverage) raised and did not complete: {ascii_(e)}")
+                print(f"[FAIL] Pass F raised: {ascii_(e)}")
+            page2.close()
 
             browser.close()
     finally:
@@ -660,6 +786,10 @@ def main() -> int:
 
     print("\n=== MARKS CHECK ===")
     for line in marks_results:
+        print(" ", line)
+
+    print("\n=== CLIPPED-GUTTER CHECK (pass-7a) ===")
+    for line in clip_results:
         print(" ", line)
 
     print()
