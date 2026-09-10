@@ -38,9 +38,12 @@ La correspondance mécanique entre chaque objet et les tables de données qui le
 bloc `yaml` en annexe technique, en fin de document. `docs/registre_check.py` la vérifie contre
 `docs/data_contract.yaml` : toute table déployée doit y apparaître sous au moins un objet, et tout
 objet doit y porter au moins une table ou être marqué explicitement « dérivé » (un objet documenté
-ici sans table dédiée). Onze objets sont couverts : les dix nommés par le porteur du projet, plus
-un onzième (« établissement pair ») ajouté pour que la correspondance couvre l'ensemble des tables
-déployées, sans lequel les quatre tables du Benchmark (§ établissement pair) resteraient orphelines.
+ici sans table dédiée). Quatorze objets sont couverts : les dix nommés par le porteur du projet, plus
+quatre ajoutés au fil des passes pour que la correspondance couvre l'ensemble des tables déployées ou
+donne une fiche aux notions qu'une passe a introduites — « établissement pair » (passe 4, sans quoi
+les quatre tables du Benchmark resteraient orphelines), puis, passe 7a, « publication phare »,
+« composante de frontière » (sans quoi la nouvelle table `dim_frontier_components` resterait
+orpheline) et « paire UL × partenaire ».
 
 ---
 
@@ -191,6 +194,55 @@ quatre tables resteraient orphelines de tout objet nommé.
 | Objets liés | Structure interne (la ligne Université de Lorraine de ces tables) ; Thématique (comparaison de spécialisation et de diversité) ; ODD (comparaison de méthode Aurora) ; Pays (chaque pair a un pays d'origine). |
 | Pièges | **La ligne Université de Lorraine de ces quatre tables n'est ni le corpus canonique (36 819 travaux) ni aucun des trois autres périmètres lorrains cités ailleurs dans l'outil** : c'est un quatrième périmètre, volontairement plus étroit, l'identifiant direct de l'établissement sur la même fenêtre et les mêmes cinq types que chaque pair. C'est la seule des perspectives qui traite l'Université exactement comme chaque pair (`docs/METHODES.md` § 9.8 et § 9.10) : toujours nommer ce périmètre explicitement plutôt que de le confondre avec le corpus canonique affiché ailleurs. **L'écart entre comptage direct et comptage par filiation touche fortement les établissements français, pas les étrangers** (facteur ×1,29 à ×2,18 pour les pairs français retenus, contre ×1,00 à ×1,08 pour les pairs étrangers) : toute comparaison de taille entre un pair français et un pair étranger porte une marge d'erreur asymétrique, jamais un critère de taille utilisé seul pour départager deux établissements. Le FWCI_FR appliqué aux pairs étrangers reste un étalon français commun, jamais une norme mondiale : un pair qui affiche un FWCI_FR inférieur à 1 n'est pas « moins cité dans l'absolu », il est moins cité au regard d'un référentiel qui n'est pas le sien. Ces tables sont exemptées par construction du bouton « hors référentiel » : les corpus pairs sont tirés en direct d'OpenAlex, hors de l'instantané local qui porte la liste des 811 topics exclus. |
 
+## Publication phare
+
+Objet ajouté passe 7a (transfert BenchUp, `docs/METHODES.md` § 9.16), quand le statut de
+publication phare, déjà défini pour le corpus entier, a commencé à se compter au grain de chaque
+relation avec un partenaire.
+
+| Champ | Contenu |
+|---|---|
+| Définition | une publication du corpus qui figure parmi les 10 % les plus citées de sa strate française (`PPtop10_FR`, la même définition que celle déjà posée pour le corpus entier au § 4 de `docs/METHODES.md`), désormais comptée aussi au grain de chaque relation avec un partenaire : un compte de publications phares par nœud thématique de la relation (paire × champ ou sous-champ), par cellule paire × topic, et pour la relation entière. |
+| Unités / valeurs | un booléen par travail (`pptop10_fr`, plus `pptop1_fr` pour le 1 % le plus cité), nul quand l'indicateur n'est pas calculable pour ce travail (strate trop mince ou absente, § 4) — jamais un zéro ; un compte entier par nœud, par cellule ou par relation, doublé de sa version hors référentiel (`n_phares_xa`, § 9.1). |
+| Source | dérivé directement des colonnes déjà calculées pour le corpus entier (§ 4), reporté sur les travaux conjoints avec chaque partenaire. |
+| Langue d'affichage | français ; le libellé d'interface est toujours « publications phares (top 10 % France) », jamais l'abréviation technique. |
+| Vues consommatrices | Zoom partenaire (page 9, indicateur clé et mode dédié des barres d'équilibre et des plans de topics) ; Collaborations (page 8, à travers les cellules qui en héritent). |
+| Indicateurs | compte de publications phares par nœud, par cellule et par relation (§ 9.16) ; mode « publications phares » des barres d'équilibre (§ 9.17) et des plans de topics. |
+| Objets liés | Partenaire (le compte se lit toujours pour une relation) ; Thématique (le nœud sur lequel le compte est agrégé) ; Paire UL × partenaire (ci-dessous, les deux se lisent ensemble sur le Zoom partenaire). |
+| Pièges | **Le lien qui accompagne un compte de publications phares n'est pas toujours la liste exacte.** En dessous d'un plafond d'identifiants, il pointe vers la liste OpenAlex exacte des travaux comptés ; au-delà, le lien bascule sur une liste triée par citations décroissantes sur le même périmètre — une proxy des travaux les plus cités, jamais la règle du décile elle-même — signalée par une légende dédiée à chaque occurrence, jamais silencieusement (`docs/METHODES.md` § 9.16). Le compte affiché suit toujours les mêmes bascules (conférence, hors référentiel) que la liste liée : un compte et une liste calculés sur des bascules différentes ne seraient plus la même relation. |
+
+## Composante de frontière
+
+Objet ajouté passe 7a pour que la correspondance couvre la nouvelle table `dim_frontier_components`,
+sans laquelle elle resterait orpheline.
+
+| Champ | Contenu |
+|---|---|
+| Définition | l'une des deux lectures que l'outil porte pour le score de frontiérité d'un topic (§ 9.5) : la composante d'une fenêtre de trois ans précise (expansion, accélération, rang mondial), distincte du score composite déjà publié (moyenne pondérée sur des fenêtres de quatre ans, § 9.5) — deux lectures de la même méthode, qui ne doivent jamais apparaître ensemble sur une même figure. |
+| Unités / valeurs | une ligne par topic et par fenêtre de trois ans, avec un drapeau désignant la fenêtre la plus récente ; `dim_frontier_components.parquet`, table nouvelle cette passe. |
+| Source | fichier manuel dédié (distinct de celui du score composite, tous deux issus de la même méthodologie ESPON-ACCORD — `docs/FRONTIERNESS_METHOD.md`), vérifié à l'empreinte à chaque construction. |
+| Langue d'affichage | valeurs numériques sans traduction ; les libellés qui les entourent (« expansion », « accélération », les bornes de fenêtre) sont en français, toujours lus depuis la table plutôt qu'écrits en dur. |
+| Vues consommatrices | Zoom partenaire (page 9, plan expansion-accélération, fenêtre la plus récente uniquement). |
+| Indicateurs | expansion, accélération, rang mondial, et le score composite qui en dérive (§ 9.5), sur la seule fenêtre la plus récente à cet usage. |
+| Objets liés | Thématique (le topic porteur du score) ; Période (la fenêtre de trois ans). |
+| Pièges | **Composite et composantes ne se lisent jamais côte à côte sans le dire.** Les deux fichiers sources ne partagent ni le même découpage temporel (quatre ans contre trois) ni exactement le même nombre de topics retenus ; toute figure qui affiche une frontiérité nomme explicitement laquelle des deux lectures elle montre (`docs/METHODES.md` § 9.19, `docs/FRONTIERNESS_METHOD.md` § 5). La reconstruction de cette table n'est, à ce jour, pas reproductible par l'API OpenAlex seule — un chemin par instantané BigQuery est documenté pour une passe future, non exécuté (`docs/FRONTIERNESS_METHOD.md` § 7). |
+
+## Paire UL × partenaire
+
+Objet ajouté passe 7a pour la relation bilatérale lue nœud par nœud, un niveau plus fin que l'objet
+« Partenaire » ci-dessus, qui la couvre au seul total agrégé.
+
+| Champ | Contenu |
+|---|---|
+| Définition | la relation bilatérale entre l'Université de Lorraine et un partenaire donné, considérée nœud par nœud de la taxonomie thématique (champ, sous-champ) plutôt qu'au seul total agrégé déjà couvert par l'objet « Partenaire » : ce que chaque camp apporte à un même nœud, l'un à côté de l'autre. |
+| Unités / valeurs | par nœud et par relation : le volume propre de l'UL hors la relation, le volume conjoint, et le volume propre du partenaire hors la relation ; les deux premiers proviennent du corpus lorrain, le troisième du tirage dédié au partenaire lui-même (§ 9.7). |
+| Source | `ptn_fields.parquet` porte désormais, colonne par colonne, le total propre du partenaire sur chaque nœud, lu directement du tirage dédié (§ 9.7) plutôt que projeté depuis une part ; `ptn_topics.parquet` porte le même principe au grain cellule. |
+| Langue d'affichage | français pour les libellés d'interface (« volume propre du partenaire », « poids du nœud »). |
+| Vues consommatrices | Zoom partenaire (page 9, barres d'équilibre § 9.17 et nuage de réciprocité par sous-champ § 9.18). |
+| Indicateurs | volume propre du partenaire par nœud, poids de ce nœud dans le portefeuille propre du partenaire (le total propre du partenaire sur le nœud rapporté à son volume total sur la même fenêtre), et son pendant côté UL déjà publié (quotient de localisation, § 9.8). |
+| Objets liés | Partenaire (la même relation, vue au total plutôt que nœud par nœud) ; Thématique (le nœud) ; Publication phare (le compte qui s'y agrège, ci-dessus). |
+| Pièges | **Le volume propre du partenaire sur un nœud est une grandeur exacte quand elle existe, jamais une projection depuis une part.** Un correctif de cette passe a remplacé une formule qui multipliait le volume total du partenaire par une part d'implication — deux grandeurs de nature différente dont le produit n'a pas de sens — par la lecture directe du total propre du partenaire sur ce nœud précis, dès qu'il est disponible ; là où il ne l'est pas, la case reste vide plutôt que de reprendre l'ancienne formule (`docs/METHODES.md` § 9.17). La même distinction gouverne le nuage de réciprocité (§ 9.18) : les deux axes doivent être deux poids de même nature, jamais un poids d'un côté contre une part d'implication de l'autre. |
+
 ---
 
 ## Tenue à jour de ce registre
@@ -256,4 +308,10 @@ objects:
   etablissement_pair:
     tables: [bench_peers.parquet, bench_sdg.parquet, bench_positioning.parquet,
              bench_diversity.parquet]
+  publication_phare:
+    tables: [ptn_works.parquet, ptn_fields.parquet, ptn_topics.parquet, ptn_summary.parquet]
+  composante_de_frontiere:
+    tables: [dim_frontier_components.parquet]
+  paire_ul_partenaire:
+    tables: [ptn_works.parquet, ptn_fields.parquet, ptn_topics.parquet, ptn_summary.parquet]
 ```

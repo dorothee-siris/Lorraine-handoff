@@ -4,7 +4,7 @@ Ce dépôt reconstruit, à partir d'OpenAlex, l'intégralité des jeux de donné
 **Lorraine Explorer**, l'outil d'exploration bibliométrique de l'Université de Lorraine sur la
 fenêtre 2019-2023. Il contient le pipeline, l'application Streamlit et le contrat de données. Tout se pilote depuis un seul fichier, `config.yaml`.
 
-Application en ligne : <https://lorraine-handoff.streamlit.app/>. **L'interface de l'application est désormais entièrement en français** (D61 REVERSÉE passe 5,
+Application en ligne : <https://lorraine-handoff-bis.streamlit.app/>. **L'interface de l'application est désormais entièrement en français** (D61 REVERSÉE passe 5,
 2026-08-18 : le wrapper FR complet remplace la parité anglaise historique avec la version 1,
 que l'atelier comparait côte à côte). La documentation l'est également.
 
@@ -13,7 +13,8 @@ Ce fichier est le mode d'emploi de l'opérateur. La méthode est décrite dans
 [`docs/SHIFT_v1_v2.md`](docs/SHIFT_v1_v2.md), les contrôles automatiques dans
 [`docs/AUDIT.md`](docs/AUDIT.md), la traçabilité des sources dans
 [`docs/PROVENANCE.md`](docs/PROVENANCE.md), les options d'accès à l'application dans
-[`docs/ACCES_STREAMLIT.md`](docs/ACCES_STREAMLIT.md).
+[`docs/ACCES_STREAMLIT.md`](docs/ACCES_STREAMLIT.md), la méthode de frontiérité thématique dans
+[`docs/FRONTIERNESS_METHOD.md`](docs/FRONTIERNESS_METHOD.md).
 
 **Chaîne pass 3 (2026-08-15, partenaires/thématique/auteurs) :** l'état de la chaîne est dans la
 section « Chain pass 3 » en fin de [`docs/BUILD_STATE.md`](docs/BUILD_STATE.md) ; la spécification

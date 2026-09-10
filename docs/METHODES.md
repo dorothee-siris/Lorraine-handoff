@@ -841,3 +841,112 @@ d'indicateur calculé (strate trop mince) affichait un profil plat à zéro, ind
 dont le FWCI médian vaut réellement zéro. La construction omet désormais ce champ du bloc de
 données plutôt que d'y inscrire une valeur ; l'application traite déjà l'absence comme une valeur
 manquante partout ailleurs, aucune modification côté écran n'était nécessaire.
+
+### 9.16 « Publications phares » côté partenaires (D40, passe 7a)
+
+La définition d'une publication phare ne change pas : c'est celle du §4, PPtop10_FR (et, plus
+rarement affichée, PPtop1_FR), un rang centile sur la strate française de référence, jamais une
+comparaison à un p90 interpolé. Ce que cette passe ajoute, c'est le report de ce statut au grain de
+chaque relation avec un partenaire : un compte de publications phares par nœud thématique de la
+relation (une paire partenaire × champ, ou × sous-champ), par cellule paire × topic, et pour la
+relation entière. Le compte reste nul, jamais affiché comme un zéro, sur les mêmes travaux que ceux
+déjà exclus du calcul du §4 ; il se décline en deux versions comme partout ailleurs dans le
+pipeline, tous types confondus et hors référentiel (§9.1).
+
+Chaque compte de publications phares est doublé d'un lien direct vers les travaux comptés dans
+OpenAlex. En-deçà d'un plafond de cent identifiants, ce lien porte la liste exacte des travaux ; au-
+delà, OpenAlex ne permet plus d'interroger une liste aussi longue par identifiants un par un, et le
+lien bascule sur la même relation triée par nombre de citations décroissant — une liste des plus
+citées, une proxy, jamais le calcul du décile lui-même — avec une légende dédiée qui le dit
+explicitement à chaque occurrence où le plafond est dépassé, jamais silencieusement.
+
+### 9.17 Barres d'équilibre : trois volumes pour une relation (P7-R3(b))
+
+Pour chaque champ, ou pour les sous-champs les plus engagés dans la relation (§9.18 en donne la
+règle de sélection), une nouvelle figure met en regard trois grandeurs sur un même nœud : le volume
+propre de l'UL en dehors de la relation, le volume conjoint (les co-publications elles-mêmes), et le
+volume propre du partenaire en dehors de la relation, en miroir de part et d'autre du volume
+conjoint.
+
+Le troisième segment est une grandeur exacte quand elle existe : le total propre du partenaire sur
+ce nœud provient directement du tirage dédié au partenaire (§9.7), jamais d'une projection à partir
+d'une part. Un correctif de cette passe a précisément retiré une première version qui multipliait le
+volume total du partenaire par une part d'implication de ce nœud dans son propre décompte : le
+produit de ces deux grandeurs, de nature différente, ne mesure rien. Là où le total propre du
+partenaire n'est pas disponible pour un nœud, le segment reste vide plutôt que reconstruit, et la
+figure le signale plutôt que de l'omettre en silence. La colonne de droite relie toujours le nombre
+affiché à sa liste OpenAlex vivante, et une relation sous le plancher de cinq co-publications
+s'affiche par un tiret plutôt qu'un compte trop mince pour être lu.
+
+Deux autres lectures se lisent sur la même mise en forme : le FWCI_FR médian des co-publications
+(avec, côté partenaire, une case laissée vide quand son propre médian n'est pas mesurable, disclosed
+plutôt que masqué) et le compte de publications phares (§9.16), dont le côté partenaire reste par
+construction un tiret — cette grandeur n'existe, par définition, que sur des travaux conjoints.
+
+### 9.18 Réciprocité par sous-champ : deux poids de même nature (passe 7a)
+
+Le nuage de réciprocité, déjà publié au grain de la relation entière (§9.7), descend cette passe au
+grain du sous-champ : chaque bulle porte, en abscisse, le poids de ce sous-champ dans le portefeuille
+propre de l'UL, et en ordonnée le poids de ce même sous-champ dans le portefeuille propre du
+partenaire (§9.17, la même grandeur exacte). Les deux axes portent la même nature de grandeur, un
+poids de portefeuille, ce qui rend la diagonale « poids égal » réellement lisible — à la différence
+d'une part d'implication, qui n'a pas la même dimension et ne devrait jamais partager cette
+diagonale.
+
+La sélection des sous-champs affichés suit une règle unique, appliquée avant toute autre chose : les
+trente sous-champs au plus fort volume conjoint de la relation, jamais un tri par la grandeur
+affichée elle-même — de sorte que le même ensemble de trente lignes serve indifféremment les trois
+lectures des barres d'équilibre. Parmi ces trente, les lignes pour lesquelles le poids propre du
+partenaire n'est pas mesuré sont retirées de la vue et comptées dans une légende adjacente, jamais
+affichées comme un zéro ni silencieusement absentes.
+
+### 9.19 Composantes de frontière : la lecture de la dernière période, jamais le composite (passe 7a)
+
+Le score de frontiérité (§9.5) porte, depuis cette passe, une seconde lecture. Le score déjà publié
+reste un composite, moyenne pondérée d'expansion et d'accélération sur des fenêtres de quatre ans, un
+chiffre unique par topic. La nouvelle table porte les composantes elles-mêmes — expansion,
+accélération, rang mondial — sur des fenêtres de trois ans distinctes, dont seule la plus récente
+alimente la nouvelle vue par relation (le plan expansion-accélération du Zoom partenaire).
+
+Les deux lectures proviennent de deux fichiers manuels différents, de la même méthodologie
+ESPON-ACCORD mais construits à des granularités temporelles différentes, et **ne doivent jamais
+apparaître ensemble sur une même figure** : toute figure qui affiche une frontiérité nomme
+explicitement laquelle des deux lectures elle montre. La méthode complète, les trois strates de
+calcul, la liste d'exclusion des topics hors référentiel mondial et le verdict de reproductibilité
+(non reproductible via l'API OpenAlex à ce jour, faute d'un accès à la profondeur de citations par
+année qu'exige la méthode ; un chemin de reproduction par instantané BigQuery est documenté pour une
+passe future, non exécuté) vivent dans [`docs/FRONTIERNESS_METHOD.md`](FRONTIERNESS_METHOD.md),
+jamais résumés ni dupliqués ici.
+
+### 9.20 Mémoire bornée : un plafond prouvé, pas seulement mesuré (passe 7a)
+
+Les vues par partenaire chargent, pour chaque relation consultée, deux fichiers volumineux (le
+détail par nœud et par cellule d'un partenaire). Sans plafond, une session qui parcourt de nombreux
+partenaires accumulerait ces fichiers en mémoire indéfiniment. L'application borne désormais le
+nombre de relations gardées simultanément en mémoire pour ces deux fichiers à une valeur
+sensiblement plus basse que celle des fichiers plus légers de l'application. Une figure déjà
+construite pour un même jeu de filtres est elle-même conservée un temps borné plutôt que reconstruite
+à chaque interaction, sur un nombre de figures également plafonné ; ce mécanisme ne change jamais un
+nombre affiché, seulement le temps de reconstruction — vérifié en comparant, nœud par nœud, chaque
+grandeur avant et après l'introduction du plafond.
+
+Le plafond lui-même n'est pas qu'une mesure ponctuelle : un harnais rejoue une session réaliste puis
+plusieurs sessions concurrentes sur les pages partenaires, en surveillant la mémoire résidente du
+serveur, et la preuve exige que le plafond retire réellement de la mémoire quand il est désactivé —
+une version délibérément non plafonnée du même harnais doit mesurer un pic supérieur, sans quoi le
+plafond ne prouverait rien. Le pic mesuré reste largement en deçà de la moitié de la capacité de
+l'hébergement retenue comme seuil d'alerte.
+
+### 9.21 Grammaire des survols et lignes de lecture (passe 7a)
+
+Chaque graphique de l'application porte désormais la même grammaire, quel que soit le panneau : une
+ligne de lecture unique, deux phrases au plus, placée entre les commandes et le graphique lui-même
+(elle remplace les anciens paragraphes « Comment lire » des pages partenaires, jamais les paragraphes
+« Pourquoi cet indicateur », qui répondent à une autre question, et chaque mode d'un graphique porte
+sa propre ligne), et une infobulle qui ouvre toujours sur l'entité en gras sans étiquette, puis au
+plus huit lignes portant chacune une étiquette et sa valeur, une condition non remplie retirant la
+ligne plutôt que d'afficher une valeur vide, le périmètre d'un chiffre étant nommé dès qu'il diffère
+du périmètre annoncé par le graphique. Aucune valeur ni aucune borne temporelle n'est jamais écrite
+en dur dans une phrase affichée à l'écran : les planchers, les plafonds et les fenêtres nommés aux
+paragraphes précédents (§9.16 à §9.19) sont des constantes de méthode, documentées ici une fois,
+jamais retapées comme un chiffre que l'écran pourrait un jour contredire.
