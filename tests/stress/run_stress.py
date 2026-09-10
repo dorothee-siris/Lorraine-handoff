@@ -429,21 +429,30 @@ def open_and_pick_option(page, label: str, index: int = 0) -> bool:
 
 
 def click_labeled_control(page, text: str) -> bool:
-    """Click whatever renders `text` as a segmented-control option / radio / plain button
-    -- used for the pass-7 BALANCE_MODES/PLANE_SELECT/LEVEL_TOGGLE values (widget SHAPE not
-    yet decided when this file was written) and for Laboratoires' EXISTING wordcloud level
-    switch (a confirmed `st.segmented_control`). Tries, in order: Streamlit's own segmented-
-    control button shape (`button[data-variant='segmented_control']` -- a Streamlit-library
-    DOM shape, not app CSS, so it should hold across apps on the same pinned Streamlit
-    build; BenchUp's own harness independently confirmed the identical selector on the
-    SAME 1.61.1 family), a `role=radio`, then any plain `button` with that exact text."""
-    for loc in (
-        page.locator("button[data-variant='segmented_control']").filter(has_text=text),
-        page.get_by_role("radio", name=text),
-        page.locator("button").filter(has_text=text),
+    """Click whatever renders `text` as a segmented-control option / radio / plain button.
+
+    Live-probed (scratchpad `probe_new_controls.py`, run against the real Zoom partenaire
+    page once P-ZOOM landed the pass-7 controls): PLANE_SELECT, BALANCE_MODES and
+    LEVEL_TOGGLE are each an `st.radio` (confirmed via `[data-testid="stRadio"]` count == the
+    3 expected groups, by their shared react-aria `name=` attribute grouping 4+3+2 inputs).
+    Streamlit/react-aria renders each option's native `<input type="radio">` visually
+    CLIPPED to 1x1px (the standard `clip:rect(0,0,0,0);position:absolute;width:1px;height:
+    1px` accessible-hide pattern) while a sibling styled label carries the visible text --
+    `get_by_role("radio", name=text)` resolves the right element (proven: the locator always
+    found exactly 1 match), but a plain `.click()` TIMES OUT waiting for it to become
+    "visible" by Playwright's actionability rules even though it is really there and really
+    wired up, hence `force=True` here (dispatches the click at the element regardless of the
+    clip-hack, which is exactly what real hidden-native-input widgets are built to accept).
+    Laboratoires' wordcloud level switch is a genuine `st.segmented_control`
+    (`button[data-variant='segmented_control']`, confirmed by the earlier dry run passing
+    unforced) -- tried first since it is a plain visible button, no force needed there."""
+    for loc, force in (
+        (page.locator("button[data-variant='segmented_control']").filter(has_text=text), False),
+        (page.get_by_role("radio", name=text), True),
+        (page.locator("button").filter(has_text=text), False),
     ):
         if loc.count():
-            loc.first.click(timeout=5000)
+            loc.first.click(timeout=5000, force=force)
             return True
     return False
 
@@ -516,7 +525,12 @@ def run_phase_a(page, base: str, sampler: RssSampler) -> list[dict]:
     def _zoom_cnrs_open():
         goto(page, base, f"/Zoom_partenaire?partner_id={PARTNER_ID_CNRS}")
         assert_no_error(page, "zoom CNRS")
-        assert page.get_by_text("Réciprocité stratégique par champ", exact=False).count() > 0, \
+        # Heading shortened from "Réciprocité stratégique par champ" to "Réciprocité
+        # stratégique" once P-ZOOM landed the plane selector (no longer per-field-only) --
+        # live-probed 2026-09-10 (scratchpad probe_new_controls.py); "Réciprocité" alone
+        # would also match Collaborations' own heading if ever reused there, so keep the
+        # 2-word form for page specificity.
+        assert page.get_by_text("Réciprocité stratégique", exact=False).count() > 0, \
             "reciprocity panel not found on Zoom partenaire (CNRS)"
 
     def _zoom_plane(label: str):
