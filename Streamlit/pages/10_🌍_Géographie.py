@@ -53,6 +53,19 @@ Grain caveat (probed, not assumed): `geo_countries` carries per-YEAR fwci_fr_med
 only (no whole-window aggregate row) -- the ranked table's FWCI column is therefore a
 co-works-weighted average of the yearly medians, disclosed as an approximation rather than
 silently presented as a true window median.
+
+Pass-7a stream P-GEO (2026-09-10): the three registered charts (`geo_country_companion`,
+`geo_map`, `geo_unigr_bars`) move onto the shared pass-7 grammar -- `lib.charts.bars_with_gutter`
+(country/UniGR bars, replacing `lib.overlay.overlay_bars` and a plain per-year `go.Bar`
+respectively; UniGR gains a NEW per-member bar view, the metric tiles and yearly trend chart
+keep their content unchanged) and `lib.hover`/`lib.copy_fr.HOVER_LABELS` (customdata +
+`hover.HOVERTEMPLATE`, replacing the map's own `text=`/`%{text}` template) with `lib.reading`
+captions above each chart. Country ↗ (`lib.links.country_url`, key verified live this pass,
+`progress/P7_GEO.md`) added beside the picked country's name in the Fiche-pays header and as a
+link column of the country table; the "unknown" bucket is unaffected (still excluded from the
+table/bars/map by construction, per the pass-5 design note above -- never given a link or a
+hover row). Country-companion bars now sort DESCENDING (was ascending): `bars_with_gutter`'s
+shared row convention puts row 0 at the top, so "largest first" is what now reads as ranked.
 """
 from __future__ import annotations
 
@@ -61,11 +74,11 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from lib import controls, exports, lazy, overlay, ranked
+from lib import charts, controls, copy_fr, exports, hover, lazy, links, ranked, reading
 from lib.countries_fr import country_label
 from lib.data_cache import DATA_DIR, get_corpus_facts_df, get_topics_df
 from lib.helpers import (
-    YEARS, fr_int, fr_pct, window_label, snapshot_date_label,
+    YEARS, UL_COLOR, fr_int, fr_pct, window_label, snapshot_date_label,
     init_taxonomy, get_field_id_to_name, get_subfield_id_to_name, get_subfields_for_field,
 )
 
@@ -79,7 +92,7 @@ init_taxonomy(get_topics_df())
 GEO_FIELDS_PATH = str(DATA_DIR / "geo_fields.parquet")
 SUBFIELD_FLOOR = 3  # geo_fields ships subfield rows floored, same discipline as ptn_fields
 COUNTRY_CHART_CAP = 25
-COUNTRY_BASE_COLOR = "#0072B2"
+COUNTRY_BASE_COLOR = UL_COLOR  # pass 7a (P-GEO): single-sourced token, same value as before
 
 QUESTION_FR = (
     "Quels pays forment le socle international de l'UL, et où en est, concrètement, le "
@@ -277,6 +290,7 @@ with col_table:
         "share": display["share"].round(1),
         "trend": display["trend"],  # VIZ_BACKLOG #2 restore: yearly-trend sparkline
         "fwci_text": display["fwci_fr_median_approx"].apply(_fr_float),
+        "fwci_raw": display["fwci_fr_median_approx"],  # pass 7a: raw value for hover.fmt_fwci_pair
         "isite_co_works": display["isite_co_works"].astype(int),
         "isite_share": (display["isite_co_works"] / display["co_works"].replace(0, np.nan) * 100).round(1),
         # VIZ_BACKLOG #2 restore: the dropped country click-through, via the NEW link_cols
@@ -284,6 +298,10 @@ with col_table:
         # "Fiche pays" selectbox below via st.query_params (same session_state-or-
         # query_params idiom already used app-wide for author_id/partner_id deep links).
         "fiche_url": "?country_code=" + display["country_code"].astype(str),
+        # Pass 7a (P-GEO, P7_GEO.md deliverable 2 / P4): live OpenAlex verification link, one
+        # per row -- links.country_url() returns None for the "unknown" sentinel (never a
+        # guessed link), moot here since real_countries excludes that bucket by construction.
+        "oa_country_url": display["country_code"].apply(links.country_url),
     })
 
     _hidden = []
@@ -293,7 +311,7 @@ with col_table:
         "country_name": "Pays", "co_works": "Co-publications", "share": "Part",
         "trend": "Tendance annuelle", "fwci_text": "FWCI médian (approx., réf. France)",
         "isite_co_works": "Co-pubs I-SITE", "isite_share": "Part I-SITE",
-        "fiche_url": "Fiche pays",
+        "fiche_url": "Fiche pays", "oa_country_url": "Vérifier",
     }
     _progress = {
         "co_works": {"format": "%d", "max_value": int(prepared["co_works"].max()) if not prepared.empty else 1,
@@ -312,13 +330,17 @@ with col_table:
             "help": "Ouvre la fiche pays ci-dessous, présélectionnée sur ce pays.",
             "display_text": "→ Fiche pays",
         },
+        "oa_country_url": {
+            "help": links.LINK_TOOLTIP_FR,
+            "display_text": "OpenAlex ↗",
+        },
     }
 
     visible = ranked.ranked_table(
         prepared, key="geo_country", id_col="country_code", has_members=False,
         search_cols=["country_code", "country_name"],
         progress_cols=_progress, sparkline_cols=_sparkline, link_cols=_link,
-        mean_cols=_hidden, extra_hidden=["country_code"], ref_labels=_ref_labels,
+        mean_cols=_hidden, extra_hidden=["country_code", "fwci_raw"], ref_labels=_ref_labels,
     )
     st.caption(
         f"{fr_int(len(display))} pays réel(s) au-dessus de zéro co-publication. Bucket "
@@ -330,16 +352,29 @@ with col_table:
 
     exports.attach_download(st, agg_country, "v3-geographic", "countries", _EXPORT_STATE)
 
-    chart_rows = visible.head(COUNTRY_CHART_CAP).sort_values("co_works", ascending=True)
+    # Pass 7a (P-GEO): descending order -- bars_with_gutter's shared row convention puts row 0
+    # at the TOP (docs/studio/VIZ_SPEC_pass7.md §1.4 mirror-axis rule, verified by reading
+    # lib/charts.py's update_yaxes(range=[n-0.5,-0.5])), so "largest first" is what reads as a
+    # ranked chart; the pre-pass-7 ascending sort here would now read backwards.
+    chart_rows = visible.head(COUNTRY_CHART_CAP).sort_values("co_works", ascending=False).reset_index(drop=True)
     if not chart_rows.empty:
+        _hl_country = copy_fr.HOVER_LABELS["geo_country_companion"]["default"]
+        chart_rows = chart_rows.assign(hover=[
+            hover.hover_lines([
+                (_hl_country[0], r["country_name"]),
+                (_hl_country[1], hover.fmt_int(r["co_works"])),
+                (_hl_country[2], hover.fmt_pct(r["share"])),
+                (_hl_country[3], hover.fmt_fwci_pair(r["fwci_raw"], r["fwci_raw"], int(r["co_works"]))),
+                (_hl_country[4], None),  # drapeau "inconnu" -- never a row here (real_countries excludes it)
+            ])
+            for _, r in chart_rows.iterrows()
+        ])
         st.markdown("###### Volume des pays affichés")
-        fig_c = overlay.overlay_bars(
-            categories=chart_rows["country_name"].tolist(), totals=chart_rows["co_works"].tolist(),
-            isite=chart_rows["isite_co_works"].tolist(), colors=COUNTRY_BASE_COLOR,
-            isite_on=isite_overlay_on, orientation="h",
+        reading.reading_line("geo_country_companion", window=window_label())
+        fig_c = charts.bars_with_gutter(
+            chart_rows, family="pays", label_col="country_name", value_col="co_works",
+            color=COUNTRY_BASE_COLOR, isite_col="isite_co_works", isite_on=isite_overlay_on,
         )
-        fig_c.update_layout(height=max(220, 24 * len(chart_rows)), margin=dict(t=10, l=10, r=20, b=30),
-                             xaxis_title="Co-publications", showlegend=isite_overlay_on)
         st.plotly_chart(fig_c, width="stretch")
 
 with col_map:
@@ -350,6 +385,25 @@ with col_map:
     if map_df.empty:
         st.info("Aucun pays cartographiable.")
     else:
+        # Pass 7a (P-GEO): hover grammar only (VIZ_SPEC_pass7.md §5.17) -- form/encoding
+        # unchanged. `share` mirrors the table's own calc (co_works / total_collab).
+        map_df = map_df.assign(
+            share=(map_df["co_works"] / total_collab * 100) if total_collab else np.nan,
+        )
+        map_names = [country_label(c) for c in map_df["country_code"]]  # map hover text
+        _hl_map = copy_fr.HOVER_LABELS["geo_map"]["default"]
+        map_hover = [
+            hover.hover_lines([
+                (_hl_map[0], name),
+                (_hl_map[1], hover.fmt_int(co)),
+                (_hl_map[2], hover.fmt_pct(share)),
+                (_hl_map[3], hover.fmt_fwci_pair(fwci, fwci, int(co))),
+                (_hl_map[4], None),  # drapeau "inconnu" -- never a row here (real_countries excludes it)
+            ])
+            for name, co, share, fwci in zip(
+                map_names, map_df["co_works"], map_df["share"], map_df["fwci_fr_median_approx"],
+            )
+        ]
         sizeref = _area_sizeref(map_df["co_works"])
         fig_map = go.Figure()
         fig_map.add_trace(go.Scattergeo(
@@ -358,8 +412,7 @@ with col_map:
                 size=map_df["co_works"], sizemode="area", sizeref=sizeref, sizemin=3,
                 color="#0072B2", opacity=0.75, line=dict(width=0.5, color="white"),
             ),
-            text=[f"{country_label(c)} : {fr_int(int(v))} co-pubs" for c, v in zip(map_df["country_code"], map_df["co_works"])],
-            hovertemplate="%{text}<extra></extra>", mode="markers", showlegend=False,
+            customdata=map_hover, hovertemplate=hover.HOVERTEMPLATE, mode="markers", showlegend=False,
         ))
         # Calibrated legend circles (2-3), plotted off the real data (Southern Ocean) using
         # the SAME sizeref -- comparable, not decorative.
@@ -376,6 +429,7 @@ with col_map:
             showocean=True, oceancolor="#f7fafc", showframe=False,
         )
         fig_map.update_layout(height=520, margin=dict(t=10, b=10, l=0, r=0), legend=dict(x=0, y=0))
+        reading.reading_line("geo_map", window=window_label())
         st.plotly_chart(fig_map, width="stretch")
         if n_unmapped:
             st.caption(f":grey[{fr_int(n_unmapped)} code(s) pays non cartographiable(s) (hors table ISO-3).]")
@@ -401,6 +455,11 @@ else:
         format_func=country_label,
     )
     st.query_params["country_code"] = picked_country  # keeps the "-> Fiche pays" link_cols
+    st.markdown(  # pass 7a (P-GEO): the country ↗ link, beside the name in this header
+        f"### {country_label(picked_country)} "
+        f"{links.link_icon_html(links.country_url(picked_country))}",
+        unsafe_allow_html=True,
+    )
 
     if st.session_state.get("v3_last_country") != picked_country:
         st.session_state["v3_drill_field"] = None
@@ -518,6 +577,26 @@ else:
             st.metric(r["member_name"], fr_int(int(r['co_works_distinct'])))
             chip = _mom_chip(r["mom_class"])
             st.caption(f"Momentum : {chip}" + (" :grey[(figé sous filtre)]" if artifact_on and pd.notna(r["mom_class"]) else ""))
+
+    # Pass 7a (P-GEO): geo_unigr_bars -- fixed member order (never a value sort, VIZ_SPEC_pass7
+    # §5.18); bars_with_gutter never re-sorts, so unigr_members' existing UNIGR_ORDER is exactly
+    # the row order the chart needs.
+    _hl_unigr = copy_fr.HOVER_LABELS["geo_unigr_bars"]["default"]
+    unigr_members = unigr_members.assign(hover=[
+        hover.hover_lines([
+            (_hl_unigr[0], r["member_name"]),
+            (_hl_unigr[1], hover.fmt_int(r["co_works_distinct"])),
+            (_hl_unigr[2], _mom_chip(r["mom_class"]) if pd.notna(r["mom_class"]) else None),
+        ])
+        for _, r in unigr_members.iterrows()
+    ])
+    reading.reading_line("geo_unigr_bars", window=window_label())
+    fig_unigr = charts.bars_with_gutter(
+        unigr_members, family="partenaire", label_col="member_name",
+        value_col="co_works_distinct", color=UL_COLOR,
+    )
+    st.plotly_chart(fig_unigr, width="stretch")
+
     yearly = unigr.groupby("year")["co_works_year"].sum()
     fig_g = go.Figure(go.Bar(
         x=[str(y) for y in YEARS], y=[float(yearly.get(y, 0)) for y in YEARS], marker_color="#0072B2",
