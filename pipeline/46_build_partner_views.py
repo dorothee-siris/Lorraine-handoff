@@ -578,7 +578,8 @@ def scope_aggregates(pairs_scope: pd.DataFrame) -> pd.DataFrame:
     """Volume + impact + isite aggregates for one (conf_state, subset_id) scope's pairs frame.
     `pairs_scope` must already carry: partner_id, work_id, publication_year, n_institutions,
     is_conference, In_ISITE, FWCI_FR, indicator_status, cited_by_count, Is_international, Labs,
-    artifact_flag."""
+    artifact_flag, pptop10_fr (P7 D40 -- already NULL-masked by indicator_status upstream, see
+    main())."""
     g = pairs_scope.groupby("partner_id")
     co_works_full = g["work_id"].nunique()
     xa_scope = pairs_scope[~pairs_scope["artifact_flag"]]
@@ -621,11 +622,21 @@ def scope_aggregates(pairs_scope: pd.DataFrame) -> pd.DataFrame:
 
     isite_co_works = pairs_scope[pairs_scope["In_ISITE"]].groupby("partner_id")["work_id"].nunique()
 
+    # n_phares / n_phares_xa (P7 D40, "publications phares (top 10% France)") -- SAME construction
+    # as co_works_full/co_works_full_xa just above (nunique on work_id), filtered to
+    # pptop10_fr==True; fillna(False) so a NULL (indicator not computed) never counts as a phare.
+    phares_scope = pairs_scope[pairs_scope["pptop10_fr"].fillna(False)]
+    phares_xa_scope = xa_scope[xa_scope["pptop10_fr"].fillna(False)]
+    n_phares = phares_scope.groupby("partner_id")["work_id"].nunique()
+    n_phares_xa = phares_xa_scope.groupby("partner_id")["work_id"].nunique()
+
     out = pd.DataFrame({"partner_id": co_works_full.index}).set_index("partner_id")
     out["co_works_full"] = co_works_full
     out["co_works_full_xa"] = co_works_full_xa.reindex(out.index).fillna(0).astype(int)
     out["co_works_fractional"] = co_works_fractional.round(4)
     out["co_works_intl"] = co_works_intl.reindex(out.index).fillna(0).astype(int)
+    out["n_phares"] = n_phares.reindex(out.index).fillna(0).astype(int)
+    out["n_phares_xa"] = n_phares_xa.reindex(out.index).fillna(0).astype(int)
     out["first_year"] = first_year
     out["last_year"] = last_year
     out["n_ul_labs"] = n_ul_labs
@@ -748,6 +759,7 @@ def build_ptn_summary(pairs_shipped_all: pd.DataFrame, pairs_shipped_noconf: pd.
         "display_name", "country_code", "type_openalex", "consortium_member", "idset_tags",
         "merged_from_ids", "plumbing_guard_flag",
         "co_works_full", "co_works_full_xa", "co_works_fractional", "co_works_intl",
+        "n_phares", "n_phares_xa",
         "share_ul", "share_ul_xa", "share_ul_direct", "n_ul_labs", "first_year", "last_year",
         "partner_total_windowed", "share_p", "share_p_capped_flag",
         "fwci_fr_median", "fwci_fr_median_xa", "fwci_fr_mean", "fwci_fr_mean_xa",
@@ -763,7 +775,8 @@ def build_ptn_summary(pairs_shipped_all: pd.DataFrame, pairs_shipped_noconf: pd.
         "display_name": "string", "country_code": "category", "type_openalex": "category",
         "consortium_member": "bool", "idset_tags": "string", "merged_from_ids": "string",
         "plumbing_guard_flag": "bool", "co_works_full": "int64", "co_works_full_xa": "int64",
-        "co_works_fractional": "float64", "co_works_intl": "int64", "share_ul": "float64",
+        "co_works_fractional": "float64", "co_works_intl": "int64",
+        "n_phares": "int64", "n_phares_xa": "int64", "share_ul": "float64",
         "share_ul_xa": "float64", "share_ul_direct": "float64", "n_ul_labs": "int64",
         "first_year": "int64", "last_year": "int64", "fwci_fr_median": "float64",
         "fwci_fr_median_xa": "float64", "fwci_fr_mean": "float64", "fwci_fr_mean_xa": "float64",
@@ -1109,15 +1122,26 @@ def build_ptn_fields(pairs_shipped_all: pd.DataFrame, pairs_shipped_noconf: pd.D
         # extension above, reused here for the "Zoom partenaire" thematic-profile panel.
         isite_scope = pairs_scope[pairs_scope["In_ISITE"]]
         node_frames = []
+        # n_phares / n_phares_xa (P7 D40): same "exactly like co_works_xa" construction, filtered
+        # to pptop10_fr==True (fillna(False) so a not-computed work never counts as a phare).
+        phares_scope = pairs_scope[pairs_scope["pptop10_fr"].fillna(False)]
+        phares_xa = xa[xa["pptop10_fr"].fillna(False)]
+
         for level, floor in [("field", 0), ("subfield", SPARSE_NODE_FLOOR)]:
             col = "primary_field_id" if level == "field" else "primary_subfield_id"
             g = pairs_scope.groupby(["partner_id", col])["work_id"].nunique().rename("co_works")
             g_xa = xa.groupby(["partner_id", col])["work_id"].nunique().rename("co_works_xa")
             g_isite = isite_scope.groupby(["partner_id", col])["work_id"].nunique().rename("co_works_isite")
+            g_phares = phares_scope.groupby(["partner_id", col])["work_id"].nunique().rename("n_phares")
+            g_phares_xa = phares_xa.groupby(["partner_id", col])["work_id"].nunique().rename("n_phares_xa")
             cell = g.reset_index().merge(g_xa.reset_index(), on=["partner_id", col], how="left")
             cell = cell.merge(g_isite.reset_index(), on=["partner_id", col], how="left")
+            cell = cell.merge(g_phares.reset_index(), on=["partner_id", col], how="left")
+            cell = cell.merge(g_phares_xa.reset_index(), on=["partner_id", col], how="left")
             cell["co_works_xa"] = cell["co_works_xa"].fillna(0).astype(int)
             cell["co_works_isite"] = cell["co_works_isite"].fillna(0).astype(int)
+            cell["n_phares"] = cell["n_phares"].fillna(0).astype(int)
+            cell["n_phares_xa"] = cell["n_phares_xa"].fillna(0).astype(int)
             if floor:
                 cell = cell[cell["co_works"] >= floor]
             cell = cell.rename(columns={col: "node_id"})
@@ -1204,6 +1228,7 @@ def build_ptn_fields(pairs_shipped_all: pd.DataFrame, pairs_shipped_noconf: pd.D
     out["snapshot_date"] = snapshot_name
     out = out[[
         "partner_id", "node_level", "node_id", "conf_state", "co_works", "co_works_xa",
+        "n_phares", "n_phares_xa",
         "share_of_pair", "share_of_pair_xa", "baseline_ul_share", "baseline_ul_share_xa",
         "baseline_partner_share", "baseline_france_share", "lq_vs_ul", "lq_vs_ul_xa",
         "co_works_isite", "share_of_pair_isite",
@@ -1212,6 +1237,7 @@ def build_ptn_fields(pairs_shipped_all: pd.DataFrame, pairs_shipped_noconf: pd.D
     out = out.astype({
         "partner_id": "string", "node_level": "category", "node_id": "category",
         "conf_state": "category", "co_works": "int64", "co_works_xa": "int64",
+        "n_phares": "int64", "n_phares_xa": "int64",
         "share_of_pair": "float64", "share_of_pair_xa": "float64",
         "baseline_ul_share": "float64", "baseline_ul_share_xa": "float64",
         "baseline_france_share": "float64", "lq_vs_ul": "float64", "lq_vs_ul_xa": "float64",
@@ -1341,10 +1367,23 @@ def build_ptn_works(pairs_shipped_all_p10: pd.DataFrame, sdg_siris: pd.DataFrame
     out = pairs_shipped_all_p10[[
         "partner_id", "work_id", "publication_year", "title", "doi", "type", "is_conference",
         "FWCI_FR", "In_ISITE", "Labs", "artifact_flag", "primary_field_id", "primary_subfield_id",
-        "primary_topic_id",
+        "primary_topic_id", "pptop10_fr", "pptop1_fr", "indicator_status",
     ]].drop_duplicates(["partner_id", "work_id"]).rename(columns={
         "publication_year": "year", "FWCI_FR": "fwci_fr", "In_ISITE": "in_isite", "Labs": "labs_short",
     })
+    # build-time invariant (P7 D40, tier-A): pptop10_fr/pptop1_fr NULL <=> indicator_status !=
+    # 'computed', on THIS table's own rows (the wm_full-level construction already enforces it;
+    # asserted again here since ptn_works is what the golden test / a client actually reads).
+    _not_computed = out["indicator_status"] != "computed"
+    assert (out.loc[_not_computed, "pptop10_fr"].isna().all()
+            and out.loc[_not_computed, "pptop1_fr"].isna().all()), (
+        "pptop10_fr/pptop1_fr must be NULL wherever indicator_status != 'computed'")
+    assert (out.loc[~_not_computed, "pptop10_fr"].isin([True, False]).all()
+            and out.loc[~_not_computed, "pptop1_fr"].isin([True, False]).all()), (
+        "pptop10_fr/pptop1_fr must be a real True/False wherever indicator_status == 'computed'")
+    print(f"  pptop10_fr/pptop1_fr null-iff-indicator_status invariant: PASS "
+          f"({int(_not_computed.sum()):,} of {len(out):,} rows NULL)")
+    out = out.drop(columns=["indicator_status"])
     # pass 6 (#9/#11/#32/#44): SDG tags, pipe-joined SIRIS/VocTagger sdg numbers -- the ONE
     # enrichment field the pre-pass-6 ptn_works lacked for a full "download with enrichment
     # metadata" publication list (doi/year/type/artifact_flag/in_isite were already there).
@@ -1356,14 +1395,15 @@ def build_ptn_works(pairs_shipped_all_p10: pd.DataFrame, sdg_siris: pd.DataFrame
     out = out[[
         "partner_id", "work_id", "year", "title", "doi", "type", "is_conference", "fwci_fr",
         "in_isite", "labs_short", "artifact_flag", "sdg_tags", "primary_field_id",
-        "primary_subfield_id", "primary_topic_id", "snapshot_date",
+        "primary_subfield_id", "primary_topic_id", "pptop10_fr", "pptop1_fr", "snapshot_date",
     ]]
     out = out.astype({
         "partner_id": "category", "work_id": "string", "year": "int32", "title": "string",
         "doi": "string", "type": "category", "is_conference": "bool", "fwci_fr": "float64",
         "in_isite": "bool", "labs_short": "string", "artifact_flag": "bool", "sdg_tags": "string",
         "primary_field_id": "category", "primary_subfield_id": "category",
-        "primary_topic_id": "category", "snapshot_date": "string",
+        "primary_topic_id": "category", "pptop10_fr": "boolean", "pptop1_fr": "boolean",
+        "snapshot_date": "string",
     })
     out = out.sort_values("partner_id").reset_index(drop=True)
 
@@ -1381,7 +1421,8 @@ def _ptn_topics_state(pairs_state: pd.DataFrame, conf_state: str, res: dict,
     is_conference-filtered by the caller for 'no_conf') and which momentum reference (d1/d2/med)
     to use. Returns (long_tbl WITHOUT frontier_score_std/artifact_flag/snapshot_date -- those are
     state-invariant and joined once on the combined frame -- , a dict of diagnostic counts)."""
-    pt = pairs_state[["partner_id", "work_id", "publication_year", "artifact_flag"]].merge(
+    pt = pairs_state[["partner_id", "work_id", "publication_year", "artifact_flag",
+                      "pptop10_fr"]].merge(
         corpus_topics[["work_id", "topic_id", "subfield_id"]], on="work_id", how="inner"
     )
     long_tbl = (pt.groupby(["partner_id", "topic_id", "subfield_id", "publication_year"])["work_id"]
@@ -1392,6 +1433,21 @@ def _ptn_topics_state(pairs_state: pd.DataFrame, conf_state: str, res: dict,
     long_tbl = long_tbl.merge(long_xa, on=["partner_id", "topic_id", "subfield_id", "publication_year"],
                                how="left")
     long_tbl["co_works_xa"] = long_tbl["co_works_xa"].fillna(0).astype(int)
+
+    # n_phares / n_phares_xa (P7 D40): SAME construction as co_works/co_works_xa just above,
+    # filtered to pptop10_fr==True (fillna(False) so a not-computed work never counts as a phare).
+    phares_pt = pt[pt["pptop10_fr"].fillna(False)]
+    phares_xa = xa[xa["pptop10_fr"].fillna(False)]
+    long_phares = (phares_pt.groupby(["partner_id", "topic_id", "subfield_id", "publication_year"])
+                   ["work_id"].nunique().reset_index(name="n_phares"))
+    long_phares_xa = (phares_xa.groupby(["partner_id", "topic_id", "subfield_id", "publication_year"])
+                      ["work_id"].nunique().reset_index(name="n_phares_xa"))
+    long_tbl = long_tbl.merge(long_phares, on=["partner_id", "topic_id", "subfield_id", "publication_year"],
+                               how="left")
+    long_tbl = long_tbl.merge(long_phares_xa, on=["partner_id", "topic_id", "subfield_id", "publication_year"],
+                               how="left")
+    long_tbl["n_phares"] = long_tbl["n_phares"].fillna(0).astype(int)
+    long_tbl["n_phares_xa"] = long_tbl["n_phares_xa"].fillna(0).astype(int)
     long_tbl = long_tbl.rename(columns={"publication_year": "year"})
 
     n_cells = long_tbl[["partner_id", "topic_id"]].drop_duplicates().shape[0]
@@ -1470,12 +1526,14 @@ def build_ptn_topics(pairs_shipped_all_p10: pd.DataFrame, pairs_shipped_noconf_p
 
     out = combined[[
         "partner_id", "topic_id", "subfield_id", "year", "conf_state", "co_works", "co_works_xa",
+        "n_phares", "n_phares_xa",
         "fwci_fr_median_cell", "frontier_score_std", "artifact_flag", "delta_value", "delta_flag",
         "snapshot_date",
     ]]
     out = out.astype({
         "partner_id": "category", "topic_id": "category", "subfield_id": "category", "year": "int16",
         "conf_state": "category", "co_works": "int32", "co_works_xa": "int32",
+        "n_phares": "int32", "n_phares_xa": "int32",
         "fwci_fr_median_cell": "float64", "frontier_score_std": "float64", "artifact_flag": "bool",
         "delta_value": "float64", "delta_flag": "boolean", "snapshot_date": "string",
     })
@@ -1893,6 +1951,7 @@ def main() -> None:
         "work_id", "publication_year", "n_institutions", "is_conference", "In_ISITE", "FWCI_FR",
         "indicator_status", "cited_by_count", "Is_international", "Labs", "n_labs",
         "primary_field_id", "primary_subfield_id", "primary_topic_id", "title", "doi", "type",
+        "PPtop10_FR", "PPtop1_FR",
     ])
     au_raw = pd.read_parquet(tables / "corpus_authorships.parquet", columns=[
         "work_id", "institution_id", "institution_display_name", "institution_country",
@@ -1911,6 +1970,24 @@ def main() -> None:
     n_flagged = int(wm_full["artifact_flag"].sum())
     assert n_flagged == 4106, f"artifact-flag count drifted: {n_flagged} != 4,106"
     print(f"  artifact-flag (primary topic on 811-topic list): {n_flagged:,} works (11.15%)")
+
+    # P7 (D40, "publications phares"): pptop10_fr / pptop1_fr -- nullable boolean, NULL exactly
+    # when the work's indicator_status is not 'computed', the SAME rule FWCI_FR already follows
+    # in this file (scope_aggregates / _ptn_topics_state gate every FWCI_FR aggregation on
+    # indicator_status=='computed' rather than trusting works_master's own column to already be
+    # null there). Computed ONCE here, on wm_full, so every pairs_* frame downstream inherits it
+    # through the same build_pairs() merge that already carries FWCI_FR/artifact_flag through --
+    # no separate re-derivation in ptn_works/ptn_fields/ptn_topics/ptn_summary.
+    _computed_mask = wm_full["indicator_status"] == "computed"
+    wm_full["pptop10_fr"] = wm_full["PPtop10_FR"].where(_computed_mask, other=pd.NA).astype("boolean")
+    wm_full["pptop1_fr"] = wm_full["PPtop1_FR"].where(_computed_mask, other=pd.NA).astype("boolean")
+    _n_not_computed = int((~_computed_mask).sum())
+    _n_source_leak = int((wm_full["PPtop10_FR"].notna() & ~_computed_mask).sum())
+    print(f"  pptop10_fr/pptop1_fr (P7 D40): {_n_not_computed:,} works NULL (indicator_status != "
+          f"computed; source PPtop10_FR was non-null on {_n_source_leak:,} of those before masking "
+          f"-- 0 means works_master's own column already agreed); pptop10_fr True on "
+          f"{int(wm_full['pptop10_fr'].sum()):,} works, pptop1_fr True on "
+          f"{int(wm_full['pptop1_fr'].sum()):,}")
 
     universe = build_universe(tables)
     # canonical (null-dropping) pairs -- feeds every table EXCEPT the momentum engine itself
@@ -1949,6 +2026,31 @@ def main() -> None:
     ptn_yearly = build_ptn_yearly(pairs_shipped_all, pairs_shipped_noconf, snapshot.name)
     ptn_fields = build_ptn_fields(pairs_shipped_all, pairs_shipped_noconf, wm_full, mom_results,
                                    snapshot.name, tables, partner_base)
+
+    # n_phares reconciliation (P7 D40, tier-A): sum over FIELD rows (node_level=='field', which
+    # partitions a partner's whole corpus with this pair, unlike subfield rows which are floored
+    # and can omit sparse ones) must equal the pair-level n_phares in ptn_summary, per partner, on
+    # conf_state='all' -- same discipline as the isite/phantom reconciliations already in this file.
+    _fields_all = ptn_fields[(ptn_fields["conf_state"] == "all") & (ptn_fields["node_level"] == "field")]
+    _phares_by_field_sum = _fields_all.groupby("partner_id")["n_phares"].sum()
+    _phares_xa_by_field_sum = _fields_all.groupby("partner_id")["n_phares_xa"].sum()
+    _summary_all_all = ptn_summary[(ptn_summary["conf_state"] == "all") & (ptn_summary["subset_id"] == "all")]
+    _pair_phares = _summary_all_all.set_index("partner_id")["n_phares"]
+    _pair_phares_xa = _summary_all_all.set_index("partner_id")["n_phares_xa"]
+    _cmp = pd.DataFrame({
+        "field_sum": _phares_by_field_sum.reindex(_pair_phares.index).fillna(0).astype(int),
+        "pair": _pair_phares,
+        "field_sum_xa": _phares_xa_by_field_sum.reindex(_pair_phares_xa.index).fillna(0).astype(int),
+        "pair_xa": _pair_phares_xa,
+    })
+    _bad = _cmp[(_cmp["field_sum"] != _cmp["pair"]) | (_cmp["field_sum_xa"] != _cmp["pair_xa"])]
+    assert _bad.empty, (
+        f"n_phares reconciliation failed for {len(_bad)} partner(s) (Sigma over field rows != pair "
+        f"value): {_bad.head().to_string()}"
+    )
+    print(f"n_phares reconciliation (Sigma over field rows == pair value, all {len(_cmp):,} partners, "
+          f"conf_state=all): PASS")
+
     ptn_labs = build_ptn_labs(pairs_shipped_all, pairs_shipped_noconf, snapshot.name)
     ptn_works = build_ptn_works(pairs_shipped_all_p10, sdg_siris, snapshot.name)
     consortium_overlay = load_overlay("idset_consortium.csv")
@@ -2065,6 +2167,9 @@ def main() -> None:
         f"(all conf); {mom_results['shipped_noconf']['eligible_n']} eligible (no_conf)",
         f"- `ptn_denominators` (pass 6, P4/#39/#40): {len(ptn_denominators):,} rows; "
         f"spot-check + share-bound invariants PASS",
+        f"- P7 D40 'publications phares': pptop10_fr/pptop1_fr added to `ptn_works` "
+        f"({int(ptn_works['pptop10_fr'].sum()):,} True); n_phares/n_phares_xa added to "
+        f"`ptn_fields`/`ptn_topics`/`ptn_summary` (Sigma-over-fields == pair-value reconciliation PASS)",
     ])
 
     print("\ndone.")

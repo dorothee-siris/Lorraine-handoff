@@ -1,0 +1,35 @@
+# Contract fragment -- ptn_labs.parquet (Stream W2, pipeline/46_build_partner_views.py)
+# Full design rationale: docs/foundry/data_foundation.yaml rev 3.1, table `ptn_labs` (I7 portage).
+
+ptn_labs.parquet:
+  source: "works_master.parquet (Labs, pipe-space-separated multi-value) + corpus_authorships.parquet
+           (overlay-corrected pairs) + ul_labs.parquet (lab -> ROR lookup)"
+  build_step: "pipeline/46_build_partner_views.py"
+  keys: [partner_id, lab_name, conf_state]
+  read_by_app: true
+  read_by: ["V2 portage panel (I7) -- drilldown-only, NEVER a league column (plan sec.3)"]
+  rows_expected: 83184
+  new_in_v2: true
+  row_grain: "partner x lab x conf_state, sparse (only (partner,lab) pairs with >=1 co-work; a
+    work touching multiple labs contributes to EACH lab's row -- multi-attribution, by design,
+    per docs/indicator_plan_FINAL.md I7 (works-based, NO-LAB disclosed, never a league column)"
+  why_deployed: "I7 works-based lab attribution, NO-LAB share disclosed rather than hidden."
+  columns:
+    - {name: "partner_id", dtype: string}
+    - {name: "lab_ror", dtype: string, nullable: true, from: "ul_labs.parquet ROR for this lab
+       name; NULL if not resolved"}
+    - {name: "lab_name", dtype: category, from: "one token of works_master.Labs (' | '-split),
+       excluding the literal 'NO LAB' sentinel"}
+    - {name: "conf_state", dtype: category, allowed: [all, no_conf]}
+    - {name: "co_works", dtype: int64, from: "nunique(work_id) for this partner x lab x conf_state"}
+    - {name: "share_of_lab_attributed", dtype: float64, from: "co_works / (this partner's
+       co-works EXCLUDING its own NO-LAB works) -- NO-LAB excluded from the denominator, per plan"}
+    - {name: "nolab_works", dtype: int64, from: "this partner's co-works with Labs=='NO LAB'"}
+    - {name: "nolab_share", dtype: float64, from: "nolab_works / (this partner's TOTAL co-works,
+       incl. NO-LAB) -- the disclosed excluded-share companion to share_of_lab_attributed"}
+    - {name: "snapshot_date", dtype: string}
+  artifact_exempt: "portage = structural read; grey caption under toggle ON (tunnel #17 grey-out rule)"
+  invariants:
+    - "share_of_lab_attributed <= 1 and nolab_share <= 1 on every row (asserted in the builder)"
+    - "NO-LAB excluded from shares, disclosed via nolab_works/nolab_share (never silently dropped)"
+  dropped_from_v1: []

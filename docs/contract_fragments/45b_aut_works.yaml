@@ -1,0 +1,71 @@
+# Contract fragment -- aut_works.parquet (Stream W4, pipeline/45b_build_author_views.py)
+# Per BUILD_PLAN.md S13. Design source: docs/foundry/data_foundation.yaml rev 3.1, table
+# `aut_works` (tunnel #7/#16). A-V2 works-drill source (docs/indicator_plan_FINAL.md S5).
+
+aut_works.parquet:
+  source: "corpus_authorships.parquet (work x author x institution rows, exploded to person_id via
+           ul_authors.profiles_joined) + works_master.parquet (year/title/doi/type/is_conference/
+           In_LUE/Labs) + lib/artifact.py flag_works (corpus_topics.parquet)"
+  build_step: "pipeline/45b_build_author_views.py"
+  keys: [author_id, work_id]
+  read_by_app: false
+  new_in_v2: true
+  rows_measured: "82,710 (YAML draft's own rows_est was ~90-140k -- see design note below for the
+                  explained gap; this is a measured build, not a re-chase of a rough estimate)"
+  write_spec: "sorted by author_id, row_group_size=5000, zstd. Measured: 17 row groups (Class-1
+              invariant num_row_groups >= n_rows/10000 = 8.3: PASS). 6.06 MB disk."
+  row_grain: >
+    Person (author_id == ul_authors.person_id) x work: EVERY corpus work that person's OpenAlex
+    profile(s) are credited author on -- see the DESIGN NOTE below on why this is the ALL-corpus
+    set, not the UL-credited-only subset the YAML's one-line grain label ("UL-credited authorship
+    pairs") suggests in isolation. PHYSICALLY carries no fwci/pptop/impact/citation column
+    (tunnel #16 / S6.4-3bis structural safeguard 3): an author-scoped export from this table cannot
+    rebuild a withheld per-author FWCI via one AVERAGEIF, because the number simply is not here.
+  design_note_grain: >
+    The YAML's grain label and its own invariant text point in different directions if read as
+    both being about the SAME filter: "UL-credited authorship pairs" (label) vs "pairs reconcile
+    with aut_public.n_works per author" (invariant, quoted verbatim in the W4 dispatch). n_works is
+    the ALL-corpus appearance count (ul_authors.n_works: a person's total corpus footprint, e.g.
+    Silvio Danese 281 works, only 1 UL-credited -- D42), strictly larger than ul_credited_works in
+    general. This builder honours the INVARIANT TEXT (the harder, testable spec, and the more
+    useful reading for an A-V2 profile page's "works list") over the label's adjective: every row
+    here is a work in the person's full Lorraine-corpus footprint, not filtered to rows where that
+    specific work also happens to be UL-credited. `ul_credited_works` survives unfiltered on
+    aut_public (a credit fact, safeguard-exempt) so any consumer can still see how much of the
+    listed footprint was actually this person's own Lorraine affiliation. Flagged for E1/Studio to
+    ratify or correct at integration if the intended reading was in fact the narrower one.
+  why_deployed: >
+    docs/indicator_plan_FINAL.md A-V2 "one person end to end ... works list (lazy + exportable
+    with work-level impact columns stripped, S6.4-3bis)". lib/lazy.py (app-side, out of this
+    stream's fence -- not yet built as of this pass) will read this file keyed on author_id;
+    yearly bars are derived in-app from the fetched slice (declared bounded exception to the
+    lazy-load convention, per the YAML's own note on this table).
+  columns:
+    - {name: "author_id", dtype: category, from: "ul_authors.person_id (the sort/partition key)"}
+    - {name: "work_id", dtype: string, from: "works_master.work_id"}
+    - {name: "year", dtype: int64, from: "works_master.publication_year"}
+    - {name: "title", dtype: string, from: "works_master.title"}
+    - {name: "doi", dtype: string, nullable: true, from: "works_master.doi"}
+    - {name: "type", dtype: category, from: "works_master.type"}
+    - {name: "is_conference", dtype: bool, from: "works_master.is_conference"}
+    - {name: "in_lue", dtype: bool, from: "works_master.In_LUE"}
+    - name: "labs_short"
+      dtype: string
+      from: "works_master.Labs, this builder's own compact encoding (no reference implementation
+             existed at build time -- ptn_works, the other table planned to carry labs_short, had
+             not been built by W2 as of this pass)"
+      format: "first 2 pipe-split lab codes joined by ', ', '+N' suffix if more than 2; 'NO LAB'
+               passed through verbatim (max observed: 7 labs on one work)"
+    - {name: "artifact_flag", dtype: bool,
+       from: "lib.artifact.flag_works(corpus_topics) -- True iff the work's PRIMARY topic is on the
+              811-topic exclusion list; missing entries (51 works with no primary-topic row) treated
+              as False per the function's own documented contract"}
+  invariants:
+    - "(author_id, work_id) unique"
+    - "STRUCTURAL: no column name matches the Class-1 regex fwci|pptop|impact|citation"
+    - "row count per author_id EXACTLY equals aut_public.n_works for every one of the 12,680 persons"
+    - "num_row_groups >= n_rows/10000 (Class-1 lazy-file floor)"
+    - "prune proof (author_id filter, the max-n_works person, A5042884495 / Laurent Peyrin-Biroulet,
+       454 rows): 1 of 17 row groups touched, 5.9% of the author_id column's compressed bytes --
+       well under the required <20%"
+  dropped_from_v1: []

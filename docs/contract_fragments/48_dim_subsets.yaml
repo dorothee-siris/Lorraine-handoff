@@ -1,0 +1,93 @@
+# Contract fragment -- dim_subsets.parquet (Stream W1, pipeline/48_build_subsets.py)
+#
+# Per BUILD_PLAN.md S13: each builder emits per-table YAML fragments here; E1 (integrator) merges
+# them into docs/data_contract.yaml + the 60_deploy file set. This fragment is written in the
+# SAME shape as an entry under data_contract.yaml's `files:` block (see dim_corpus_facts.parquet
+# there for the reference format) so E1 can paste it in with minimal editing.
+#
+# Full design rationale: docs/foundry/data_foundation.yaml rev 3.1, table `dim_subsets`
+# (producers.48_build_subsets.py). PM1 "curated corpus-subset mechanic"
+# (docs/indicator_plan_FINAL.md S2).
+
+dim_subsets.parquet:
+  source: "works_master.parquet + corpus_funding.parquet + inputs/manual/all_doi_isite.xlsx
+           (mtime only, for vintage_date) -- the tiny registry row per subset, NOT the membership"
+  build_step: "pipeline/48_build_subsets.py"
+  keys: [subset_id]
+  read_by_app: true
+  read_by:
+    - "Streamlit/lib/controls.py:sidebar() (W5) -- the perimeter selector's row source"
+    - "any NEW view honouring the PM1 perimeter selector (subset_row_matrix tables: ptn_summary,
+       geo_countries, thm_specialisation)"
+  rows_expected: 5
+  new_in_v2: true
+  row_grain: >
+    one row per subset (a tiny registry, NOT work-grain); conf_state and the artifact toggle are
+    COLUMNS on this table (n_works / n_works_noconf / n_works_xa / n_works_noconf_xa), not row
+    dimensions (tunnel #14 ruling -- avoids a 4x row-doubling on what is already a 5-row table).
+  why_deployed: >
+    docs/indicator_plan_FINAL.md PM1: "one selector filters every view". Three ACTIVE rows this
+    pass -- `all` (whole corpus, no membership table needed: the total is carried directly as a
+    column here), `in_lue` (the canonical I-SITE LUE hand DOI list, 1,839 works -- evidence
+    doi_list in work_subsets), `in_lue_award` (the ANR award-trace cross-check family, 808 works,
+    32 of them NOT on the canonical hand list -- evidence award in work_subsets; construction
+    detail below). Plus two STUB rows (status=stub, no work_subsets membership yet) reserving the
+    PM5 (programme corpora) and PM6 (ORCID-roster) mechanic slots the workshop is expected to
+    populate -- so the selector's shape does not change when those lists arrive, only their rows'
+    status flips from stub to active and n_works/n_works_noconf/n_works_xa/n_works_noconf_xa stop
+    being NULL.
+  award_construction_note: >
+    in_lue_award reproduces reports/lab_thematic_probes.py's P5 award-matching block (the sprint
+    dispatch names reports/lab_pass3_probes.py, which in this repo carries only P1-P4; the actual
+    award-matching probe -- cited verbatim in docs/foundry/CHALLENGE_MEMO_pass2.md #23 -- lives in
+    lab_thematic_probes.py's P5 section, and was cross-checked live against the 2026-08-11
+    snapshot before this builder was written: 808 works, 32-work delta, matching the memo exactly):
+    `corpus_funding.funder_award_id` matched on Lorraine's OWN ANR code stem
+    (`15-IDEX-0004` / `15-IDEX-04-LUE`, never the generic `IDEX` token, which sweeps other
+    universities' grants) OR `award_display_name` containing `ISITELUE`, both upper-cased and
+    Unicode-hyphen-normalised first (award strings carry en/em-dashes on 1,300+ rows). This is
+    NOT `works_master.In_LUE_openalex_award` (749, a narrower exact-award_id match) --
+    data_foundation.yaml's own canonical_counts note flags that column as superseded and NOT
+    rebuilt; pipeline/48_build_subsets.py computes its own 808-work set independently from
+    corpus_funding.
+  columns:
+    - {name: "subset_id", dtype: string, from: "'all' | 'in_lue' | 'in_lue_award' |
+       'programme_pending' | 'orcid_roster_pending'", allowed: [all, in_lue, in_lue_award,
+       programme_pending, orcid_roster_pending]}
+    - {name: "label_fr", dtype: string, from: "hand-written FR label (client-facing selector text)"}
+    - {name: "label_en", dtype: string, from: "hand-written EN label (S7 EN-first)"}
+    - {name: "kind", dtype: string, from: "baseline | isite_list | isite_award_crosscheck |
+       programme | orcid_roster -- one of the 4 evidence-adjacent subset families named in the plan"}
+    - name: "owner"
+      dtype: string
+      from: "'pipeline' (all) | 'GT Indicateurs' (in_lue / in_lue_award) | 'workshop (...)' (stubs)"
+      why: "attribution to process (GT Indicateurs), never to a named person, per plan traps note"
+    - {name: "source_file", dtype: string, nullable: true, from: "the file the subset's membership
+       traces to; NULL on stub rows (no file yet)"}
+    - {name: "vintage_date", dtype: string, nullable: true,
+       from: "in_lue: inputs/manual/all_doi_isite.xlsx mtime (client list vintage, 2026-08-10) --
+              all/in_lue_award: snapshot.name -- stubs: NULL"}
+    - {name: "n_works", dtype: Int64, nullable: true,
+       from: "count of work_subsets rows for this subset_id (all: whole corpus count directly,
+              no membership rows needed); NULL (never 0, D53) on stub rows"}
+    - {name: "n_works_noconf", dtype: Int64, nullable: true,
+       from: "n_works restricted to is_conference==False"}
+    - {name: "n_works_xa", dtype: Int64, nullable: true,
+       from: "n_works restricted to artifact_flag==False (lib.artifact.flag_works) -- the
+              excl-artifact twin, S9/R-A convention"}
+    - {name: "n_works_noconf_xa", dtype: Int64, nullable: true,
+       from: "both filters combined (is_conference==False AND artifact_flag==False)"}
+    - {name: "defi_rollup", dtype: string, nullable: true,
+       from: "PM5's défi-aggregation key (client CODIR matrix); NULL until programme lists land
+              -- reserved column, not populated this pass"}
+    - {name: "status", dtype: string, allowed: [active, stub], from: "active (all/in_lue/
+       in_lue_award) | stub (programme_pending/orcid_roster_pending)"}
+    - {name: "snapshot_date", dtype: string, from: "config.yaml project.snapshot_id"}
+  invariants:
+    - "subset_id unique (5 rows)"
+    - "in_lue.n_works == 1839 == works_master.In_LUE.sum() (canonical_counts.in_lue_works)"
+    - "in_lue_award.n_works == 808 (canonical_counts.lue_award_works); 32 of those are NOT in the
+       in_lue set (works_master.In_LUE) -- the PM5 award-only delta"
+    - "n_works_noconf/n_works_xa/n_works_noconf_xa <= n_works on every active row"
+    - "stub rows: n_works* all NULL (never 0), status=='stub'"
+  dropped_from_v1: []

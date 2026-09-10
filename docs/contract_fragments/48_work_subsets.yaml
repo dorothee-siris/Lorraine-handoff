@@ -1,0 +1,39 @@
+# Contract fragment -- work_subsets.parquet (Stream W1, pipeline/48_build_subsets.py)
+# Per BUILD_PLAN.md S13. Design source: docs/foundry/data_foundation.yaml rev 3.1, table
+# `work_subsets`.
+
+work_subsets.parquet:
+  source: "works_master.parquet (In_LUE column) + corpus_funding.parquet (award-trace match,
+           see 48_dim_subsets.yaml's award_construction_note for the exact construction)"
+  build_step: "pipeline/48_build_subsets.py"
+  keys: [work_id, subset_id]
+  read_by_app: false
+  new_in_v2: true
+  row_grain: >
+    work x subset MEMBERSHIP only (identity + evidence enum) -- no metadata columns. This is
+    deliberately the thin table; `subset_works` (separate fragment) carries the metadata (year,
+    title, doi, ...) that view code and exports actually need, so a membership-only consumer never
+    has to pay for those columns. Only the two ACTIVE, evidenced subsets get rows here: `all` has
+    no rows (it would just be every work in the corpus, for no benefit -- dim_subsets.n_works
+    carries that total directly); the two stub subsets (programme_pending, orcid_roster_pending)
+    have none either (no membership exists yet).
+  why_deployed: >
+    docs/indicator_plan_FINAL.md PM1/PM2: the perimeter-selector mechanic needs a work<->subset
+    membership table so any view can join against it. Kept separate from subset_works (the
+    metadata-bearing drill source) so a pure membership lookup (e.g. "is this work_id in_lue?")
+    never has to load title/doi/type columns it does not need.
+  columns:
+    - {name: "work_id", dtype: string, from: "works_master.work_id"}
+    - {name: "subset_id", dtype: string, allowed: [in_lue, in_lue_award],
+       from: "FK to dim_subsets.subset_id -- only the 2 evidenced active subsets carry rows here"}
+    - {name: "evidence", dtype: string, allowed: [doi_list, award, hal_code, orcid_roster],
+       from: "in_lue -> 'doi_list' (works_master.In_LUE, i.e. the client's hand DOI list) |
+              in_lue_award -> 'award' (the ANR award-trace cross-check). 'hal_code' and
+              'orcid_roster' are reserved enum values for the PM5/PM6 stub kinds -- no rows carry
+              them yet, but the enum is fixed now so future rows need no app-side schema change."}
+  invariants:
+    - "(work_id, subset_id) unique"
+    - "rows where subset_id=='in_lue': 1,839, evidence=='doi_list' throughout"
+    - "rows where subset_id=='in_lue_award': 808, evidence=='award' throughout"
+    - "no orphan subset_id: every value here resolves in dim_subsets.subset_id"
+  dropped_from_v1: []

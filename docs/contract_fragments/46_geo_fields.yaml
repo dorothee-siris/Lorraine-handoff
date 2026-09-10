@@ -1,0 +1,48 @@
+# Contract fragment -- geo_fields.parquet (Stream W2, pipeline/46_build_partner_views.py)
+# Full design rationale: docs/foundry/data_foundation.yaml rev 3.1, table `geo_fields` (NEW,
+# tunnel #9 -- V3 country focus card, previously had no source).
+
+geo_fields.parquet:
+  source: "corpus_authorships.parquet (institution_country) + works_master.parquet, overlay-
+           corrected pairs"
+  build_step: "pipeline/46_build_partner_views.py"
+  keys: [country_code, node_level, node_id, conf_state]
+  read_by_app: true
+  lazy: true
+  read_by: ["Streamlit/lib/lazy.py key country_code -- V3 country focus card
+    (docs/foundry/DATA_FOUNDATION.md sec.9-bis 'country_focus')"]
+  rows_expected: 9268
+  new_in_v2: true
+  row_grain: "country x node(field, all; OR subfield, floored >=3) x conf_state. Measured: field
+    cells 3,780; subfield cells 5,488."
+  why_deployed: "tunnel #9 -- the V3 country focus card's field-mix + baseline comparison had no
+    built source before this table."
+  write_spec: >
+    SIZE-INFORMED DEVIATION from the YAML's literal 'sorted by country_code, rg=5000' text: at
+    9,268 rows, rg=5000 yields only 2 row groups, making ANY single-country prune touch >=50% of
+    file bytes by construction -- mathematically impossible to clear the <20% prune-proof
+    acceptance bar at that granularity (the same lazy_file_rules boilerplate is shared with
+    ptn_works/ptn_topics, both 100k+ rows, where rg=5000 is well-sized). Sized down to rg=300
+    (measured, not guessed): 31 row groups, comfortably clears the Class-1 floor
+    (31 >= 9268/10000=0.9) AND gives a real prune proof (1/31 groups touched, 3.3% of bytes, for a
+    sample country). Flagged for E1/the YAML owner to correct the write_spec text if this reading
+    is accepted.
+  columns:
+    - {name: "country_code", dtype: category}
+    - {name: "node_level", dtype: category, allowed: [field, subfield]}
+    - {name: "node_id", dtype: category}
+    - {name: "conf_state", dtype: category, allowed: [all, no_conf]}
+    - {name: "co_works", dtype: int64}
+    - {name: "co_works_xa", dtype: int64}
+    - {name: "share_of_country_pair", dtype: float64, from: "co_works / (this country's total
+       co-works, same conf_state) -- within-country field mix"}
+    - {name: "share_of_country_pair_xa", dtype: float64, nullable: true}
+    - {name: "baseline_ul_share", dtype: float64, from: "this node's share of UL's own whole
+       corpus (conf_state-scoped) -- DEFERRED twin, no _xa"}
+    - {name: "fwci_fr_median", dtype: float64, nullable: true, from: "median FWCI_FR among
+       indicator_status=='computed' works for this country x node cell -- DEFERRED twin, no _xa"}
+    - {name: "snapshot_date", dtype: string}
+  artifact_invariant_columns: "baseline_ul_share + fwci_fr_median (DEFERRED twins)"
+  invariants:
+    - "Class-1 row-group floor + <20% prune-proof bytes, both asserted in the builder (at rg=300)"
+  dropped_from_v1: []

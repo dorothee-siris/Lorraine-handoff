@@ -1,0 +1,60 @@
+# Contract fragment -- geo_countries.parquet (Stream W2, pipeline/46_build_partner_views.py)
+# Full design rationale: docs/foundry/data_foundation.yaml rev 3.1, table `geo_countries` (I10).
+
+geo_countries.parquet:
+  source: "corpus_authorships.parquet (institution_country) + works_master.parquet, overlay-
+           corrected pairs"
+  build_step: "pipeline/46_build_partner_views.py"
+  keys: [country_code, year, conf_state, subset_id]
+  read_by_app: true
+  eager_load: true
+  read_by: ["V3 country aggregation view (I10) -- trend sparkline derives from these year rows
+    directly, no packed trend_cells column"]
+  rows_expected: 2165
+  new_in_v2: true
+  row_grain: "country x year x conf_state x subset_id{all,in_lue}, sparse (only years with
+    activity); unknown-country bucket is an EXPLICIT row (country_code='UNKNOWN',
+    unknown_bucket_flag=True), never silently dropped"
+  why_deployed: "I10 country aggregation + unknown bucket, per subset_row_matrix."
+  columns:
+    - {name: "country_code", dtype: category, from: "corpus_authorships.institution_country
+       (ISO-3166 2-letter) or the literal 'UNKNOWN' sentinel row"}
+    - {name: "year", dtype: int32}
+    - {name: "conf_state", dtype: category, allowed: [all, no_conf]}
+    - {name: "subset_id", dtype: category, allowed: [all, in_lue]}
+    - {name: "co_works", dtype: int64, from: "nunique(work_id) among partners resolved to this
+       country, this year x conf_state x subset_id"}
+    - {name: "co_works_xa", dtype: int64}
+    - {name: "share_ul", dtype: float64, from: "co_works / (this scope's own collaborative-work union)"}
+    - {name: "share_ul_xa", dtype: float64, nullable: true}
+    - {name: "fwci_fr_median", dtype: float64, nullable: true, from: "median FWCI_FR among
+       indicator_status=='computed' works in this cell; NaN for the UNKNOWN bucket (never scored)"}
+    - {name: "fwci_fr_median_xa", dtype: float64, nullable: true}
+    - {name: "unknown_bucket_flag", dtype: bool}
+    - {name: "snapshot_date", dtype: string}
+  invariants:
+    - "countries with >=10 co-works (subset=all, conf=all) == 120 -- EXACT match to
+       canonical_counts.countries_ge10, asserted in the builder"
+  null_country_arbitration: >
+    ARBITRATED (fix round, verified against reports/data/_f3_scratch/f3_hostile_recompute.py's own
+    partner-universe-building cell, section A): that script's `ext`/`pvol` construction produces
+    the IDENTICAL 12,570-partner set this build uses (verified id-for-id, zero symmetric
+    difference) -- f3 itself never computes a null-country count (no country column is loaded
+    there at all), so the "347" figure in canonical_counts/CHALLENGE_MEMO_pass2.md #19 does not
+    trace to any script in this repo. The ONE partner id that explains a +/-1 drift on top of an
+    otherwise-identical 12,570-partner universe: **I217085601 ("University of Namibia", 1
+    co-work)**, whose `corpus_authorships.institution_country` resolves to the literal string
+    `'NA'` -- Namibia's real ISO-3166-1 alpha-2 code, and simultaneously the universal missing-
+    value sentinel every CSV/Excel-reading tool (pandas `read_csv` default `na_values`, Excel,
+    R) recognises by default. This build reads the source parquet natively (`pd.read_parquet`,
+    no CSV/Excel round-trip anywhere in this construction) and correctly keeps `'NA'` as a real,
+    resolved country value -- so **346** (this build's count) is the RIGHT number: I217085601 is
+    a genuine, resolved partner and must NOT land in the V3 unknown-bucket row. The "347" figure
+    is best explained as an artifact of some upstream one-off tool silently reinterpreting this
+    single legitimate ISO code as a missing value -- a classic "NA-the-country vs NA-the-null-
+    sentinel" collision, not a defect in this build. **Risk flagged for the DOC/app stream:** any
+    FUTURE tool in the export/app layer that round-trips this column through CSV or Excel
+    (openpyxl/xlsxwriter defaults, `pd.read_csv`) must guard `keep_default_na=False` /
+    `na_values=[]` on `country_code`, or I217085601 will silently vanish into the unknown bucket
+    downstream even though the pipeline itself resolves it correctly.
+  dropped_from_v1: []

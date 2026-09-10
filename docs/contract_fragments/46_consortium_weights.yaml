@@ -1,0 +1,43 @@
+# Contract fragment -- consortium_weights.parquet (Stream W2, pipeline/46_build_partner_views.py)
+# Full design rationale: docs/foundry/data_foundation.yaml rev 3.1, table `consortium_weights`
+# (PM4, docs/indicator_plan_FINAL.md sec.6.4-F -- floor-exempt satellite, not computable from
+# ptn_summary since In_LUE rows there are floor-gated at >=10 LUE co-pubs, dropping Inria).
+
+consortium_weights.parquet:
+  source: "corpus_authorships.parquet (RAW, not the overlay-corrected pairs -- these ids are
+           legitimate external partners, no own/blocklist exclusion needed) + inputs/overlays/
+           idset_consortium.csv (status==ok, role==external) + works_master.parquet (In_LUE,
+           is_conference)"
+  build_step: "pipeline/46_build_partner_views.py"
+  keys: [member, scope, conf_state]
+  read_by_app: true
+  eager_load: true
+  read_by: ["P-V3 registry, P-V4 I-SITE consortium panel, V1 consortium cards (tunnel #10 --
+    per-id ptn_summary rows double-count multi-id members, this table doesn't)"]
+  rows_expected: 28
+  new_in_v2: true
+  row_grain: "member(7 external consortium members) x scope{lue,all} x conf_state{all,no_conf}"
+  why_deployed: "PM4 -- distinct-work-union member weights, id-set-counted, never name-matched."
+  columns:
+    - {name: "member", dtype: category, allowed: [CNRS, Inserm, INRAE, "CHRU Nancy", "Georgia Tech",
+       Inria, AgroParisTech]}
+    - {name: "member_label", dtype: string}
+    - {name: "scope", dtype: category, allowed: [lue, all]}
+    - {name: "conf_state", dtype: category, allowed: [all, no_conf]}
+    - {name: "co_works_distinct", dtype: int64, from: "DISTINCT-work union over the member's
+       curated id-set (never a per-id row sum -- GT: union 21 < row-sum 45 asserted in the builder)"}
+    - {name: "share_of_scope", dtype: float64, from: "co_works_distinct / (LUE works or corpus
+       works, this conf_state)"}
+    - {name: "incl_own_centre_variant_share", dtype: "Float64 (nullable)", from: "Inria row ONLY --
+       the diagnostic re-add of blocklisted Centre Inria de l'UL (I4210127166); NULL for every
+       other member (workshop ruling 8.B2 decides which Inria variant ships)"}
+    - {name: "id_set_size", dtype: int64, from: "number of raw OpenAlex ids composing this member
+       (1 for most; 3 for Georgia Tech; 6 for Inria external)"}
+    - {name: "snapshot_date", dtype: string}
+  artifact_exempt: "id-set structural weights; grey caption under ON"
+  invariants:
+    - "scope='lue', conf_state='all' matches F0-P5 EXACTLY: CNRS 58.7% / INRAE 21.5% /
+       AgroParisTech 9.9% / Inserm 9.0% / CHRU Nancy 2.6% / Georgia Tech 1.1% / Inria 0.1%
+       (external) | 0.3% (incl-own) -- all asserted in the builder"
+    - "Georgia Tech LUE scope: distinct union (21) < naive per-id sum (45) -- asserted"
+  dropped_from_v1: []

@@ -245,6 +245,13 @@ STEPS: list[dict] = [
              "manual frontierness_baseline.xlsx input, but its own golden-continuity assert reads "
              "THIS snapshot's tables/thm_frontier.parquet (47's output, no prior deploy needed) -- "
              "must run strictly after 47; placed here, right after it"},
+    {"id": "47e", "script": "47e_build_frontier_components.py",
+     "outputs": ["dim_frontier_components.parquet"],
+     "note": "pass 7, S-DAT, P6/D40: reshape-only melt of inputs/manual/OA_frontier_scores.xlsx -- "
+             "a DIFFERENT manual file from 47c's frontierness_baseline.xlsx, never mixed in one "
+             "figure (docs/FRONTIERNESS_METHOD.md). Needs only all_topics.parquet (12b) + the "
+             "manual copy-in -- no real dependency on 47/47c's own output; placed right after 47c "
+             "per the brief's explicit order instruction (grouped with the frontier family)"},
     {"id": "49b", "script": "49b_build_peer_benchmark.py", "outputs": ["bench_peers.parquet"],
      "note": "pass 4, G4: needs 49 (peer_works_<id>.parquet x9) + 31 (france_baseline_strata) + "
              "40 (works_master) + 12b (all_topics); placed after 47 per BUILD_PLAN G4 ordering"},

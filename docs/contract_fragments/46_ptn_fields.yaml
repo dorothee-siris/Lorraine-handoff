@@ -1,0 +1,63 @@
+# Contract fragment -- ptn_fields.parquet (Stream W2, pipeline/46_build_partner_views.py)
+# Full design rationale: docs/foundry/data_foundation.yaml rev 3.1, table `ptn_fields` (I5
+# thematic profile + I6 per-field momentum, docs/indicator_plan_FINAL.md sec.3/6.6).
+
+ptn_fields.parquet:
+  source: "works_master.parquet (primary_field_id/primary_subfield_id) + corpus_authorships.parquet
+           (overlay-corrected pairs) + france_2019..2023.parquet (baseline_france_share) +
+           pipeline/lib46_momentum.py (I6 field-grain momentum, reusing the shipped-universe
+           d1/d2/med from ptn_mom_facts as the shared recentring reference)"
+  build_step: "pipeline/46_build_partner_views.py"
+  keys: [partner_id, node_level, node_id, conf_state]
+  read_by_app: true
+  read_by: ["V2 partnership thematic profile (I5); V2 per-field momentum chips (I6)"]
+  rows_expected: 83136
+  new_in_v2: true
+  row_grain: "partner x node(field, all; OR subfield, floored) x conf_state. Measured: field cells
+    32,663 (all)/30,302 (no_conf); subfield cells (>=3 floor) 10,710 (all)/9,461 (no_conf)."
+  why_deployed: "I5 (field mix per partner, 3 baselines) + I6 (per-field momentum, frozen def.)."
+  builder_decision_subfield_floor: >
+    No config constant exists for a 'ptn_fields subfield floor' (only I11's sparkline/delta floors
+    are named in config.yaml workshop_tunables). This build reuses i11_sparkline_min_works (3) as
+    the general 'sparse breakdown' floor rather than inventing an undeclared new one, and does NOT
+    add a new key to config.yaml (out of this stream's scope fence) -- flagged for the workshop-
+    tunables owner to formalise if this floor needs its own name later.
+  columns:
+    - {name: "partner_id", dtype: string}
+    - {name: "node_level", dtype: category, allowed: [field, subfield]}
+    - {name: "node_id", dtype: category, from: "works_master.primary_field_id or
+       primary_subfield_id (bare numeric-string OpenAlex id)"}
+    - {name: "conf_state", dtype: category, allowed: [all, no_conf]}
+    - {name: "co_works", dtype: int64, from: "nunique(work_id) for this partner x node x conf_state"}
+    - {name: "co_works_xa", dtype: int64}
+    - {name: "share_of_pair", dtype: float64, from: "co_works / (this partner's own co_works_full
+       in the same conf_state) -- within-pair field mix"}
+    - {name: "share_of_pair_xa", dtype: float64, nullable: true}
+    - {name: "baseline_ul_share", dtype: float64, from: "this node's share of UL's OWN whole
+       corpus (conf_state-scoped) -- a global constant repeated across all partners for the same node_id"}
+    - {name: "baseline_ul_share_xa", dtype: float64}
+    - {name: "baseline_partner_share", dtype: "Float64 (nullable)", from: "42b gate NOT run --
+       NULL for every row this pass (D53)"}
+    - {name: "baseline_france_share", dtype: float64, from: "this node's share of the France
+       baseline corpus (france_20xx shards), same conf_state doc-type scope"}
+    - {name: "lq_vs_ul", dtype: float64, from: "share_of_pair / baseline_ul_share (location
+       quotient vs UL's own field mix)"}
+    - {name: "lq_vs_ul_xa", dtype: float64}
+    - {name: "mom_class", dtype: category, nullable: true, allowed: [up, down, stable, ns],
+       from: "I6 -- frozen method reapplied at partner x FIELD grain only (never subfield, per
+       sec.6.6 refusal), restricted to partners with >=50 in-window co-works (the same 'bigp' set
+       the frozen script's own section B uses); measured this build: 406 eligible field cells
+       across 214 partners (conf=all), 325 across 173 partners (conf=no_conf) -- no golden target
+       given for this specific figure, informational only"}
+    - {name: "mom_p_value", dtype: float64, nullable: true}
+    - {name: "mom_eligible_flag", dtype: boolean, from: "False (not NULL) for every subfield row
+       and every field row outside the >=50-partner / >=20-in-window cell gate"}
+    - {name: "snapshot_date", dtype: string}
+  artifact_invariant_columns: "baseline_partner_share (42b) · baseline_france_share (no topic
+    grain in France scope)"
+  artifact_exempt_families: "momentum (I6 chips grey under toggle ON)"
+  gate_columns_null: [baseline_partner_share]
+  invariants:
+    - "baseline_partner_share NULL on every row (D53, 42b gate) -- asserted in the builder"
+    - "mom_class only populated at node_level=='field' (subfield momentum refused by name, sec.6.6)"
+  dropped_from_v1: []

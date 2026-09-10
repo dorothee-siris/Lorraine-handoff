@@ -1,0 +1,27 @@
+# Contract fragment -- ptn_yearly.parquet (Stream W2, pipeline/46_build_partner_views.py)
+# Full design rationale: docs/foundry/data_foundation.yaml rev 3.1, table `ptn_yearly`.
+
+ptn_yearly.parquet:
+  source: "works_master.parquet + corpus_authorships.parquet, overlay-corrected pairs (same
+           universe as ptn_summary)"
+  build_step: "pipeline/46_build_partner_views.py"
+  keys: [partner_id, year, conf_state]
+  read_by_app: true
+  read_by: ["V2 per-partner yearly trend sparkline (lazy per-partner load)"]
+  rows_expected: 56683
+  new_in_v2: true
+  row_grain: "partner x year x conf_state, sparse (only years with >=1 co-work in that state)"
+  why_deployed: "I1/I4 trend context -- the yearly bars behind the momentum quadrant chip."
+  columns:
+    - {name: "partner_id", dtype: string}
+    - {name: "year", dtype: int32, allowed: [2019, 2020, 2021, 2022, 2023]}
+    - {name: "conf_state", dtype: category, allowed: [all, no_conf]}
+    - {name: "co_works", dtype: int64, from: "nunique(work_id) for this partner x year x conf_state"}
+    - {name: "co_works_xa", dtype: int64, from: "co_works restricted to artifact_flag==False"}
+    - {name: "share_of_ul_collab", dtype: float64, from: "co_works / (that YEAR's own
+       collaborative-work union across ALL partners, conf_state-scoped) -- a per-year denominator,
+       not the whole-window one ptn_summary.share_ul uses"}
+    - {name: "share_of_ul_collab_xa", dtype: float64, nullable: true}
+    - {name: "snapshot_date", dtype: string}
+  invariants: ["co_works_xa <= co_works on every row (asserted in the builder)"]
+  dropped_from_v1: []

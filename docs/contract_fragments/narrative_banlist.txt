@@ -1,0 +1,173 @@
+# narrative_banlist.txt -- vocabulaire interdit dans les chaines statiques affichees
+# =============================================================================
+# Autorite : BUILD_PLAN.md P10 + ruling P6-R2 (2026-08-19) + item #5 du releve de
+# feedback. Consomme par tests/test_narrative.py, qui ne scanne QUE les chaines
+# passees a un appel d'affichage Streamlit (st.markdown/caption/metric/... et leurs
+# equivalents sur un conteneur : c1.metric(...), col.caption(...)), y compris les
+# parties litterales d'une f-string. Le meme mot dans du code (pd.read_parquet(
+# "ptn_summary.parquet")) n'est jamais concerne.
+#
+# Format, une entree par ligne :
+#   <texte>        -> sous-chaine, insensible a la casse et au type d'apostrophe
+#   re: <regex>    -> expression reguliere, insensible a la casse
+# Lignes vides et lignes commencant par # ignorees.
+#
+# Principe : l'application est un livrable autonome. Tout ce qui ne fait sens que
+# pour l'equipe de construction (nom de fichier, nom de colonne, numero de decision,
+# nom de panneau, jargon anglais de chantier) sort de l'interface. La methode, elle,
+# reste : elle se dit en francais, avec des mots que le lecteur peut verifier.
+# =============================================================================
+
+# --- 1. Les deux exemples cites par le client (item #5), a attraper verbatim ----
+variante active
+règle d'honnêteté
+regle d'honnetete
+
+# --- 2. Fichiers, chemins, extensions ------------------------------------------
+.parquet
+.xlsx
+.csv
+.yaml
+.py
+docs/
+reports/
+progress/
+pipeline/
+inputs/
+config.yaml
+METHODES
+OVERLAY_MATRIX
+VIZ_SPEC
+data_contract
+indicator_plan
+LEGIBILITY_BUDGETS
+
+# --- 3. Identifiants de colonnes et de tables ---------------------------------
+b_siris
+c_openalex
+sdg_variant
+sdg_three_way
+works_master
+ul_partners_base
+ul_labs
+ul_pubs
+ptn_summary
+ptn_yearly
+ptn_fields
+ptn_labs
+ptn_works
+ptn_topics
+ptn_mom_facts
+geo_countries
+geo_fields
+geo_groups
+aut_public
+aut_works
+aut_coverage
+aut_impact_drill
+bench_peers
+bench_sdg
+bench_diversity
+bench_positioning
+thm_specialisation
+thm_frontier
+thm_diversity
+thm_codiscipline
+thm_funding
+thm_sdg_labs
+dim_subsets
+dim_corpus_facts
+dim_artifact_topics
+subset_works
+work_subsets
+consortium_weights
+share_p
+share_ul
+co_works
+baseline_partner_share
+partner_total
+mom_class
+mom_category
+in_isite
+in_lue
+In_ISITE
+In_LUE
+FWCI_FR
+PPtop10_FR
+PPtop1_FR
+primary_topic
+conf_state
+subset_id
+entity_id
+partner_id
+node_level
+artifact_flag
+_xa
+re: \bcolonne\s+`
+re: `\w+\s*=\s*'\w+'`
+
+# --- 4. References de decisions, rulings, panneaux, indicateurs internes -------
+re: \b(?:D|R|T|PM|CL|QA|RA|I|S)\d{1,3}[a-z]?\b
+re: \bruling\b
+re: \b\d\.[AB]\d\b
+tbl-
+bars-
+cards-
+card-
+map-symbols
+scatter-reciprocity
+dot-ratio
+dumbbell
+ladder-cut
+42b
+49b
+G3172997804
+dossier G8
+
+# --- 5. Jargon anglais de chantier --------------------------------------------
+disclosed
+ships-v2
+row-swap
+same-row
+DEPTH & QUERY
+SHALLOW
+thin-cell
+thin stratum
+not recomputed
+follow-up
+league table
+vintage
+owner client
+pull partenaire
+un tirage
+tirage OpenAlex
+re: \bNULL\b
+sizeref
+
+# --- 6. Litteraux de fenetre et d'instantane (doivent etre calcules) -----------
+# La fenetre de publication et la date d'instantane changent a chaque mise a jour
+# de la donnee : elles ne s'ecrivent jamais a la main dans une phrase.
+2019-2023
+2019-2024
+2019-23
+2019-2020 vs 2022-2023
+2019-20 vs 2022-23
+2026-08-
+11/08
+17/08/2026
+
+# --- 7. Vocabulaire de version et d'histoire de construction -------------------
+# Le lecteur n'a pas a connaitre les versions internes de l'outil.
+version 1 laissait
+le modèle de topics de v1
+matrice viridis
+676 cellules
+26×26
+cette passe-ci
+ce passage
+cette passe
+passe 5
+passe 6
+Studio
+Foundry
+Assembly Line

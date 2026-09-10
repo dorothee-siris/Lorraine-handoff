@@ -1,0 +1,572 @@
+# Contrat de survol (hover) et d'aide « ? » pour chaque graphique et chaque tuile de
+# l'application.
+#
+# A lire avec docs/TOOLTIP_SPEC.md, qui porte le raisonnement famille par famille.
+# Les constructeurs de figures assemblent UNE chaine pre-formatee par marque et la
+# passent en `customdata` (`hovertemplate = "%{customdata}<extra></extra>"`, jamais de
+# specificateur de format dans le gabarit) ; les `lines` ci-dessous SONT cette chaine,
+# jointes par des sauts de ligne. tests/test_hover_spec.py verifie, pour chaque
+# constructeur enregistre, que les libelles y figurent dans CET ordre.
+#
+# Regles dures, verifiees par ce test :
+#   * 8 lignes au maximum par survol ; les mots-cles d'un topic comptent pour 2 ;
+#   * la premiere ligne est TOUJOURS l'entite que la marque represente, sans libelle ;
+#   * toute autre ligne s'ecrit "<b>libelle</b> : valeur" ;
+#   * un libelle vide n'est legal que sur la premiere ligne et sur une ligne `drapeau`
+#     (phrase fixe, sans valeur) ;
+#   * une ligne dont le `when` est faux n'est PAS dessinee -- jamais un libelle nu ;
+#   * chaque `field` nomme une colonne que l'application porte (ou que P6-P10 creent) ;
+#   * un libelle nomme le PERIMETRE des qu'il differe du perimetre de tete du graphique ;
+#   * un chiffre sous son plancher est retire ou dague, jamais montre nu ;
+#   * aucun chiffre n'est tape dans un libelle : fenetre, periodes et planchers viennent
+#     de la donnee ou des constantes de methode (P6-R2).
+#
+# SOURCE UNIQUE des libelles : Streamlit/lib/copy_fr.py `HOVER_LABELS`. Le test assere
+# l'EGALITE des deux (choix retenu : pas de generation de code, un test d'egalite) ; en
+# cas de divergence il echoue et nomme la cle fautive.
+#
+# Les cles de graphique et les valeurs de mode sont celles du registre
+# docs/contract_fragments/chart_keys_pass7.md, verbatim. Convention de mode :
+#   * graphique sans mode          -> pas de cle `modes`, un seul jeu de `lines` ;
+#   * un axe de controle           -> `modes: [a, b]` ;
+#   * deux axes de controle        -> cles appariees "a|b" ;
+#   * lignes differentes par mode  -> `lines_by_mode: {<mode>: [...]}` (ancres YAML pour
+#     les modes qui partagent le meme jeu), sinon `lines:` vaut pour tous les modes.
+
+version: 1
+
+formats:
+  texte:
+    definition: "la valeur telle qu'elle est stockee, sans transformation"
+    exemple: "Chemistry"
+  entier:
+    definition: "nombre entier, separateur de milliers francais (espace insecable fine)"
+    exemple: "1 234"
+  dec_1:
+    definition: "une decimale, virgule decimale francaise"
+    exemple: "512,4"
+  pct_1d:
+    definition: "part en pourcentage, une decimale, virgule francaise"
+    exemple: "12,3 %"
+  pct_1d_dague:
+    definition: "comme pct_1d, suivi d'une dague quand le denominateur nomme dans la note
+      est sous le plancher de fiabilite (dix travaux)"
+    exemple: "12,3 % †"
+  fwci_paire_2d:
+    definition: "mediane, moyenne et nombre de travaux derriere l'indicateur, sur une
+      seule ligne, deux decimales ; la dague suit le compte quand il est sous dix ; la
+      ligne n'est PAS dessinee sous trois travaux"
+    exemple: "mediane 0,98 · moyenne 1,31 · 54 travaux"
+  paire_volumes:
+    definition: "un volume par etablissement, dans l'ordre des cotes du graphique ; une
+      valeur absente s'ecrit avec un tiret ; un volume derive porte la mention (derive)"
+    exemple: "UL 120 · CNRS 84"
+  conjoint_ou_seuil:
+    definition: "le compte conjoint, ou la phrase fixe de plancher quand la relation est
+      trop mince pour l'afficher (jamais zero, qui dirait autre chose)"
+    exemple: "84 -- ou « non affiche sous cinq co-publications »"
+  mots_cles_2x5:
+    definition: "les dix mots-cles du topic, separes par des virgules, sur DEUX lignes de
+      cinq ; compte pour 2 lignes dans le plafond de 8"
+    exemple: "graphene, nanotube, depot en phase vapeur, exfoliation, dopage / ..."
+  score_2d:
+    definition: "deux decimales, virgule francaise (expansion, acceleration, frontiere,
+      intensite relative)"
+    exemple: "1,31"
+  rang_partenaire:
+    definition: "phrase de rang, remplie depuis la donnee : la position du partenaire dans
+      le classement de l'UL sur le noeud affiche"
+    exemple: "n° 4 des partenaires de l'UL ici"
+  drapeau:
+    definition: "phrase fixe, dessinee seulement quand sa condition est vraie ; ne porte
+      aucune valeur, et son libelle est donc vide"
+    exemple: "topic hors referentiel"
+  annee:
+    definition: "l'annee telle qu'elle apparait sur l'axe"
+    exemple: "2021"
+
+charts:
+
+  # ---------------------------------------------------- Page 8 -- Collaborations
+  col_hub_companion:
+    view: collaborations
+    kind: bars
+    entity: partenaire
+    lines:
+      - {field: display_name, label: "", format: texte}
+      - {field: co_works_full, label: "co-publications, tous types", format: entier,
+         note: "co_works_full, fenetre entiere, cinq types de documents"}
+      - {field: share_ul, label: "part du corpus collaboratif de l'UL", format: pct_1d,
+         note: "denominateur : les travaux de l'UL portant au moins un autre etablissement"}
+      - {field: share_p, label: "part de la production propre du partenaire", format: pct_1d_dague,
+         when: "share_p non nul",
+         note: "denominateur partner_total_windowed ; dague sous dix travaux"}
+      - {field: fwci_fr_median, label: "FWCI médian des co-publications (réf. France)",
+         format: fwci_paire_2d, when: "works_with_indicators >= 3",
+         note: "fwci_fr_median, fwci_fr_mean, works_with_indicators ; articles et revues"}
+      - {field: n_phares, label: "publications phares", format: entier,
+         when: "n_phares non nul", note: "pptop10_fr agrege sur la paire ; articles et revues"}
+      - {field: lue_co_works, label: "dont périmètre I-SITE", format: entier,
+         when: "affichage I-SITE actif", note: "liste de DOI validee, jamais un mot-cle"}
+      - {field: country_code, label: "pays", format: texte}
+
+  col_reciprocity:
+    view: collaborations
+    kind: scatter
+    entity: partenaire
+    mode_axis: floor
+    modes: [p20, p10]
+    lines:
+      - {field: display_name, label: "", format: texte}
+      - {field: share_ul, label: "part du corpus collaboratif de l'UL", format: pct_1d}
+      - {field: share_p, label: "part de la production propre du partenaire", format: pct_1d_dague,
+         when: "share_p non nul",
+         note: "denominateur partner_total_windowed ; dague sous dix travaux"}
+      - {field: share_p_capped_flag, label: "", format: drapeau,
+         when: "share_p_capped_flag vrai",
+         note: "phrase : part propre plafonnee -- le denominateur mesure du partenaire est
+           plus petit que la relation elle-meme"}
+      - {field: co_works_full, label: "co-publications, tous types", format: entier}
+      - {field: partner_total_windowed, label: "production propre du partenaire sur la fenêtre",
+         format: entier, when: "partner_total_windowed non nul"}
+      - {field: type_openalex, label: "type d'établissement", format: texte}
+      - {field: country_code, label: "pays", format: texte}
+
+  col_consortium_bars:
+    view: collaborations
+    kind: bars
+    entity: signataire
+    lines:
+      - {field: member_name, label: "", format: texte}
+      - {field: co_works_distinct, label: "co-publications avec l'UL, tous types", format: entier,
+         note: "travaux distincts : les perimetres des signataires se recouvrent, les barres
+           ne s'additionnent pas"}
+      - {field: share_of_scope, label: "part du périmètre I-SITE", format: pct_1d}
+      - {field: mom_class, label: "tendance entre les deux fenêtres", format: texte,
+         when: "tendance calculee pour ce signataire"}
+
+  col_momentum_quadrant:
+    view: collaborations
+    kind: scatter
+    entity: partenaire
+    mode_axis: axis
+    modes: [log, lineaire]
+    lines:
+      - {field: display_name, label: "", format: texte}
+      - {field: mom_w1_share, label: "part annualisée, première fenêtre", format: pct_1d}
+      - {field: mom_w2_share, label: "part annualisée, seconde fenêtre", format: pct_1d}
+      - {field: mom_class, label: "tendance", format: texte,
+         note: "classe recentree sur la derive du corpus, avec test de significativite"}
+      - {field: mom_p_value, label: "significativité", format: texte,
+         when: "mom_eligible_flag vrai",
+         note: "valeur deja formatee par la famille momentum, jamais recalculee ici"}
+      - {field: mom_count_arrow, label: "co-publications, première puis seconde fenêtre",
+         format: texte}
+      - {field: co_works_full, label: "co-publications, tous types", format: entier}
+
+  # --------------------------------------------------- Page 9 -- Zoom partenaire
+  zoom_yearly:
+    view: zoom
+    kind: bars
+    entity: annee
+    lines:
+      - {field: year, label: "", format: annee}
+      - {field: co_works, label: "co-publications, tous types", format: entier}
+      - {field: co_works_isite, label: "dont périmètre I-SITE", format: entier,
+         when: "affichage I-SITE actif", note: "in_isite agrege par annee sur la paire (P-ZOOM)"}
+      - {field: share_of_ul_collab, label: "part du corpus collaboratif de l'UL cette année-là",
+         format: pct_1d}
+
+  zoom_share_spark:
+    view: zoom
+    kind: sparkline
+    entity: annee
+    lines:
+      - {field: year, label: "", format: annee}
+      - {field: share_of_ul_collab, label: "part du corpus collaboratif de l'UL", format: pct_1d}
+      - {field: co_works, label: "co-publications, tous types", format: entier}
+
+  zoom_balance_bars:
+    view: zoom
+    kind: bars_miroir
+    entity: noeud
+    mode_axis: mode|level
+    modes: ["volume|champ", "volume|sous_champ", "fwci|champ", "fwci|sous_champ",
+            "phares|champ", "phares|sous_champ"]
+    lines_by_mode:
+      "volume|champ": &bb_volume
+        - {field: node_name, label: "", format: texte}
+        - {field: vol_joint, label: "co-publications de la relation", format: conjoint_ou_seuil}
+        - {field: vol_ul_only, label: "travaux propres de chaque côté, hors relation",
+           format: paire_volumes,
+           note: "vol_ul_only et vol_partner_only sur une seule ligne ; le cote partenaire
+             vaut partner_total_windowed x baseline_partner_share - co_works, plancher a
+             zero, et porte la mention (derive) ; une valeur absente s'ecrit avec un tiret"}
+        - {field: partner_only_derived, label: "", format: drapeau,
+           when: "partner_only_derived vrai",
+           note: "phrase : volume du partenaire derive de sa part propre, non compte travail
+             par travail"}
+        - {field: share_of_pair, label: "part de la relation", format: pct_1d}
+        - {field: baseline_ul_share, label: "part du portefeuille propre de l'UL", format: pct_1d}
+        - {field: baseline_partner_share, label: "part du portefeuille propre du partenaire",
+           format: pct_1d, when: "baseline_partner_share non nul"}
+      "volume|sous_champ": *bb_volume
+      "fwci|champ": &bb_fwci
+        - {field: node_name, label: "", format: texte}
+        - {field: fwci_joint, label: "FWCI médian des co-publications (réf. France)",
+           format: fwci_paire_2d, when: "n_fwci_joint >= 3"}
+        - {field: fwci_ul, label: "FWCI médian du portefeuille propre de l'UL (réf. France)",
+           format: score_2d, when: "fwci_ul non nul"}
+        - {field: vol_joint, label: "co-publications de la relation", format: conjoint_ou_seuil}
+        - {field: n_fwci_joint, label: "co-publications portant un indicateur calculé",
+           format: entier}
+        - {field: fwci_partner_absent, label: "", format: drapeau,
+           note: "phrase : FWCI propre du partenaire non disponible, lecture a un seul cote"}
+        - {field: under_floor, label: "", format: drapeau, when: "under_floor vrai",
+           note: "phrase de plancher de la relation"}
+      "fwci|sous_champ": *bb_fwci
+      "phares|champ": &bb_phares
+        - {field: node_name, label: "", format: texte}
+        - {field: n_phares_joint, label: "publications phares de la relation",
+           format: conjoint_ou_seuil}
+        - {field: n_phares_ul, label: "publications phares du portefeuille propre de l'UL",
+           format: entier, when: "n_phares_ul non nul"}
+        - {field: vol_joint, label: "co-publications de la relation", format: conjoint_ou_seuil}
+        - {field: share_phares_joint,
+           label: "part des co-publications de la relation classées phares",
+           format: pct_1d_dague, when: "vol_joint >= 3",
+           note: "n_phares_joint / vol_joint, calcule sur la page ; dague sous dix co-publications"}
+        - {field: phares_partner_absent, label: "", format: drapeau,
+           note: "phrase : publications phares du portefeuille propre du partenaire non
+             disponibles"}
+        - {field: under_floor, label: "", format: drapeau, when: "under_floor vrai",
+           note: "phrase de plancher de la relation"}
+      "phares|sous_champ": *bb_phares
+
+  zoom_plane_impact:
+    view: zoom
+    kind: scatter
+    entity: topic
+    mode_axis: select
+    modes: [volume, fwci, frontiere, phares]
+    lines:
+      - {field: topic_name, label: "", format: texte}
+      - {field: keywords, label: "mots-clés du topic", format: mots_cles_2x5,
+         note: "all_topics keywords ; le libelle OpenAlex d'un topic n'est pas toujours
+           fidele a son contenu -- de la les deux lignes de cinq"}
+      - {field: co_works, label: "co-publications de la relation, tous types", format: entier}
+      - {field: fwci_fr_median_cell, label: "FWCI médian des co-publications (réf. France)",
+         format: fwci_paire_2d, when: "co-publications portant un indicateur >= 3",
+         note: "fwci_fr_median_cell agrege sur les annees de la fenetre ; articles et revues"}
+      - {field: n_phares, label: "publications phares", format: entier, when: "n_phares non nul"}
+      - {field: artifact_flag, label: "", format: drapeau, when: "artifact_flag vrai",
+         note: "phrase : topic hors referentiel -- la marque est dessinee dans une teinte
+           plus claire (P11)"}
+      - {field: subfield_name, label: "sous-champ", format: texte}
+
+  zoom_plane_frontier:
+    view: zoom
+    kind: scatter
+    entity: topic
+    mode_axis: select
+    modes: [volume, fwci, frontiere, phares]
+    lines:
+      - {field: topic_name, label: "", format: texte}
+      - {field: keywords, label: "mots-clés du topic", format: mots_cles_2x5}
+      - {field: expansion, label: "expansion depuis la période de référence", format: score_2d,
+         note: "composantes de la derniere periode disponible ; position de longue duree du
+           topic par rapport a la science mondiale"}
+      - {field: acceleration, label: "accélération sur la dernière période", format: score_2d,
+         note: "elan recent : dernier intervalle face au precedent"}
+      - {field: co_works, label: "co-publications de la relation, tous types", format: entier}
+      - {field: frontier_score_std, label: "score de frontière de la dernière période",
+         format: score_2d, when: "frontier_score_std non nul",
+         note: "composante de la derniere periode -- distincte du score composite affiche
+           ailleurs dans l'outil, qui moyenne toutes les periodes"}
+      - {field: artifact_flag, label: "", format: drapeau, when: "artifact_flag vrai"}
+
+  zoom_field_companion:
+    view: zoom
+    kind: bars
+    entity: champ
+    lines:
+      - {field: node_name, label: "", format: texte}
+      - {field: co_works, label: "co-publications de la relation, tous types", format: entier}
+      - {field: share_of_pair, label: "part de la relation", format: pct_1d}
+      - {field: baseline_ul_share, label: "part du portefeuille propre de l'UL", format: pct_1d}
+      - {field: baseline_partner_share, label: "part du portefeuille propre du partenaire",
+         format: pct_1d, when: "baseline_partner_share non nul"}
+      - {field: lq_vs_ul,
+         label: "intensité de la relation dans ce champ, rapportée au portefeuille de l'UL",
+         format: score_2d, when: "lq_vs_ul non nul"}
+      - {field: mom_class, label: "tendance entre les deux fenêtres", format: texte,
+         when: "mom_eligible_flag vrai"}
+
+  zoom_subfield_companion:
+    view: zoom
+    kind: bars
+    entity: sous-champ
+    lines:
+      - {field: node_name, label: "", format: texte}
+      - {field: field_name, label: "champ", format: texte}
+      - {field: co_works, label: "co-publications de la relation, tous types", format: entier}
+      - {field: share_of_pair, label: "part de la relation", format: pct_1d}
+      - {field: baseline_ul_share, label: "part du portefeuille propre de l'UL", format: pct_1d}
+      - {field: baseline_partner_share, label: "part du portefeuille propre du partenaire",
+         format: pct_1d, when: "baseline_partner_share non nul"}
+      - {field: mom_class, label: "tendance entre les deux fenêtres", format: texte,
+         when: "mom_eligible_flag vrai"}
+
+  zoom_theme_zoom:
+    view: zoom
+    kind: bars
+    entity: annee
+    lines:
+      - {field: year, label: "", format: annee}
+      - {field: co_works, label: "co-publications de la relation dans ce champ, tous types",
+         format: entier}
+      - {field: co_works_isite, label: "dont périmètre I-SITE", format: entier,
+         when: "affichage I-SITE actif"}
+      - {field: node_name, label: "champ", format: texte}
+
+  zoom_reciprocity:
+    view: zoom
+    kind: scatter
+    entity: noeud
+    mode_axis: level
+    modes: [champ, sous_champ]
+    lines:
+      - {field: node_name, label: "", format: texte}
+      - {field: field_name, label: "champ", format: texte, when: "niveau sous-champ"}
+      - {field: baseline_ul_share, label: "part du portefeuille propre de l'UL", format: pct_1d}
+      - {field: baseline_partner_share, label: "part du portefeuille propre du partenaire",
+         format: pct_1d,
+         note: "seul denominateur disponible : le corpus entier du partenaire, tous types"}
+      - {field: co_works, label: "co-publications de la relation, tous types", format: entier}
+      - {field: share_of_pair, label: "part de la relation", format: pct_1d}
+      - {field: domain_name, label: "domaine", format: texte}
+
+  zoom_portage:
+    view: zoom
+    kind: bars
+    entity: structure
+    lines:
+      - {field: lab_name, label: "", format: texte}
+      - {field: co_works, label: "travaux de la relation attribués à cette structure",
+         format: entier}
+      - {field: share_of_lab_attributed, label: "part des travaux attribués de la relation",
+         format: pct_1d,
+         note: "denominateur : les seuls travaux de la relation portant une attribution de
+           structure"}
+      - {field: nolab_works, label: "travaux de la relation sans structure attribuée",
+         format: entier, note: "comptes a part, hors du rapport ci-dessus"}
+
+  # ------------------------------------------- Page 6 -- Exploration thematique
+  ex_partner_reciprocity:
+    view: exploration
+    kind: scatter
+    entity: partenaire
+    mode_axis: type|scope
+    modes: ["education|fr_intl", "education|fr", "education|intl",
+            "tous|fr_intl", "tous|fr", "tous|intl"]
+    lines:
+      - {field: name, label: "", format: texte}
+      - {field: copubs, label: "co-publications avec l'UL sur ce nœud", format: entier}
+      - {field: share_ul, label: "part du portefeuille de l'UL sur ce nœud", format: pct_1d}
+      - {field: share_partner,
+         label: "part de la production propre du partenaire sur ce nœud qui implique l'UL",
+         format: pct_1d_dague, when: "share_partner non nul",
+         note: "denominateur : la production propre du partenaire sur le noeud ; dague sous
+           dix travaux"}
+      - {field: share_int,
+         label: "part des co-publications internationales de l'UL sur ce nœud",
+         format: pct_1d, when: "perimetre international"}
+      - {field: fwci, label: "FWCI médian des co-publications (réf. France)",
+         format: fwci_paire_2d, when: "co-publications portant un indicateur >= 3"}
+      - {field: country, label: "pays", format: texte}
+      - {field: type, label: "type d'établissement", format: texte}
+
+  ex_partner_tables:
+    view: exploration
+    kind: table
+    entity: partenaire
+    lines:
+      - {field: name, label: "", format: texte}
+      - {field: copubs, label: "co-publications avec l'UL sur ce nœud", format: entier}
+      - {field: share_ul, label: "part du portefeuille de l'UL sur ce nœud", format: pct_1d}
+      - {field: share_partner,
+         label: "part de la production propre du partenaire sur ce nœud qui implique l'UL",
+         format: pct_1d_dague, when: "share_partner non nul"}
+      - {field: fwci, label: "FWCI médian des co-publications (réf. France)",
+         format: fwci_paire_2d, when: "co-publications portant un indicateur >= 3"}
+
+  # ------------------------------------------------------- Page 10 -- Geographie
+  geo_country_companion:
+    view: geographie
+    kind: bars
+    entity: pays
+    lines:
+      - {field: country_name, label: "", format: texte}
+      - {field: co_works, label: "co-publications, tous types", format: entier}
+      - {field: share_ul, label: "part du corpus collaboratif international de l'UL",
+         format: pct_1d}
+      - {field: fwci_fr_median, label: "FWCI médian des co-publications (réf. France)",
+         format: fwci_paire_2d, when: "co-publications portant un indicateur >= 3"}
+      - {field: unknown_bucket_flag, label: "", format: drapeau,
+         when: "unknown_bucket_flag vrai", note: "phrase : pays non renseigne dans la source"}
+
+  geo_map:
+    view: geographie
+    kind: scattergeo
+    entity: pays
+    lines:
+      - {field: country_name, label: "", format: texte}
+      - {field: co_works, label: "co-publications, tous types", format: entier}
+      - {field: share_ul, label: "part du corpus collaboratif international de l'UL",
+         format: pct_1d}
+      - {field: fwci_fr_median, label: "FWCI médian des co-publications (réf. France)",
+         format: fwci_paire_2d, when: "co-publications portant un indicateur >= 3"}
+      - {field: unknown_bucket_flag, label: "", format: drapeau,
+         when: "unknown_bucket_flag vrai"}
+
+  geo_unigr_bars:
+    view: geographie
+    kind: bars
+    entity: membre
+    lines:
+      - {field: member_name, label: "", format: texte}
+      - {field: co_works_distinct, label: "co-publications avec l'UL, tous types",
+         format: entier,
+         note: "travaux distincts : les perimetres des membres se recouvrent"}
+      - {field: mom_class, label: "tendance entre les deux fenêtres", format: texte,
+         when: "tendance calculee pour ce membre"}
+
+  # ------------------------------------------ Pages 2 et 4 -- graphiques ODD
+  lab_sdg_bars:
+    view: laboratoires
+    kind: bars
+    entity: objectif
+    lines:
+      - {field: sdg_label, label: "", format: texte}
+      - {field: share_lab_corpus, label: "part du corpus de la structure", format: pct_1d,
+         note: "colonne de la methode d'attribution en vigueur ; denominateur = le corpus
+           entier de la structure, travaux jamais tagues compris"}
+      - {field: n_works_sdg, label: "travaux de la structure tagués sur cet objectif",
+         format: entier, when: "n_works_sdg non nul"}
+      - {field: method_label, label: "méthode d'attribution", format: texte}
+
+  pf_sdg_bars:
+    view: portefeuille
+    kind: bars
+    entity: objectif
+    lines:
+      - {field: sdg_label, label: "", format: texte}
+      - {field: n_works, label: "publications du corpus taguées sur cet objectif",
+         format: entier,
+         note: "un meme travail peut relever de plusieurs objectifs : les barres ne
+           s'additionnent pas"}
+      - {field: share_of_corpus, label: "part du corpus", format: pct_1d}
+      - {field: method_label, label: "méthode d'attribution", format: texte}
+
+  pf_sdg_peers_scatter:
+    view: portefeuille
+    kind: scatter
+    entity: etablissement
+    lines:
+      - {field: entity_name, label: "", format: texte}
+      - {field: sdg_label, label: "objectif", format: texte}
+      - {field: share_of_entity_works, label: "part du corpus propre de l'établissement",
+         format: pct_1d,
+         note: "chaque etablissement est rapporte a son propre corpus, jamais au corpus lorrain"}
+      - {field: rung, label: "position dans le jeu de pairs", format: texte}
+
+tiles:
+
+  # ---------------------------------------------------- Page 8 -- Collaborations
+  col_kpi_partners:
+    view: collaborations
+    title: "Partenaires (≥ 10 co-publications)"
+    help_lines:
+      - "Nombre d'établissements distincts co-signant au moins dix travaux de l'Université de Lorraine sur {window}, tous types de documents."
+      - "Le plancher écarte les relations d'une ou deux publications, trop instables pour porter une part ; il ne retire aucun travail du corpus affiché ailleurs."
+      - "Un établissement absorbé par un autre est compté sous son successeur, jamais deux fois."
+
+  col_kpi_intl:
+    view: collaborations
+    title: "% travaux internationaux"
+    help_lines:
+      - "Part des travaux de l'Université de Lorraine sur {window} portant au moins un établissement situé dans un autre pays."
+      - "Dénominateur : le corpus entier de l'établissement sur la fenêtre, pas ses seuls travaux collaboratifs."
+      - "Le repère affiché à côté est la même part calculée sur la France entière, sur la même fenêtre et les mêmes types de documents."
+
+  col_kpi_company:
+    view: collaborations
+    title: "% travaux avec une entreprise"
+    help_lines:
+      - "Part des travaux de l'Université de Lorraine sur {window} portant au moins un établissement de type entreprise au sens de la source."
+      - "Dénominateur : le corpus entier de l'établissement sur la fenêtre."
+      - "Le type d'établissement vient de la source et n'est pas ré-arbitré : une filiale de recherche publique classée entreprise reste comptée comme telle."
+
+  col_kpi_collab:
+    view: collaborations
+    title: "% travaux collaboratifs"
+    help_lines:
+      - "Part des travaux de l'Université de Lorraine sur {window} portant au moins un autre établissement, français ou étranger."
+      - "Dénominateur : le corpus entier de l'établissement sur la fenêtre. C'est ce numérateur qui sert de dénominateur à la part UL de chaque partenaire."
+      - "Les structures internes de l'établissement ne comptent pas comme un autre établissement."
+
+  # --------------------------------------------------- Page 9 -- Zoom partenaire
+  zoom_kpi_copubs:
+    view: zoom
+    title: "Co-publications"
+    help_lines:
+      - "Travaux de l'Université de Lorraine sur {window} co-signés avec ce partenaire, tous types de documents."
+      - "Compte de travaux distincts : un travail co-signé par plusieurs établissements du même groupe n'est compté qu'une fois."
+
+  zoom_kpi_share_ul:
+    view: zoom
+    title: "Part UL"
+    help_lines:
+      - "Les co-publications avec ce partenaire rapportées au corpus collaboratif de l'Université de Lorraine sur {window}."
+      - "Dénominateur : les travaux de l'établissement portant au moins un autre établissement. Les parts des partenaires ne se somment pas, un même travail pouvant en porter plusieurs."
+
+  zoom_kpi_share_p:
+    view: zoom
+    title: "Part partenaire"
+    help_lines:
+      - "Les mêmes co-publications rapportées à la production propre du partenaire sur {window}."
+      - "Dénominateur : la production du partenaire sur la fenêtre telle que la source la mesure, tous types de documents et tous co-auteurs confondus."
+      - "Ce dénominateur n'est renseigné que sur le corpus entier : la part reste donc lue sur cette base, même quand un filtre est actif ailleurs sur la page."
+
+  zoom_kpi_fwci:
+    view: zoom
+    title: "FWCI médian (réf. France)"
+    help_lines:
+      - "Médiane, sur les co-publications de la relation, du rapport entre les citations d'un travail et la moyenne de sa strate française."
+      - "Strate de normalisation : sous-champ × année de publication × type de document ; articles et revues seulement."
+      - "Sous trente publications dans une strate, l'indicateur n'est pas calculé et n'entre dans aucun dénominateur. Le point neutre = 1 vaut la moyenne française, jamais la moyenne mondiale."
+
+  zoom_kpi_isite:
+    view: zoom
+    title: "Co-pubs I-SITE"
+    help_lines:
+      - "Part des co-publications de la relation relevant du périmètre I-SITE sur {window}."
+      - "Le périmètre est défini par la liste de DOI validée par l'établissement, jamais par un mot-clé ni par un rattachement automatique."
+      - "Cette liste porte une date : les années les plus récentes sont sous-couvertes, et un recul apparent tient au retard de mise à jour, jamais à un recul réel."
+
+  zoom_kpi_momentum:
+    view: zoom
+    title: "Momentum"
+    help_lines:
+      - "Comparaison de la part annualisée du partenaire dans le corpus collaboratif de l'Université de Lorraine entre les deux fenêtres de {window}."
+      - "Le rapport est recentré sur la dérive de l'ensemble du corpus, pour ne pas confondre la croissance du partenariat avec celle du corpus."
+      - "Hors de la bande de stabilité, l'écart n'est affiché comme hausse ou retrait que s'il est significatif ; sinon la classe est « non significatif », qui est une classe et non une absence de donnée."
+      - "Famille figée : elle n'est pas recalculée sous les filtres référentiel ou I-SITE."
+
+  zoom_kpi_phares:
+    view: zoom
+    title: "Publications phares"
+    help_lines:
+      - "Co-publications de la relation situées dans le décile le plus cité de leur propre strate française, sur {window}."
+      - "Strate : sous-champ × année de publication × type de document ; articles et revues seulement, et seuls les travaux dont l'indicateur est calculé entrent au numérateur comme au dénominateur."
+      - "La flèche ouvre la liste vivante de ces publications ; au-delà de cent identifiants elle ouvre la liste des co-publications les plus citées, qui est un substitut d'accès et non la règle du décile."

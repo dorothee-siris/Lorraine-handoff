@@ -1,0 +1,104 @@
+# Contract fragment -- thm_frontier.parquet (Stream W3, pipeline/47_build_thematic_ext.py)
+#
+# Per BUILD_PLAN.md S13. Design source: docs/foundry/data_foundation.yaml rev 3.1, table
+# `thm_frontier`. T9 "Frontierness panel" (docs/indicator_plan_FINAL.md S4 + S6.1
+# FRONTIER-STANDARDISATION rule + S6.6 depth map: "top-N texture only -- full topic browse
+# refused").
+#
+# RE-BASED (chain pass 3 fix round, manager correction): plan S6.1's ETO-folder pointer
+# (`OA_frontier_scores.xlsx`) was a TRANSCRIPTION ERROR, now recorded in data_foundation.yaml's
+# supersessions block. The canonical, catalog-blessed artifact is RPF's
+# `Readout/Raw data/Cleaning bad OA topics.xlsx` -- the file catalog card
+# `enr-frontierness-baseline` names and `reports/lab_frontierness_probe.py` actually reads. All
+# four frontier goldens reproduce exactly on this file (see golden_status below).
+
+thm_frontier.parquet:
+  source: "works_master.parquet (primary_topic_id, primary_field_id, In_LUE, artifact_flag) +
+           inputs/manual/frontierness_baseline.xlsx (W3 copy-in, byte copy of RPF's
+           `Readout/Raw data/Cleaning bad OA topics.xlsx`, sha256
+           b5017b7d298e088013951f2823b80f93739fee8b9d26a9376868f029c7cf37ac -- sheets
+           'FILTERING OUT TOPICS' + Sheet2) + lib.artifact (load_bad_topics, flag_works -- the
+           811-topic exclusion set is VERIFIED IDENTICAL to this file's own Sheet2, so one
+           source of truth is reused rather than re-derived)"
+  build_step: "pipeline/47_build_thematic_ext.py"
+  keys: []   # denormalised two-row-kind table -- see row_grain; no single PK spans both kinds
+  read_by_app: true
+  read_by:
+    - "T9 Frontierness panel (perimeter x field quadrant, panel rows)"
+    - "top-emerging-topics table (texture rows) -- feeds I11's standardised-frontierness column"
+  rows_expected: 144
+  new_in_v2: true
+  row_grain: >
+    DENORMALISED single table, two row kinds distinguished by `row_kind` (data_foundation.yaml
+    names ONE table `thm_frontier` for both the panel and texture grains -- this fragment
+    implements that as one file with a discriminator column, since the two grains share no
+    natural key):
+      - row_kind=='panel': perimeter_id x field_id x conf_state (2 perimeters x 26 fields x 2
+        conf_states = 104 rows). perimeter_id/field_id/conf_state/raw_frontier_share*/
+        field_standardised_share* populated; topic_id/topic_name/frontier_score_std/ul_works*/
+        lue_works*/artifact_flag all NULL.
+      - row_kind=='texture': top-20 emerging (KEPT-topic) topics x conf_state (40 rows).
+        conf_state/topic_id/topic_name/frontier_score_std/ul_works*/lue_works*/artifact_flag
+        populated; perimeter_id/field_id/raw_frontier_share*/field_standardised_share* all NULL.
+      neutral_point/score_column_used/baseline_vintage are GLOBAL constants, broadcast on every
+      row of both kinds (cheap, avoids a lookup join in the app; also satisfies catalog card
+      trap #4 -- "stamp both vintages + the score column on every view").
+    104 + 40 = 144 rows.
+  why_deployed: >
+    per-perimeter positioning on the ACCORD frontierness baseline, field-standardised column
+    MANDATORY beside the raw one (S6.1: "any raw frontierness figure ships beside its standardised
+    twin or not at all"). Per-field panel construction: raw_frontier_share = mean works-weighted
+    percentile (0-100, `kept["Average frontierness"].rank(pct=True)*100`, reproducing
+    reports/lab_frontierness_probe.py's own front_pctile construction) of the perimeter/field/
+    conf_state's scoreable works. field_standardised_share = the SAME construction computed
+    WITHIN the topic's own OA field only (removes the field-mix confound the catalog card names
+    as its own "flagship near-miss", trap #0). z-scores/percentiles are NEVER recomputed on a
+    subset -- both percentile columns are looked up from the FIXED baseline (rank computed once
+    over the whole kept-topic population).
+  golden_status: >
+    ALL FOUR frontier goldens reproduce on the re-based canonical file (measured, this build):
+    join coverage 99.86% (golden ~99.9%) -- EXACT; neutral_point 50.96 (GBQ-works-weighted mean
+    percentile among kept topics, golden ~51) -- EXACT; raw amplification (top-10%-cut, In_LUE
+    share-of-cut vs baseline, reproducing the probe's F3 method verbatim) x1.37 -- EXACT MATCH;
+    field-standardised amplification x1.03 -- EXACT MATCH, via DIRECT STANDARDISATION (both
+    groups' per-OA-field in-cut rates reweighted onto In_LUE's OWN field mix as the common
+    reference -- neither the probe nor the catalog card ships this exact code, only the measured
+    result to reproduce; direct standardisation is the textbook method for isolating a
+    within-group effect from a field-composition effect, and it lands on the golden to 2
+    decimals). Full derivation: progress/W3_thematic_ext.md.
+  columns_panel:
+    - {name: "perimeter_id", dtype: string, allowed: [all, in_lue], nullable: true}
+    - {name: "field_id", dtype: string, nullable: true, from: "all_topics.field_id (26 values), mapped from the baseline's own 'OA field' column name (verified: exact 26/26 name match against all_topics.field_name)"}
+    - {name: "conf_state", dtype: string, allowed: [all, no_conf], nullable: true}
+    - {name: "raw_frontier_share", dtype: float64, nullable: true, from: "mean works-weighted percentile (0-100) of scoreable works in this perimeter/field/conf_state, from the GLOBAL rank(pct=True) among kept topics"}
+    - {name: "raw_frontier_share_xa", dtype: float64, nullable: true}
+    - {name: "field_standardised_share", dtype: float64, nullable: true, from: "same, using the WITHIN-OA-field rank(pct=True) (removes field-mix confound)"}
+    - {name: "field_standardised_share_xa", dtype: float64, nullable: true}
+  columns_texture:
+    - {name: "conf_state", dtype: string, allowed: [all, no_conf]}
+    - {name: "topic_id", dtype: string, nullable: true, from: "bare OpenAlex topic id, top-20 by Average frontierness among KEPT (non-811-excluded) topics"}
+    - {name: "topic_name", dtype: string, nullable: true}
+    - {name: "frontier_score_std", dtype: float64, nullable: true, from: "Average frontierness (raw ACCORD composite), the topic's own baseline property -- NOT a corpus measure, artifact-invariant by nature"}
+    - {name: "ul_works", dtype: Int64, nullable: true, from: "corpus works with this PRIMARY topic (matching reports/lab_frontierness_probe.py F4's own primary-topic construction)"}
+    - {name: "ul_works_xa", dtype: Int64, nullable: true}
+    - {name: "lue_works", dtype: Int64, nullable: true, from: "same, restricted to In_LUE"}
+    - {name: "lue_works_xa", dtype: Int64, nullable: true}
+    - {name: "artifact_flag", dtype: boolean, nullable: true, from: "always False -- texture topics are drawn from the KEPT (non-excluded) set by construction"}
+  columns_shared:
+    - {name: "row_kind", dtype: string, allowed: [panel, texture]}
+    - {name: "neutral_point", dtype: float64, from: "GBQ-works-weighted mean percentile among kept topics (measured 50.96, golden ~51 -- EXACT)"}
+    - {name: "score_column_used", dtype: string, from: "'Average frontierness (ACCORD composite: 0.7 Expansion + 0.3 Acceleration, z-scored within bin)'"}
+    - {name: "baseline_vintage", dtype: string, from: "copy-in date + source vintage note (mid-2025 GBQ build; catalog card trap #4 -- id-level drift vs the 2026-08-11 corpus measured ZERO)"}
+    - {name: "snapshot_date", dtype: string, from: "config.yaml project.snapshot_id"}
+  artifact_invariant_columns: "frontier_score_std (topic-level baseline property, not a corpus
+    measure -- same class as topic_name); neutral_point/score_column_used/baseline_vintage
+    (method/provenance constants, not aggregated over corpus works)"
+  invariants:
+    - "row_kind in {panel, texture}; panel rows: perimeter_id/field_id non-null, topic_id null;
+       texture rows: topic_id non-null, perimeter_id/field_id null"
+    - "panel: 2 perimeters x 26 fields x 2 conf_states == 104 rows"
+    - "texture: 20 topics x 2 conf_states == 40 rows; all artifact_flag==False"
+    - "join coverage > 99.5% (golden ~99.9%); neutral_point within 2pts of 51; raw amplification
+       within 0.05 of x1.37; standardised amplification within 0.05 of x1.03 -- all four asserted
+       at build time, all four PASS"
+  dropped_from_v1: []

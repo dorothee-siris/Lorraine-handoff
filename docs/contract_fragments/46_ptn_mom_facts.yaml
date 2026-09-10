@@ -1,0 +1,73 @@
+# Contract fragment -- ptn_mom_facts.parquet (Stream W2, pipeline/46_build_partner_views.py)
+# Full design rationale: docs/foundry/data_foundation.yaml rev 3.1, table `ptn_mom_facts` (NEW,
+# tunnel #3). The quadrant's displayed median/band draws from THIS table, not the frozen 1.061
+# disclosure value on dim_corpus_facts (which stays a fixed historical reference, 'all' row only).
+
+ptn_mom_facts.parquet:
+  source: "pipeline/lib46_momentum.py partner_level() run on the SHIPPED universe (own_entity_
+           blocklist.csv status==ok, full -- includes Centre Inria de l'UL), per conf_state"
+  build_step: "pipeline/46_build_partner_views.py"
+  keys: [conf_state]
+  read_by_app: true
+  read_by: ["V1/V2 momentum quadrant (median/band/significance chip); P-V4 (any momentum echo)"]
+  rows_expected: 2
+  new_in_v2: true
+  row_grain: "one row per conf_state{all,no_conf} -- the per-variant momentum constants"
+  why_deployed: >
+    tunnel #3: momentum is artifact-exempt app-wide but IS recomputed per conference-toggle state;
+    the frozen method's own median/denominators/eligible-count must be derived fresh per variant
+    and published somewhere other than dim_corpus_facts (which only carries the frozen 1.061 on
+    its 'all' row, NULL on no_conf, per W0b).
+  columns:
+    - {name: "conf_state", dtype: string, allowed: [all, no_conf]}
+    - {name: "recentring_median", dtype: float64, from: "median of (c2/D2)/(c1/D1) over the
+       eligible partners, this conf_state's own shipped run -- 'all' row measures 1.060434
+       (canonical_counts.momentum_shipped MED 1.0604, asserted in the builder); 'no_conf' measures
+       1.045977 (NO golden -- pinned reference, first build)"}
+    - {name: "d1_denominator", dtype: int64, from: "window-1 (2019-2020) collaborative-works
+       denominator, <=50-institution works; 'all' 11,423 (canonical); 'no_conf' 8,827 (pinned)"}
+    - {name: "d2_denominator", dtype: int64, from: "window-2 (2022-2023) denominator; 'all' 10,772
+       (canonical); 'no_conf' 8,439 (pinned)"}
+    - {name: "eligible_n", dtype: int64, from: "count of eligible partners per the frozen METHOD run
+       (base & c1>0 & c2>0) -- INCLUDES the one null-institution-id pseudo-partner the frozen script
+       never drops (phantom_ruling below); 'all' 681 (canonical); 'no_conf' 563 (pinned, method-run
+       class counts ns 217/stable 212/up 90/down 44, new 5/dormant 0)"}
+    - {name: "display_eligible_n", dtype: int64, from: "eligible_n minus the phantom -- the count
+       ptn_summary ACTUALLY carries (real partners only). 'all' 680 (classes up 105/down 51/
+       stable 276/ns 248); 'no_conf' 562 (up 90/down 44/stable 211/ns 217) -- both cross-checked
+       against ptn_summary's own classified-row counts in the builder (exact match, incl. the
+       >=50-floor sub-counts: 'all' 213 -> 46/16/102/49; 'no_conf' 172 -> 36/15/85/36)"}
+    - {name: "phantom_partner_works_w1", dtype: int64, from: "the phantom's own window-1 (2019-
+       2020) collaborative-work count -- 'all' 2,102; 'no_conf' 1,346. Confirmed 'stable' in every
+       run (frozen-parity, shipped/all, shipped/no_conf) -- verified in the builder"}
+    - {name: "phantom_partner_works_w2", dtype: int64, from: "the phantom's own window-2 (2022-
+       2023) collaborative-work count -- 'all' 1,796; 'no_conf' 1,337"}
+    - {name: "band_pct", dtype: int64, from: "config.yaml workshop_tunables.momentum_band_pct (25)
+       -- same for every row, frozen definition"}
+    - {name: "significance_p", dtype: float64, from: "config.yaml workshop_tunables.
+       momentum_significance_p (0.05) -- same for every row"}
+    - {name: "snapshot_date", dtype: string}
+  artifact_exempt: "entire table = momentum-family constants (app-wide exemption ruling)"
+  phantom_ruling: >
+    (data_foundation.yaml verbatim) the frozen evidence's universes include ONE null-institution-id
+    pseudo-partner (the frozen script never drops null-id authorship rows -- W2 landmine,
+    pipeline/46_build_partner_views.py's build_pairs_for_momentum() docstring). Diagnosed: its
+    identity string is the literal `'None'` (Python `None` stringified by `.astype(str)`), pooling
+    every work whose ONLY non-UL authorship rows carry no institution_id; it is CLASSIFIED
+    'stable' and ELIGIBLE in every run (frozen-parity 682, shipped/all 681, shipped/no_conf 563),
+    always inside the >=50-floor "big" bucket. Method-fidelity runs keep it (682/681 reproduce
+    exactly, machine-diff unaffected -- the phantom is common to both universes, not the diffed
+    partner); the DISPLAY table (ptn_summary) carries real partners only, so it is silently absent
+    there (never merges onto any real partner_id). This table records BOTH counts so the one-row
+    gap is pinned by an invariant, not silently absorbed. The phantom-free RECOMPUTED variant
+    (dropping null-id rows from the frozen method's OWN universe, matching every other table's
+    recipe) is a costed option for the 8.B3 windows ratification, not built now.
+  invariants:
+    - "(all) row: recentring_median==1.0604 (4dp), eligible_n==681 -- EXACT match to
+       canonical_counts.momentum_shipped, asserted in the builder"
+    - "eligible_n - display_eligible_n == 1 EXACTLY on every row (the named phantom) -- asserted"
+    - "ptn_summary classified rows (mom_class notna), per conf_state, == display_eligible_n exactly,
+       INCLUDING the per-class breakdown and the >=50-floor sub-counts -- asserted in the builder"
+    - "dim_corpus_facts.momentum_recentring_median('all')==1.061 (frozen disclosure) is a DIFFERENT,
+       fixed reference value -- the app's displayed quadrant median/band comes from THIS table"
+  dropped_from_v1: []

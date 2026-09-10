@@ -1,0 +1,53 @@
+# Contract fragment -- thm_codiscipline.parquet (Stream W3, pipeline/47_build_thematic_ext.py)
+#
+# Per BUILD_PLAN.md S13. Design source: docs/foundry/data_foundation.yaml rev 3.1, table
+# `thm_codiscipline`. T3b "Co-discipline matrix" (docs/indicator_plan_FINAL.md S4 -- "same panel"
+# as T3 diversity; S6.6 depth map: field x field only, "26^2 is legible, 238^2 is not" --
+# subfield^2 explicitly refused).
+
+thm_codiscipline.parquet:
+  source: "works_master.parquet + corpus_topics.parquet (ANY-topic field assignment, not just
+           primary -- multi-disciplinary bridge detection needs the full multi-topic set) +
+           all_topics.parquet (26-field universe) + lib.artifact.flag_works"
+  build_step: "pipeline/47_build_thematic_ext.py"
+  keys: [perimeter_id, field_a, field_b, conf_state]
+  read_by_app: true
+  read_by:
+    - "T3b Co-discipline matrix (same panel as T3 diversity, field x field heatmap per the catalog
+       card's own 'viz candidates' note)"
+  rows_expected: 2704
+  new_in_v2: true
+  row_grain: >
+    perimeter_id x field_a x field_b x conf_state, FULL symmetric 26x26 matrix (676 field-pairs,
+    diagonal included) x 2 perimeters x 2 conf_states = 2,704 rows.
+  why_deployed: >
+    field x field co-occurrence, from EACH corpus work's distinct set of assigned fields (any
+    topic, not just primary -- corpus_topics gives ~2.65 topics/work on average, 80.1% spanning
+    >=2 subfields per the catalog card's measured density). perimeter_id fixed to {all, in_lue}
+    (NOT the lab-level expansion thm_diversity gets -- data_foundation.yaml's perimeter_id row
+    policy names thm_diversity alone for the curated-labs expansion "per plan T3 grain"; a 69-lab x
+    26x26 matrix would be both undersized per-cell and outside any indicator ask this pass,
+    documented judgement call, not a literal contract line).
+  construction_note: >
+    For a work with exactly ONE distinct field, the diagonal cell co_works[field,field] is
+    incremented (a mono-disciplinary work). For a work spanning >=2 distinct fields, EVERY
+    unordered pair (a,b) among its fields increments BOTH co_works[a,b] and co_works[b,a] (a
+    symmetric matrix by construction -- a 3-field work therefore contributes to 3 off-diagonal
+    cell-pairs, i.e. is double-counted across the matrix by design, matching a standard
+    co-occurrence heatmap's own double-counting convention, disclosed here rather than silently
+    assumed).
+  columns:
+    - {name: "perimeter_id", dtype: string, allowed: [all, in_lue]}
+    - {name: "field_a", dtype: string, from: "all_topics.field_id (26 values)"}
+    - {name: "field_b", dtype: string, from: "all_topics.field_id (26 values)"}
+    - {name: "conf_state", dtype: string, allowed: [all, no_conf]}
+    - {name: "co_works", dtype: int64, from: "field_a==field_b: mono-disciplinary work count in field_a;
+       field_a!=field_b: works assigned to BOTH fields (any topic), symmetric"}
+    - {name: "co_works_xa", dtype: int64, from: "co_works restricted to artifact_flag==False works"}
+    - {name: "floor_flag", dtype: bool, from: "co_works < config.metrics.min_stratum_n (30)"}
+    - {name: "snapshot_date", dtype: string, from: "config.yaml project.snapshot_id"}
+  invariants:
+    - "(perimeter_id, field_a, field_b, conf_state) unique"
+    - "matrix is symmetric: co_works[a,b] == co_works[b,a] for every perimeter/conf_state"
+    - "26x26 = 676 field-pairs per (perimeter_id, conf_state); 2 perimeters x 2 conf_states = 2,704 rows"
+  dropped_from_v1: []

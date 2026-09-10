@@ -1,0 +1,43 @@
+# Contract fragment -- geo_groups.parquet (Stream W2, pipeline/46_build_partner_views.py)
+# Full design rationale: docs/foundry/data_foundation.yaml rev 3.1, table `geo_groups`.
+
+geo_groups.parquet:
+  source: "corpus_authorships.parquet (RAW, member ids are legitimate external partners) +
+           inputs/overlays/idset_unigr.csv + idset_eureca.csv (status==ok) + works_master.parquet +
+           pipeline/lib46_momentum.py (per-member momentum, shipped-universe d1/d2/med reference)"
+  build_step: "pipeline/46_build_partner_views.py"
+  keys: [group_id, member_id, conf_state, year]
+  read_by_app: true
+  eager_load: true
+  read_by: ["V3 UniGR / EURECA-PRO group cards"]
+  rows_expected: 70
+  new_in_v2: true
+  row_grain: "group{unigr,eureca} x member x conf_state x year (denormalised long -- co_works_
+    distinct and mom_class are CELL-constant, broadcast across all 5 year-rows of that member).
+    Measured: unigr 50 rows = 5 members (Luxembourg, Liege, Saarland, RPTU, Trier) x 2 conf x
+    5 years -- RPTU's pre/post-merger ids (idset_unigr.csv rows share member=='RPTU') are grouped
+    into ONE member row, distinct-work UNION == 22 (the '20+2' churn pair, same union discipline
+    as Georgia Tech/Freiberg, not a naive sum); eureca 20 rows = 2 members (Leoben, Freiberg-as-
+    2-id-union) x 2 conf x 5 years."
+  why_deployed: "V3 group cards -- UniGR alliance + EURECA-PRO, distinct-work union per member
+    (Freiberg = union of its 2 composing ids, not their naive sum)."
+  columns:
+    - {name: "group_id", dtype: category, allowed: [unigr, eureca]}
+    - {name: "member_id", dtype: string, from: "idset_unigr.csv / idset_eureca.csv 'member' column"}
+    - {name: "member_name", dtype: string}
+    - {name: "conf_state", dtype: category, allowed: [all, no_conf]}
+    - {name: "co_works_distinct", dtype: int64, from: "distinct-work union over the member's id-set
+       (RPTU/Freiberg multi-id members use the SAME union discipline as consortium_weights)"}
+    - {name: "mom_class", dtype: category, nullable: true, allowed: [up, down, stable, ns],
+       from: "frozen method reapplied at member grain, shipped universe's d1/d2/med reference; NULL
+       for members below the frozen floor (most UniGR/EURECA members are small and fail it --
+       informational only, no golden target for this table)"}
+    - {name: "year", dtype: int32, allowed: [2019, 2020, 2021, 2022, 2023]}
+    - {name: "co_works_year", dtype: int64, from: "this member's distinct-work union for THIS
+       single year only"}
+    - {name: "snapshot_date", dtype: string}
+  artifact_exempt: "group cards grey under ON"
+  invariants:
+    - "Freiberg union == 15 (2-id composition: TU Bergakademie 10 + Helmholtz Institute 6, 1
+       shared work -- supersession vs the plan's own per-id-sum 16), asserted in the builder"
+  dropped_from_v1: []

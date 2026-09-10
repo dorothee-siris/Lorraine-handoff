@@ -1,0 +1,88 @@
+# Contract fragment -- thm_diversity.parquet (Stream W3, pipeline/47_build_thematic_ext.py)
+#
+# Per BUILD_PLAN.md S13. Design source: docs/foundry/data_foundation.yaml rev 3.1, table
+# `thm_diversity`. T3/T3b(sibling, own table)/T3c (docs/indicator_plan_FINAL.md S4, S6.6 depth
+# map: "computed AT subfield, FIXED -- the level is part of the definition").
+# Formula provenance: catalog card `ind-portfolio-diversity`
+# (Internal Projects/Portfolio Mapping/units/lab/catalog/ind-portfolio-diversity.md) --
+# DIV = (n_c/N).(1-Gini).mean(d_ij); Stirling 2007 -> Leydesdorff 2018 -> Leydesdorff/Wagner/
+# Bornmann 2019 "DIV" -> Rousseau 2019 "DIV*". Never taken from memory -- read via agent in full
+# before this file was written (see pipeline/47_build_thematic_ext.py module docstring).
+
+thm_diversity.parquet:
+  source: "works_master.parquet + corpus_topics.parquet (score-weighted multi-topic assignments,
+           subfield grain) + all_topics.parquet (N=252 fixed subfield universe) + ul_labs.parquet
+           (curated lab structure_key list, 69 rows) + lib.artifact.flag_works"
+  build_step: "pipeline/47_build_thematic_ext.py"
+  keys: [perimeter_id, year, conf_state]
+  read_by_app: true
+  read_by:
+    - "T3 Portfolio diversity / T3c Delta-interdisciplinarity panel (new Thematic Overview panel)"
+  rows_expected: 710
+  new_in_v2: true
+  row_grain: >
+    perimeter_id x year x conf_state. perimeter_id in {all, in_lue} UNION the 69 ul_labs
+    structure_key rows (data_foundation.yaml's own perimeter_id row policy note: "thm_diversity =
+    {all, in_lue} UNION curated labs, structure_key from ul_labs, per plan T3 grain" -- the ONLY
+    thematic-extension table with the lab-level expansion; thm_codiscipline/thm_funding/
+    thm_frontier stay at {all, in_lue}). 71 perimeters x 5 years (2019-2023) x 2 conf_states = 710.
+  why_deployed: >
+    Rao-Stirling/DIV family diversity, computed AT SUBFIELD (fixed grain per the catalog card --
+    "topic grain over-resolves and destabilises d_ij"; ~250 categories, same order as Cassi et al.
+    2017's 248 WoS categories). variety = n_c/N (N=252); balance = 1-Gini(shares among present
+    subfields); disparity = unweighted mean pairwise cosine-distance among present subfields
+    (independent factors by design -- the whole point of the DIV decomposition over raw
+    Rao-Stirling's variety/balance conflation); rao_stirling column = the DIV composite product
+    (variety.balance.disparity), stored under this name for continuity with the client-facing
+    term ("Rao-Stirling family, DIV construction" per indicator_plan_FINAL.md T3).
+  disparity_matrix_note: >
+    The 252x252 disparity (cosine-distance) matrix is built ONCE from the FULL corpus (every work,
+    year, conf_state=='all') and reused unchanged for every perimeter/year/conf_state/artifact-state
+    slice -- "z-scores/disparity never recomputed on subsets" (the same discipline T9 applies to
+    the frontier baseline, applied here for stability per the card's own trap #1: "granularity/
+    disparity instability ... fix the grain, disclose it"). Built in-house from THIS corpus's own
+    subfield co-occurrence profiles ($0, no world-scale co-citation pull available standalone) --
+    a documented limitation: measured disparity values sit uniformly high (~0.994-0.997), reflecting
+    a modest single-institution corpus's sparse subfield co-occurrence rather than a world-scale
+    disparity structure. See progress/W3_thematic_ext.md.
+  delta_construction_note: >
+    T3c delta_class/delta_p_value: two windows W1=[2019,2020] vs W2=[2022,2023] (2021 excluded from
+    both, matching the partner-momentum convention in reports/lab_momentum_frozen.py), under an
+    ADAPTED momentum-honesty discipline (same role -- recentring median + +/-25% band
+    (config.workshop_tunables.momentum_band_pct) + significance gate
+    (config.workshop_tunables.momentum_significance_p) -- but the significance MECHANISM is
+    substituted: DIV is a continuous composite index, not a binomial share, so a bootstrap
+    resampling test (B=150, documented choice, no frozen T3c script exists) replaces the frozen
+    two-proportion z-test `ptest`. Eligibility floor: n_works>=30 (config.metrics.min_stratum_n) in
+    BOTH windows. Class in {up, down, stable, ns} (or NULL if floor-ineligible) -- never a
+    fabricated class on a thin perimeter. Per the momentum-family ruling (data_foundation.yaml
+    conventions), delta_class/delta_p_value are ARTIFACT-EXEMPT (no _xa twin) and BROADCAST
+    identically across the 5 year-rows for a given (perimeter_id, conf_state) pair (a two-window
+    delta is not itself a per-year quantity -- same convention as france_works being repeated
+    across thm_specialisation's subset rows).
+  columns:
+    - {name: "perimeter_id", dtype: string, from: "'all' | 'in_lue' | a ul_labs.lab value (69 curated structures)"}
+    - {name: "perimeter_kind", dtype: string, allowed: [corpus, isite, lab], from: "'corpus' (all) | 'isite' (in_lue) | 'lab' (the 69 curated structures)"}
+    - {name: "year", dtype: int32, from: "publication_year, 2019-2023"}
+    - {name: "conf_state", dtype: string, allowed: [all, no_conf]}
+    - {name: "variety", dtype: float64, nullable: true, from: "n_c/252 (n_c = distinct subfields with positive score-weighted mass in the perimeter/year/conf_state slice)"}
+    - {name: "variety_xa", dtype: float64, nullable: true, from: "same, artifact-excluded works only"}
+    - {name: "balance", dtype: float64, nullable: true, from: "1 - Gini(subfield shares among present subfields)"}
+    - {name: "balance_xa", dtype: float64, nullable: true}
+    - {name: "disparity", dtype: float64, nullable: true, from: "unweighted mean cosine-distance over present-subfield pairs (fixed matrix, see disparity_matrix_note); NULL if <2 subfields present"}
+    - {name: "disparity_xa", dtype: float64, nullable: true}
+    - {name: "rao_stirling", dtype: float64, nullable: true, from: "variety.balance.disparity (the DIV composite -- see build_step docstring)"}
+    - {name: "rao_stirling_xa", dtype: float64, nullable: true}
+    - {name: "n_works", dtype: int64, from: "corpus works in this perimeter/year/conf_state slice"}
+    - {name: "n_works_xa", dtype: int64, from: "n_works restricted to artifact_flag==False"}
+    - {name: "floor_flag", dtype: bool, from: "n_works < config.metrics.min_stratum_n (30)"}
+    - {name: "delta_class", dtype: string, nullable: true, allowed: [up, down, stable, ns], from: "T3c momentum-honesty class (see delta_construction_note); NULL if floor-ineligible in either window"}
+    - {name: "delta_p_value", dtype: float64, nullable: true, from: "bootstrap two-sided p-value on the W2/W1 DIV ratio (see delta_construction_note)"}
+    - {name: "snapshot_date", dtype: string, from: "config.yaml project.snapshot_id"}
+  artifact_exempt_families: "delta_class, delta_p_value (momentum-family ruling, data_foundation.yaml conventions header)"
+  invariants:
+    - "(perimeter_id, year, conf_state) unique"
+    - "71 perimeters == 2 (all, in_lue) + 69 (ul_labs.lab)"
+    - "rao_stirling / rao_stirling_xa FINITE wherever non-null (no inf/-inf) -- checked on the all/in_lue rows every build"
+    - "delta_class NULL wherever either window's n_works < 30 (never a fabricated class)"
+  dropped_from_v1: []

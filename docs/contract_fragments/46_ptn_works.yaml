@@ -1,0 +1,48 @@
+# Contract fragment -- ptn_works.parquet (Stream W2, pipeline/46_build_partner_views.py)
+# Full design rationale: docs/foundry/data_foundation.yaml rev 3.1, table `ptn_works` (the I11
+# partner-works drill source, docs/foundry/DATA_FOUNDATION.md sec.9-bis).
+
+ptn_works.parquet:
+  source: "works_master.parquet + corpus_authorships.parquet, overlay-corrected pairs, >=10
+           co-works partner floor (config.yaml workshop_tunables.drill_partner_floor)"
+  build_step: "pipeline/46_build_partner_views.py"
+  keys: [partner_id, work_id]
+  read_by_app: true
+  lazy: true
+  read_by:
+    - "Streamlit/lib/lazy.py key partner_id -- partner works drill (docs/foundry/DATA_FOUNDATION.md
+       sec.9-bis 'partner_works')"
+    - "I11 per-cell publications drill: partner pushdown + in-slice filter on primary_field_id/
+       primary_subfield_id/primary_topic_id"
+    - "country_pubs path: key partner_id IN <country's >=10-floor partners>"
+  rows_expected: 116345
+  new_in_v2: true
+  row_grain: "one row per (partner_id, work_id) pair, >=10-co-works-floor partners only"
+  why_deployed: "I11's drill target + the general partner-works export; never the full works corpus."
+  write_spec: "sorted by partner_id, row_group_size=5000, 24 row groups (Class-1 floor
+    num_row_groups>=n_rows/10000=11.6: PASS). Prune proof: 1/24 row groups touched (4.2% of
+    partner_id-column bytes) for a mid-volume partner."
+  conf_exempt: "per-row is_conference column carries the flag; no separate conf_state row split"
+  columns:
+    - {name: "partner_id", dtype: category}
+    - {name: "work_id", dtype: string}
+    - {name: "year", dtype: int32}
+    - {name: "title", dtype: string}
+    - {name: "doi", dtype: string, nullable: true}
+    - {name: "type", dtype: category}
+    - {name: "is_conference", dtype: bool}
+    - {name: "fwci_fr", dtype: float64, nullable: true}
+    - {name: "in_lue", dtype: bool}
+    - {name: "labs_short", dtype: string, from: "works_master.Labs verbatim (' | '-joined)"}
+    - {name: "artifact_flag", dtype: bool, from: "lib.artifact.flag_works -- this WORK's primary-
+       topic flag (work-grain list table: per-row flag is the mechanism, no column twinning
+       applies, per lib/artifact.py's R-A completeness-check skip rule)"}
+    - {name: "primary_field_id", dtype: category}
+    - {name: "primary_subfield_id", dtype: category}
+    - {name: "primary_topic_id", dtype: category, from: "serves the I11 per-cell drill (partner
+       pushdown + in-slice node filter, tunnel #8) and the country-pubs path"}
+    - {name: "snapshot_date", dtype: string}
+  invariants:
+    - "116,345 rows -- EXACT match to canonical_counts.ptn_works_pairs_at_p10floor, asserted"
+    - "Class-1 row-group floor + <20% prune-proof bytes, both asserted in the builder"
+  dropped_from_v1: []

@@ -171,6 +171,12 @@ producers:
            subset_id='all' / conf_state='all') rows for partners in the 42b pulled set (~3,616 +
            3 merged-union canonical partners); every no_conf/in_isite row stays NULL by design
            (challenge memo #8) — never 0 (D53)"
+    pass7_delta: "P7 D40 'publications phares (top 10% France)': ptn_works gains pptop10_fr/
+                  pptop1_fr (works_master.PPtop10_FR/PPtop1_FR, NULL iff indicator_status !=
+                  'computed', same rule fwci_fr already follows); ptn_fields/ptn_topics/ptn_summary
+                  gain n_phares/n_phares_xa (count of pptop10_fr==True works at that grain, same
+                  co_works/co_works_xa construction filtered) -- Sigma over ptn_fields field-rows ==
+                  ptn_summary pair value, asserted at build time and in tests/test_pass7_data.py"
   47_build_thematic_ext.py:     # W3
     consumes: [works_master, corpus_topics, france_baseline_strata, corpus_funding,
                inputs/manual/frontierness_baseline.xlsx, lib/artifact.py, work_subsets]
@@ -183,6 +189,13 @@ producers:
     consumes: [works_master, corpus_topics, all_topics, inputs/manual/frontierness_baseline.xlsx,
                lib/artifact.py, thm_frontier (golden-continuity cross-check only, read not written)]
     emits: [thm_frontier_topics]
+  47e_build_frontier_components.py: # pass 7, S-DAT, P6/D40. Reshape only (no scores computed) of a
+                                 # DIFFERENT manual file (OA_frontier_scores.xlsx) from the one
+                                 # thm_frontier/thm_frontier_topics read -- never mixed in one figure
+                                 # (docs/FRONTIERNESS_METHOD.md). Runs right after 47c in run_all.py
+                                 # (no dependency between them; grouped with the frontier family).
+    consumes: [inputs/manual/OA_frontier_scores.xlsx, all_topics]
+    emits: [dim_frontier_components]
   45b_build_author_views.py:    # W4
     consumes: [ul_authors, works_master, corpus_authorships, hal-link fields, lib/artifact.py]
     emits: [aut_public, aut_works, aut_impact_drill, aut_coverage]
@@ -281,6 +294,7 @@ tables:
       identity: [partner_id, display_name, country_code, type_openalex, consortium_member,
                  idset_tags, merged_from_ids, plumbing_guard_flag]
       volume:   [co_works_full, co_works_full_xa, co_works_fractional, co_works_intl,
+                 n_phares, n_phares_xa,
                  share_ul, share_ul_xa, share_ul_direct, n_ul_labs, first_year, last_year]
       reciprocity: [partner_total_windowed, share_p, share_p_capped_flag]    # populated (all,all)
                                                                              # only, since 42b
@@ -345,6 +359,7 @@ tables:
     status: BUILD (W2)
     grain: partner x node(field|subfield sparse floored) x conf_state
     columns: [partner_id, node_level, node_id, conf_state, co_works, co_works_xa,
+              n_phares, n_phares_xa,
               share_of_pair, share_of_pair_xa, baseline_ul_share, baseline_ul_share_xa,
               baseline_partner_share, baseline_france_share, lq_vs_ul, lq_vs_ul_xa,
               mom_class, mom_p_value, mom_eligible_flag]
@@ -371,11 +386,14 @@ tables:
     write_spec: "sorted by partner_id, rg=5000"
     columns: [partner_id, work_id, year, title, doi, type, is_conference, fwci_fr, in_isite,
               labs_short, artifact_flag, sdg_tags, primary_field_id, primary_subfield_id,
-              primary_topic_id]
+              primary_topic_id, pptop10_fr, pptop1_fr]
     note: "the 3 primary-node int columns serve the I11 per-cell publications drill (partner
            pushdown + in-slice node filter — tunnel #8) and the country-pubs path. pass 6:
            sdg_tags added (#9/#11/#32/#44, pipe-joined SIRIS sdg numbers) for the enriched
-           partner publication-list download; work-grain list table, no twinning needed"
+           partner publication-list download; work-grain list table, no twinning needed. pass 7:
+           pptop10_fr/pptop1_fr added (P7 D40, works_master.PPtop10_FR/PPtop1_FR, NULL iff
+           indicator_status != 'computed') -- pptop10_fr feeds n_phares everywhere else in this
+           table family; pptop1_fr ships here only, no aggregate built from it this pass"
     conf_exempt: "per-row is_conference"
   ptn_topics:
     status: BUILD (W2)
@@ -386,6 +404,7 @@ tables:
     rows_measured: "224,396 at 1 state (2.06 MB; 45 groups; prune 2.2%); ~2x at 2 states"
     write_spec: "sorted by partner_id, rg=5000"
     columns: [partner_id, topic_id, subfield_id, year, co_works, co_works_xa,
+              n_phares, n_phares_xa,
               fwci_fr_median_cell, frontier_score_std, artifact_flag,
               delta_value, delta_flag]
     note: "co_works_xa = both §6.2 halves at topic grain (tunnel #4); delta_value/delta_flag =
@@ -466,6 +485,23 @@ tables:
     invariants: ["standardised beside raw everywhere (x1.37/x1.03 golden)", "z never on subsets",
                  "hors_referentiel 11.15% disclosed beside texture"]
   # thm_theme_agg: DELETED — T6 DROPPED (tombstone; plan §7 client-facing line)
+
+  dim_frontier_components:         # NEW (pass 7, S-DAT, P6/D40)
+    status: BUILD (pass 7)
+    grain: topic (3,706) x bin_label (7 x 3-year bins) == 25,942 rows
+    columns: [topic_id, bin_label, expansion, acceleration, frontier, rank, is_latest,
+              source_file, source_sha256, snapshot_date]
+    why_built: "the frontier score's own COMPONENTS (expansion/acceleration/rank), 7x 3-year bins,
+      from inputs/manual/OA_frontier_scores.xlsx -- a DIFFERENT manual file from the one
+      thm_frontier/thm_frontier_topics read (frontierness_baseline.xlsx == OA_bad_topics.xlsx,
+      6x 4-year composite). The two vintages are never mixed in one figure
+      (docs/FRONTIERNESS_METHOD.md). P9 plane B reads is_latest (the 2022-23 bin) only."
+    construction: "reshape only (LONG melt of the source's 7-bin-wide sheet 'global'), no scores
+      computed here. topic_id reduced to bare 'T#####' form (matches all_topics.topic_id, 0/3,706
+      absent, measured). corr(0.7*expansion+0.3*acceleration, frontier) = 1.000000, measured."
+    invariants: ["25,942 rows exact (3,706 x 7)", "exactly one is_latest per topic_id",
+                 "latest-bin describe(): mean~0 (<0.001), std 0.674/0.841 (+/-0.005)",
+                 "corr(0.7E+0.3A, frontier) > 0.999"]
 
   thm_frontier_topics:             # NEW (pass 5, S3b, ruling R11 full-depth materialization)
     status: BUILD (pass 5, S3b)

@@ -100,6 +100,49 @@ Le détail de ce que ces contrôles vérifient est dans [`docs/AUDIT.md`](docs/A
 
 **Cinquième contrôle, optionnel mais recommandé avant toute publication :** `python tests/ui/smoke.py` lance un vrai navigateur (Playwright) contre un vrai serveur Streamlit local et rejoue les cas limites (grand/petit/vide/hors-liste, ODD selon `app.sdg_variant`, et depuis la ronde FIX-1 la traversée de persistance des 3 bascules de la barre latérale par clic réel sur le menu, jamais `page.goto()`) -- **37 contrôles**, captures dans `reports/evals/smoke/`.
 
+### Vérifier (passe 7a)
+
+Depuis la passe 7a, `tests/` ship avec le dépôt (avec `ops/` et `requirements-dev.txt` --
+P7-R7/P15, reverse le whitelist du 2026-08-20 pour ces trois chemins seulement) : la suite
+de vérification n'est plus quelque chose qu'un⋅e opérateur doit reconstituer à la main
+après un clone, elle est dans le dépôt. Sept portes, dans l'ordre :
+
+```bash
+python -m venv .venv-pinned
+.venv-pinned\Scripts\pip install -r Streamlit\requirements.txt -r requirements-dev.txt
+.venv-pinned\Scripts\playwright install chromium
+python pipeline/verify_manual_inputs.py
+python run_all.py
+.venv-pinned\Scripts\python -m pytest tests -q --ignore=tests/test_ram_budget.py
+.venv-pinned\Scripts\python -m pytest tests/test_ram_budget.py -q -s
+.venv-pinned\Scripts\python tests/ui/smoke.py
+.venv-pinned\Scripts\python tests/stress/run_stress.py --minutes 4
+```
+
+(Les deux commandes du pipeline restent sur l'interprète anaconda, comme en section 1 --
+seules les commandes de test basculent sur `.venv-pinned`, la seule combinaison de
+versions réellement vérifiée, cf. §1 « Trois interprètes Python ».)
+
+1. **Environnement pinned** -- crée `.venv-pinned`, y installe l'application ET les
+   outils de vérification (`requirements-dev.txt` : `pytest`, `playwright`), puis
+   télécharge le binaire Chromium (hors pip, une seule fois).
+2. **Entrées manuelles** -- vert = code de sortie 0 : les deux fichiers de
+   `inputs/manual/` sont encore bit-à-bit identiques à leur empreinte de référence.
+3. **Pipeline** -- inchangé (section 3 ci-dessous) ; vert = les étapes se terminent
+   sans code de sortie non nul.
+4. **Sweep principal** -- exclut le test RAM (isolé, porte suivante) ; vert = zéro
+   échec et zéro erreur (un ignoré documenté reste un ignoré, jamais un échec).
+5. **Test RAM, isolé** -- tourne seul (`-s`) pour que ses mesures de mémoire résidente
+   ne soient jamais faussées par un autre test du même processus ; vert = chaque
+   budget mesuré dans le fichier reste sous son plafond.
+6. **Fumée navigateur** -- vert = code de sortie 0, tous les contrôles listés en
+   section 2 ci-dessus passent.
+7. **Stress** -- rejoue une traversée déterministe puis du chaos multi-session sur
+   les pages partenaires ; vert = code de sortie 0, mémoire résidente du serveur
+   restée sous son plafond, serveur toujours vivant en fin de course.
+
+Ne pousser qu'une fois les sept portes vertes.
+
 ## 3. Rafraîchir les données
 
 Une seule commande enchaîne les **36 étapes** (l'ordre a grossi passe après passe : partenaires/thématique/auteurs à la chaîne pass 3, benchmark de pairs au pass 4, et quatre scripts propres à la passe 5 -- `47c_build_frontier_topics.py`, `49w_pull_peers_wide.py`, `49c_build_peer_context.py`, `47b_build_crossings.py` ; `python run_all.py --list` détaille l'ordre

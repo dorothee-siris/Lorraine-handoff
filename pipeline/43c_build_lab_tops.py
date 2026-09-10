@@ -133,7 +133,15 @@ def build_lab_top_partners(works: pd.DataFrame, authorships: pd.DataFrame, ul_pa
             ("international", partner_auth[partner_auth["institution_country"] != "FR"]),
             ("france", partner_auth[partner_auth["institution_country"] == "FR"]),
         ):
-            counts = frame.groupby("institution_id").size().sort_values(ascending=False).head(TOP_N)
+            # P7 fix (test_pass6_data.py::test_lab_top_partners_hand_verify_3_labs diagnosis): a bare
+            # sort_values(ascending=False) has no secondary key, so ties in copubs (common at low
+            # counts) resolve by pandas/numpy sort-implementation accident, NOT reproducibly -- e.g.
+            # anaconda pandas 2.1.4 and the pinned venv's 2.3.3 order a tied pair oppositely.
+            # Deterministic tie-break: count desc, then institution_id asc.
+            counts = frame.groupby("institution_id").size().rename("copubs").reset_index()
+            counts = (counts.sort_values(["copubs", "institution_id"], ascending=[False, True],
+                                          kind="stable")
+                            .head(TOP_N).set_index("institution_id")["copubs"])
             for rank, (inst_id, copubs) in enumerate(counts.items(), start=1):
                 meta = partner_meta.loc[inst_id] if inst_id in partner_meta.index else None
                 name = sanitize(meta["institution_name"]) if meta is not None else sanitize(

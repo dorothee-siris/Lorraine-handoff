@@ -21,6 +21,17 @@
 !/lib/
 !/inputs/
 
+# --- tests + ops SHIP since pass 7a (P7-R7/P15, S-EVAL) -- REVERSES the
+#     2026-08-20 whitelist decision above, for these two paths ONLY: goldens
+#     ship (no secrets -- grep-proven Bearer|OPENALEX_API_KEY|sk- absent),
+#     requirements-dev.txt documents pytest/playwright for an operator who
+#     wants to run the suite. .venv-pinned/ stays ignored (no whitelist line
+#     below -- caught by the blanket /* above, verified: git check-ignore -v
+#     .venv-pinned). ---
+!/tests/
+!/ops/
+!/requirements-dev.txt
+
 # --- docs: ONLY the data contracts (60_deploy validates against them)
 #     and the client-facing method docs README links to ---
 !/docs/
@@ -41,3 +52,16 @@ __pycache__/
 *.pyo
 .ipynb_checkpoints/
 .streamlit/secrets.toml
+
+# --- tests/ hygiene (P15) -- __pycache__/ above already matches at any depth,
+#     incl. tests/**/__pycache__/ ; tests/ui/_shots/ not added, no such output
+#     folder exists on disk as of pass 7a (checked) ---
+/tests/stress/reports/
+
+# --- files the SHIPPED tests open at runtime (P15 follow-up, manager 2026-09-10): the hover
+#     contract, the narrative banlist + chart-key registry + lib API contract, and the frontier
+#     method note README links to. Without these a fresh clone's `pytest tests` fails. ---
+!/docs/tooltip_spec.yaml
+!/docs/TOOLTIP_SPEC.md
+!/docs/FRONTIERNESS_METHOD.md
+!/docs/contract_fragments/

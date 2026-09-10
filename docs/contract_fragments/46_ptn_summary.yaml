@@ -1,0 +1,131 @@
+# Contract fragment -- ptn_summary.parquet (Stream W2, pipeline/46_build_partner_views.py)
+#
+# Per BUILD_PLAN.md S13: each builder emits per-table YAML fragments here; E1 merges them into
+# docs/data_contract.yaml + the 60_deploy file set. Full design rationale:
+# docs/foundry/data_foundation.yaml rev 3.1, table `ptn_summary`.
+
+ptn_summary.parquet:
+  source: "works_master.parquet + corpus_authorships.parquet + ul_descendants.parquet +
+           inputs/overlays/{own_entity_blocklist,successor_merges,hospital_complex_merges,
+           idset_consortium,idset_unigr,idset_eureca}.csv (status==ok only) + work_subsets
+           (In_LUE flag already rides works_master)"
+  build_step: "pipeline/46_build_partner_views.py"
+  keys: [partner_id, conf_state, subset_id]
+  read_by_app: true
+  read_by:
+    - "V1 Partner hub table (eager pin, category dtypes)"
+    - "V2 Structure/partner profile header KPIs"
+    - "P-V4 I-SITE consortium panel (lue_share/lue_co_works columns)"
+  rows_expected: 29244
+  new_in_v2: true
+  row_grain: "one row per partner x conf_state{all,no_conf} x subset_id{all,in_lue}; subset='in_lue'
+    rows exist ONLY for partners with >=1 In_LUE co-work (floored, not a full cross-product --
+    builder decision, avoids all-zero rows). Measured: all/all 12,570; all/no_conf 12,129;
+    in_lue/all 2,291; in_lue/no_conf 2,254 (sum 29,244)."
+  why_deployed: >
+    docs/indicator_plan_FINAL.md I1-I4/I8/I9: the partner hub's one-row-per-partner substrate,
+    with the frozen momentum quadrant (I4), impact profile (I8) and I-SITE lens (I9) as column
+    families on the SAME row rather than separate joins.
+  universe_note: >
+    Overlay-corrected universe verified to reproduce every canonical partner-floor count to the
+    digit (12,570 partners; >=10/>=20/>=50 floors 2,309/1,279/447) using successor_merges.csv
+    (status==ok) ONLY -- hospital_complex_merges.csv is read for its standing id-resolution check
+    but NOT folded into partner identity this pass (see pipeline/46_build_partner_views.py module
+    docstring: it "rides 42b", reserved for the reciprocity feature, not yet a general input).
+    DISCLOSED DEVIATION: null-country partner count measures 346 with this exact recipe;
+    canonical_counts states 347 (no backing script found for that figure -- see module docstring
+    and progress/W2_partner_views.md).
+  columns:
+    - {name: "partner_id", dtype: string, from: "corpus_authorships.institution_id, post
+       successor-merge, bare OpenAlex id (e.g. I1294671590)"}
+    - {name: "conf_state", dtype: category, allowed: [all, no_conf]}
+    - {name: "subset_id", dtype: category, allowed: [all, in_lue], from: "subset_row_matrix"}
+    - {name: "display_name", dtype: string, from: "mode of corpus_authorships.institution_display_name
+       over the partner's own rows"}
+    - {name: "country_code", dtype: category, nullable: true, from: "mode of
+       institution_country; NULL for 346 partners with no resolvable country"}
+    - {name: "type_openalex", dtype: category, nullable: true, from: "mode of institution_type"}
+    - {name: "consortium_member", dtype: bool, from: "partner_id in idset_consortium.csv
+       (status==ok, role==external) -- excludes the UL host row"}
+    - {name: "idset_tags", dtype: string, from: "comma-joined group-kind labels the partner_id
+       matches among {consortium, unigr, eureca} (status==ok rows); '' if none. Builder decision:
+       comma separator, NOT '|'/':' (rev-3.1 blob-encoding ban)"}
+    - {name: "merged_from_ids", dtype: string, nullable: true, from: "comma-joined old_id(s) from
+       successor_merges.csv folded into this partner_id; NULL if none"}
+    - {name: "plumbing_guard_flag", dtype: bool, from: "partner_id in the frozen momentum method's
+       own plumbing set (median n_institutions per co-work > 20, <=50-institution works only) --
+       identity/informational, does not gate any row"}
+    - {name: "co_works_full", dtype: int64, from: "nunique(work_id) in this partner's scope"}
+    - {name: "co_works_full_xa", dtype: int64, from: "co_works_full restricted to artifact_flag==False"}
+    - {name: "co_works_fractional", dtype: float64, from: "sum(1/n_institutions) over the partner's
+       distinct co-works (fractional counting)"}
+    - {name: "co_works_intl", dtype: int64, from: "co_works_full restricted to Is_international==True"}
+    - {name: "share_ul", dtype: float64, from: "co_works_full / (this scope's own collaborative-work
+       union) -- self-computed per (conf_state,subset_id), reconciles exactly with
+       dim_corpus_facts.corpus_collaborative_works on subset='all' (asserted in the builder)"}
+    - {name: "share_ul_xa", dtype: float64, from: "co_works_full_xa / (scope's xa collaborative union)"}
+    - {name: "share_ul_direct", dtype: float64, from: "co_works_full / (scope's TOTAL work count,
+       dim_corpus_facts.corpus_works or dim_subsets.n_works) -- DEFERRED twin (no _xa), a different
+       'share of what' question than share_ul (see builder decisions in the module docstring)"}
+    - {name: "n_ul_labs", dtype: int64, from: "count of distinct non-'NO LAB' Labs tokens across
+       the partner's co-works"}
+    - {name: "first_year", dtype: int64, from: "min publication_year"}
+    - {name: "last_year", dtype: int64, from: "max publication_year"}
+    - {name: "partner_total_windowed", dtype: "Int64 (nullable)", from: "42b gate NOT run --
+       NULL for every partner this pass (D53 NULL-never-0)"}
+    - {name: "share_p", dtype: "Float64 (nullable)", from: "42b gate NOT run -- NULL for every
+       partner this pass"}
+    - {name: "share_p_capped_flag", dtype: "boolean (nullable)", from: "42b gate NOT run -- NULL
+       for every partner this pass"}
+    - {name: "fwci_fr_median", dtype: float64, nullable: true, from: "median FWCI_FR over
+       indicator_status=='computed' co-works; NULL if none"}
+    - {name: "fwci_fr_median_xa", dtype: float64, nullable: true, from: "same, artifact-excluded"}
+    - {name: "fwci_fr_mean", dtype: float64, nullable: true, from: "mean FWCI_FR, disclosed but
+       never default-sorted (S9)"}
+    - {name: "fwci_fr_mean_xa", dtype: float64, nullable: true}
+    - {name: "share_cited", dtype: float64, from: "share of co_works_full with cited_by_count>0"}
+    - {name: "share_cited_xa", dtype: float64}
+    - {name: "works_with_indicators", dtype: int64, from: "count with indicator_status=='computed'"}
+    - {name: "works_with_indicators_xa", dtype: int64}
+    - {name: "mom_class", dtype: category, nullable: true, allowed: [up, down, stable, ns],
+       from: "frozen method (pipeline/lib46_momentum.py), SHIPPED universe, this row's conf_state;
+       NULL unless mom_eligible_flag; subset='in_lue' rows are ALWAYS NULL (momentum is a whole-
+       corpus, app-wide-exempt family, not recomputed within the tiny in_lue perimeter -- builder
+       decision, documented)"}
+    - {name: "mom_category", dtype: category, nullable: true, allowed: [up, down, stable, ns, new, dormant],
+       from: "widens mom_class with the frozen method's new/dormant screens (outside eligibility
+       per the build brief); NULL for partners below the base in-window floor and outside both
+       screens (no category invented for that residual)"}
+    - {name: "mom_p_value", dtype: float64, nullable: true, from: "two-proportion test p-value,
+       eligible partners only"}
+    - {name: "mom_w1_share", dtype: float64, nullable: true, from: "c1/D1 (window-1 collaborative share)"}
+    - {name: "mom_w2_share", dtype: float64, nullable: true, from: "c2/D2 (window-2 collaborative share)"}
+    - {name: "mom_count_arrow", dtype: string, nullable: true, from: "'{c1}->{c2}' raw in-window counts"}
+    - {name: "mom_eligible_flag", dtype: boolean, from: "base & c1>0 & c2>0 (frozen eligibility gate)"}
+    - {name: "lue_co_works", dtype: int64, from: "co_works_full restricted to In_LUE==True"}
+    - {name: "lue_share", dtype: float64, from: "lue_co_works / co_works_full"}
+    - {name: "snapshot_date", dtype: string}
+  artifact_invariant_columns: "identity block (list/structural) · reciprocity (42b-gated) ·
+    lue_* (list-based) · n_ul_labs/first_year/last_year (presence facts) ·
+    share_ul_direct/co_works_fractional/co_works_intl (DEFERRED twins)"
+  artifact_exempt_families: "momentum (app-wide ruling)"
+  invariants:
+    - "DUAL-MODE momentum golden EXACT (verified in the builder before any table is written):
+       frozen-parity 682 -> 106/52/277/247, new 5/dormant 0, >=50: 215 -> 47/17/103/48;
+       shipped 681 -> 105/51/277/248, >=50: 214 -> 46/16/103/49; machine-diff ==
+       {removed: Centre Inria de l'UL, flips: CHU de Reims I4210105796 up->ns} and NOTHING else"
+    - "PHANTOM RULING (fix round -- see 46_ptn_mom_facts.yaml phantom_ruling for full diagnosis):
+       eligible_n above (681/563) is the frozen METHOD's own count and includes ONE null-
+       institution-id pseudo-partner, classified 'stable', that is NOT a real partner_id and never
+       appears as a row here. ptn_summary's own classified rows (mom_class notna), per conf_state,
+       therefore equal display_eligible_n from ptn_mom_facts, NOT eligible_n: 'all' 680 ->
+       up 105/down 51/stable 276/ns 248 (>=50: 213 -> 46/16/102/49); 'no_conf' 562 ->
+       up 90/down 44/stable 211/ns 217 (>=50: 172 -> 36/15/85/36). Asserted class-by-class in the
+       builder, including the >=50-floor sub-counts (using the engine's own inwin>=50 bucket, not
+       co_works_full>=50 -- the two are different quantities)."
+    - "partner floors >=10/>=20/>=50 == 2,309/1,279/447 EXACT (subset='all', conf_state='all')"
+    - "share_p, partner_total_windowed, share_p_capped_flag NULL for every row (D53, 42b gate)"
+    - "lue reconciliation: lue_co_works(subset=all row) == co_works_full(subset=in_lue row) per
+       partner, per conf_state -- asserted in the builder"
+    - "blocklist ids absent; no 'Deleted Institution'; consortium/unigr/eureca id-set partners present"
+  dropped_from_v1: []

@@ -1382,6 +1382,17 @@ files:
       - {name: "co_works_fractional", dtype: float64, from: "sum(1/n_institutions) over the partner's
          distinct co-works (fractional counting)"}
       - {name: "co_works_intl", dtype: int64, from: "co_works_full restricted to Is_international==True"}
+      - name: "n_phares"
+        dtype: int64
+        new_in_v2: true
+        why: "P7 D40 'publications phares (top 10% France)': nunique(work_id) over this partner's
+              co_works_full whose ptn_works.pptop10_fr==True (works_master.PPtop10_FR, NULL-masked
+              by indicator_status -- a not-computed work never counts). Denominator: none, this is
+              a count."
+      - name: "n_phares_xa"
+        dtype: int64
+        new_in_v2: true
+        why: "n_phares restricted to artifact_flag(work)==False, same convention as co_works_full_xa."
       - {name: "share_ul", dtype: float64, from: "co_works_full / (this scope's own collaborative-work
          union) -- self-computed per (conf_state,subset_id), reconciles exactly with
          dim_corpus_facts.corpus_collaborative_works on subset='all' (asserted in the builder)"}
@@ -1607,6 +1618,16 @@ files:
       - {name: "conf_state", dtype: category, allowed: [all, no_conf]}
       - {name: "co_works", dtype: int64, from: "nunique(work_id) for this partner x node x conf_state"}
       - {name: "co_works_xa", dtype: int64}
+      - name: "n_phares"
+        dtype: int64
+        new_in_v2: true
+        why: "P7 D40 'publications phares (top 10% France)': nunique(work_id) for this partner x
+              node x conf_state whose ptn_works.pptop10_fr==True. Same construction as co_works,
+              filtered. Denominator: none, this is a count."
+      - name: "n_phares_xa"
+        dtype: int64
+        new_in_v2: true
+        why: "n_phares restricted to artifact_flag(work)==False, same convention as co_works_xa."
       - {name: "share_of_pair", dtype: float64, from: "co_works / (this partner's own co_works_full
          in the same conf_state) -- within-pair field mix"}
       - {name: "share_of_pair_xa", dtype: float64, nullable: true}
@@ -1761,9 +1782,27 @@ files:
       - {name: "primary_subfield_id", dtype: category}
       - {name: "primary_topic_id", dtype: category, from: "serves the I11 per-cell drill (partner
          pushdown + in-slice node filter, tunnel #8) and the country-pubs path"}
+      - name: "pptop10_fr"
+        dtype: bool
+        nullable: true
+        new_in_v2: true
+        why: "P7 D40 'publications phares (top 10% France)': works_master.PPtop10_FR, NULL exactly
+              when indicator_status != 'computed' (the same rule fwci_fr already follows in this
+              table -- verified: works_master's own column already agreed, 0/943 leaked). Feeds
+              n_phares everywhere else in the ptn_* family (this table is the only place the raw
+              per-work flag ships)."
+      - name: "pptop1_fr"
+        dtype: bool
+        nullable: true
+        new_in_v2: true
+        why: "P7 D40: works_master.PPtop1_FR, same null rule as pptop10_fr. No n_phares-style
+              aggregate is built from this column this pass (BUILD_PLAN P7 names only the top-10
+              aggregate) -- available here for a future view."
       - {name: "snapshot_date", dtype: string}
     invariants:
       - "116,345 rows -- EXACT match to canonical_counts.ptn_works_pairs_at_p10floor, asserted"
+      - "pptop10_fr/pptop1_fr NULL <=> indicator_status != 'computed' -- asserted in the builder
+         and re-asserted independently in tests/test_pass7_data.py"
       - "Class-1 row-group floor + <20% prune-proof bytes, both asserted in the builder"
     dropped_from_v1: []
 
@@ -1824,6 +1863,16 @@ files:
       - {name: "year", dtype: int16}
       - {name: "co_works", dtype: int32}
       - {name: "co_works_xa", dtype: int32}
+      - name: "n_phares"
+        dtype: int32
+        new_in_v2: true
+        why: "P7 D40 'publications phares (top 10% France)': nunique(work_id) for this
+              (partner,topic,subfield,year) cell whose ptn_works.pptop10_fr==True. Same
+              construction as co_works, filtered. Denominator: none, this is a count."
+      - name: "n_phares_xa"
+        dtype: int32
+        new_in_v2: true
+        why: "n_phares restricted to artifact_flag(work)==False, same convention as co_works_xa."
       - {name: "fwci_fr_median_cell", dtype: float64, nullable: true, from: "median FWCI_FR over
          indicator_status=='computed' works in this (partner,topic) CELL, all years combined --
          DEFERRED twin (no _xa), floor-free (D53: NULL only if 0 works-with-indicators in the cell),
@@ -3632,6 +3681,55 @@ files:
          reproduces the table value EXACTLY -- asserted at build time"
     dropped_from_v1: []
 
+  # ==========================================================================================
+  # 57. dim_frontier_components -- pass 7, Stream S-DAT (47e_build_frontier_components.py), P6/D40.
+  #     NO v1 counterpart (new table, new file); NO fragment file (added directly here, S-DAT owns
+  #     both yamls this pass -- see BUILD_PLAN.md P18).
+  # ==========================================================================================
+  dim_frontier_components.parquet:
+    source: "inputs/manual/OA_frontier_scores.xlsx sheet 'global' (W1 copy-in from Internal
+             Projects/Research Portfolio Framework/ETO vs OpenAlex experiment/data/openalex/,
+             sha256 6b1b1bddba7e3c05530728a86083741ded6bbc60509d671ea5aa38747317bb5d, verified by
+             pipeline/verify_manual_inputs.py) -- a DIFFERENT manual file from
+             frontierness_baseline.xlsx (== OA_bad_topics.xlsx) that thm_frontier/thm_frontier_topics
+             read; never mixed in one figure (docs/FRONTIERNESS_METHOD.md)."
+    build_step: "pipeline/47e_build_frontier_components.py"
+    keys: [topic_id, bin_label]
+    read_by_app: true
+    read_by: ["P9 plane B (expansion x acceleration, latest bin only, is_latest==True) --
+      docs/FRONTIERNESS_METHOD.md names the reproduction/caption rules"]
+    rows_expected: 25942
+    new_in_v2: true
+    row_grain: "topic (3,706, ALL of sheet 'global') x bin_label (7 x 3-year bins, 2004-06..2022-23)"
+    why_deployed: "the frontier score's own COMPONENTS (expansion/acceleration/rank) across bins --
+      thm_frontier's composite is one number per topic (6 x 4-year bins averaged); this table is
+      what P9's plane B needs to plot a topic's trajectory, which the composite alone cannot show."
+    construction: >
+      Reshape only (LONG melt of the 7-bin-wide source sheet), no scores computed here. topic_id
+      reduced from the source's full 'https://openalex.org/T#####' url form to the bare id (matches
+      all_topics.parquet.topic_id; verified regex ^T\d+$, unique, 3,706/3,706 present in
+      all_topics.parquet -- 0 absent, measured). bin_label derived from the column-name suffix
+      ('2004-2006' -> '2004-06', ..., '2022-2023' -> '2022-23'), declared an ORDERED category so
+      chronological order survives any sort. is_latest True for exactly the '2022-2023' bin.
+    columns:
+      - {name: "topic_id", dtype: string, from: "bare 'T#####' id, stripped of the openalex.org/ prefix"}
+      - {name: "bin_label", dtype: category, allowed: ["2004-06", "2007-09", "2010-12", "2013-15",
+         "2016-18", "2019-21", "2022-23"], from: "derived from the source column suffix, ORDERED chronologically"}
+      - {name: "expansion", dtype: float64, from: "source column expansion_global_<suffix>, AS-IS (no re-standardisation)"}
+      - {name: "acceleration", dtype: float64, from: "source column acceleration_score_global_<suffix> (note the extra _score infix), AS-IS"}
+      - {name: "frontier", dtype: float64, from: "source column frontier_global_<suffix>, AS-IS -- corr(0.7*expansion+0.3*acceleration, frontier) = 1.000000 on this snapshot, measured"}
+      - {name: "rank", dtype: int64, nullable: true, from: "source column rank_global_<suffix>, this topic's world rank that bin (1 = most frontier); stored Int16 in the snapshot table (deploy casts to int64 like every other integer column in this contract)"}
+      - {name: "is_latest", dtype: bool, from: "True iff bin_label=='2022-23' -- exactly one True per topic_id, asserted"}
+      - {name: "source_file", dtype: string, from: "'inputs/manual/OA_frontier_scores.xlsx', constant"}
+      - {name: "source_sha256", dtype: string, from: "constant, the copy-in's own sha256 (see `source` above)"}
+      - {name: "snapshot_date", dtype: string}
+    invariants:
+      - "25,942 rows -- EXACT (3,706 topics x 7 bins), asserted"
+      - "exactly one is_latest==True row per topic_id, asserted"
+      - "latest-bin describe(): expansion/acceleration mean ~0 (<0.001), std 0.674/0.841 (+/-0.005 of the source file's own describe()), asserted"
+      - "corr(0.7*expansion + 0.3*acceleration, frontier) > 0.999, asserted"
+    dropped_from_v1: []
+
 # ==============================================================================================
 # Files v1 deployed that v2 does NOT
 # ==============================================================================================
@@ -3711,7 +3809,8 @@ invariants:
     check: "Streamlit/data/ contains exactly the files in `files` (len(contract['files']), computed
       dynamically -- never hand-copy this count) and no TM_labels.parquet. Pass 6, S-DAT: 47 -> 55
       (8 new tables: sdg_lab_methods, lab_top_partners, lab_top_authors, lab_wordcloud, lab_works,
-      topics_zero_fill, subfields_zero_fill, ptn_denominators)"
+      topics_zero_fill, subfields_zero_fill, ptn_denominators). Pass 7, S-DAT: 55 -> 56 (1 new
+      table: dim_frontier_components)"
 
 # ==============================================================================================
 # Config keys the app reads (Stream C reads these from config.yaml, not from this contract)

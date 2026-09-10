@@ -1,0 +1,80 @@
+# Contract fragment -- thm_funding.parquet (Stream W3, pipeline/47_build_thematic_ext.py)
+#
+# Per BUILD_PLAN.md S13. Design source: docs/foundry/data_foundation.yaml rev 3.1, table
+# `thm_funding`. T7 "Funding leverage by theme" (docs/indicator_plan_FINAL.md S4;
+# reports/lab_thematic_probes.py P5 for the award-matching method reused here).
+
+thm_funding.parquet:
+  source: "works_master.parquet + corpus_funding.parquet (28,438 rows) + lib.artifact.flag_works"
+  build_step: "pipeline/47_build_thematic_ext.py"
+  keys: [field_id, perimeter_id, funder_family, conf_state]
+  read_by_app: true
+  read_by:
+    - "T7 Funding leverage by theme (new panel, Thematic Overview or Drilldown per S6.6 -- field
+       grain only, '21.3% acknowledgement coverage is too thin below field')"
+  rows_expected: 416
+  new_in_v2: true
+  row_grain: >
+    field_id (26) x perimeter_id ({all, in_lue}, per data_foundation.yaml's perimeter_id row
+    policy) x funder_family ({any, anr, ec, erdf}) x conf_state (2) = 416 rows.
+  why_deployed: >
+    external-funding acknowledgement intensity per field, split by funder family. rows_count
+    (corpus_funding acknowledgement ROWS matching the family) is kept DELIBERATELY separate from
+    works_with_funding (distinct WORKS) -- "rows != works" discipline (a work can carry several
+    funding acknowledgements from the same or different funders; rows_count over-counts relative
+    to works on any multi-award work).
+  funder_family_construction: >
+    any: >=1 corpus_funding row for the work, any funder (measured 21.29% of corpus works --
+    matches the docs' cited 21.3% golden exactly). anr: funder_award_id contains 'ANR-'
+    (Unicode-dash-normalised) -- this IS reports/lab_thematic_probes.py P5's own code, reproduced
+    verbatim; measured 4,433 distinct works, matching the golden EXACTLY. ec/erdf: NO FROZEN
+    CONSTRUCTION EXISTS for either family anywhere in this repo (exhaustively verified, chain
+    pass 3 fix round: grepped every .py/.md/.yaml for "ERDF", "European Commission", "EC family",
+    "funder_family" -- reports/lab_thematic_probes.py P5, the only funding probe on file, computes
+    ONLY the LUE-award-trace and ANR constructions). This pass's classification is therefore a
+    NEW, documented construction (not a recomputation of a lost one): ec = a curated list of
+    Horizon/FP/ERC-family funder_display_name values (European Commission, Horizon 2020
+    [Framework Programme], HORIZON EUROPE Framework Programme, European Research Council [+
+    H2020/FP7/HORIZON EUROPE variants], European Space Agency, COST, PRACE, EIT, Research
+    Executive Agency, FP7 Coherent Development of Research Policies, ECSEL -- full list in
+    pipeline/47_build_thematic_ext.py's EC_FAMILY constant); erdf =
+    funder_display_name=='European Regional Development Fund'.
+  golden_status_unresolved: >
+    Reported per the manager's own "close is not acceptance for a Tier-A table" ruling -- NOT
+    absorbed as a pass. EC: measured 2,182 rows vs cited 2,214 (delta +32, ~1.4%). Every
+    "Europe"-adjacent funder_display_name in corpus_funding was inventoried; the only names that
+    would close the gap (European Society of Cardiology, European Federation of Pharmaceutical
+    Industries and Associations, European Hematology Association, European Food Safety Authority,
+    European Maritime and Fisheries Fund, European Network for Rare Adult Solid Cancers, European
+    Genomic Institute for Diabetes, European Office of Aerospace Research and Development, Central
+    European Institute of Technology, Institut Europeen d'Administration des Affaires, Translation
+    Centre for the Bodies of the European Union -- 18 rows combined) are professional societies /
+    unrelated bodies, not EU funding programmes -- adding them would be methodologically wrong,
+    and even doing so only reaches 2,200, still short by 14. ERDF: rows match EXACTLY (429==429,
+    single-name match, no funder_id/display_name inconsistency found on re-verification); but
+    computing distinct works from those SAME 429 rows deterministically gives 203, not the cited
+    279 (verified twice, incl. a full work_id duplicate-count histogram summing correctly to
+    429) -- this reads as snapshot data drift in corpus_funding.parquet since the older document
+    was written, not a construction ambiguity (the row set is unambiguous; only one work-count
+    follows from it). Open item: either the manager/GT supplies the missing EC/ERDF construction
+    provenance, or these two numbers get ratified as a NEW convention at the workshop.
+  columns:
+    - {name: "field_id", dtype: string, from: "all_topics.field_id (26 values)"}
+    - {name: "perimeter_id", dtype: string, allowed: [all, in_lue]}
+    - {name: "funder_family", dtype: string, allowed: [any, anr, ec, erdf]}
+    - {name: "conf_state", dtype: string, allowed: [all, no_conf]}
+    - {name: "works_with_funding", dtype: int64, from: "distinct works in this field/perimeter/conf_state with >=1 matching corpus_funding row"}
+    - {name: "works_with_funding_xa", dtype: int64, from: "same, artifact-excluded works only"}
+    - {name: "rows_count", dtype: int64, from: "matching corpus_funding ROWS (acknowledgements), not works -- see funder_family_construction"}
+    - {name: "share_of_works", dtype: float64, nullable: true, from: "works_with_funding / total works in the field/perimeter/conf_state slice; NULL if slice is empty"}
+    - {name: "share_of_works_xa", dtype: float64, nullable: true}
+    - {name: "snapshot_date", dtype: string, from: "config.yaml project.snapshot_id"}
+  artifact_invariant_columns: "rows_count (acknowledgement rows, not works -- the rows!=works
+    discipline named on this table in data_foundation.yaml; not twinned by design, since it is
+    already a distinct, disclosed unit from works_with_funding/works_with_funding_xa)"
+  invariants:
+    - "(field_id, perimeter_id, funder_family, conf_state) unique"
+    - "funder_family=='any', perimeter=='all', conf_state=='all': works_with_funding sums to 7,839 across fields == 21.29% of 36,819 (golden 21.3%)"
+    - "funder_family=='anr' works sum == 4,433 (golden, exact)"
+    - "works_with_funding <= rows_count on every row"
+  dropped_from_v1: []

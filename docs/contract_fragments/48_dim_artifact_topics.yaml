@@ -1,0 +1,40 @@
+# Contract fragment -- dim_artifact_topics.parquet (Stream W1, pipeline/48_build_subsets.py)
+# Per BUILD_PLAN.md S13. Design source: docs/foundry/data_foundation.yaml rev 3.1, table
+# `dim_artifact_topics` + the ARTIFACT-FLAG source note at the top of that file.
+
+dim_artifact_topics.parquet:
+  source: "inputs/manual/OA_bad_topics.xlsx (W1 copy-in, byte-identical to the Research Portfolio
+           Framework original at Internal Projects/Research Portfolio Framework/ETO vs OpenAlex
+           experiment/data/openalex/OA_bad_topics.xlsx), column 'Should we keep this OA topic?' ==
+           'Filter out'"
+  build_step: "pipeline/48_build_subsets.py (via lib.artifact.load_bad_topics_table)"
+  keys: [topic_id]
+  read_by_app: true
+  read_by:
+    - "any view rendering the S6.2 ARTIFACT-FLAG banner/marker -- the topic dictionary behind
+       artifact_flag columns elsewhere (works/partner/topic-grain tables carry the flag as a
+       per-row bool; this table names WHICH topics and why, for the banner/legend/export header)"
+  rows_expected: 811
+  new_in_v2: true
+  row_grain: "one row per excluded OpenAlex topic (811 of the taxonomy's 4,516 total)"
+  why_deployed: >
+    docs/indicator_plan_FINAL.md S6.2: "a classifier limitation ... never a judgment on the
+    research" must precede the number wherever the flag surfaces; this dictionary is what lets a
+    view or export show WHICH topic (name, not just id) triggered a marker, so the flag is never a
+    bare boolean with no explanation attached.
+  columns:
+    - {name: "topic_id", dtype: string, from: "OA_bad_topics.xlsx 'Topic ID no url' (bare 'T#####'
+       form, matching corpus_topics.topic_id / works_master.primary_topic_id verbatim)"}
+    - {name: "topic_name", dtype: string, from: "OA_bad_topics.xlsx 'Topic name'"}
+    - {name: "reason_label_fr", dtype: string,
+       from: "constant: 'hors référentiel mondial — limite du classifieur'
+              (fixed FR caption for every row -- the reason is the classifier's own English-
+              trained topic model under-resolving French-language venues, per S6.2, not a
+              per-topic judgment, so one shared caption is correct, not a shortcut)"}
+    - {name: "snapshot_date", dtype: string, from: "config.yaml project.snapshot_id"}
+  invariants:
+    - "exactly 811 rows (S6.2 measured, F0-P4, tunnel-reproduced)"
+    - "topic_id unique"
+    - "every topic_id here also appears in the taxonomy (all_topics.parquet) -- both are OpenAlex's
+       own topic ids, never invented"
+  dropped_from_v1: []

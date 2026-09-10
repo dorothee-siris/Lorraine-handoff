@@ -1,0 +1,52 @@
+# Contract fragment -- aut_impact_drill.parquet (Stream W4, pipeline/45b_build_author_views.py)
+# Per BUILD_PLAN.md S13. Design source: docs/foundry/data_foundation.yaml rev 3.1, table
+# `aut_impact_drill`. A2 "author impact (drill-only)" (docs/indicator_plan_FINAL.md S5).
+
+aut_impact_drill.parquet:
+  source: "ul_authors.parquet (person x work universe, via the exploded author_id->person_id
+           mapping onto corpus_authorships) + corpus_metrics.parquet (FWCI_FR / PPtop10_FR /
+           indicator_status per work)"
+  build_step: "pipeline/45b_build_author_views.py"
+  keys: [author_id, conf_state]
+  read_by_app: false
+  new_in_v2: true
+  rows_measured: "960 (480 persons x 2 conf_state rows); 0.014 MB disk"
+  row_grain: >
+    Person x conf_state. THE ONLY table on the author family carrying an impact column -- the
+    physical split from aut_public/aut_works IS safeguard 1 (a UI toggle cannot un-hide a column
+    that lives in a different file). No-export by design (safeguard 3, S6.4 exceptions block):
+    this table has no export path in code anywhere in this pipeline.
+  population_note: >
+    The eligibility gate (works_with_indicators >= config.workshop_tunables.author_impact_floor,
+    30) is evaluated ONCE, on the ALL-corpus basis (matching F0-P3's exact golden: 480 persons,
+    reproduced to the digit). BOTH conf_state rows describe the SAME 480 persons, re-scored under
+    each lens -- re-gating the floor independently per conf_state was tried first and collapses the
+    no_conf population to 282 (many LORIA/INRIA-heavy profiles lean on conference output for a
+    material share of their indicator volume), which the W4 dispatch's own "480 per conf_state"
+    framing rules out. A fixed subject pool, re-scored per lens, is also the only reading consistent
+    with data_foundation.yaml's own artifact_exempt rationale for this table ("impact context
+    computed on full corpus") -- read analogously here for the conference lens: the POOL is a
+    full-corpus fact, only the displayed fwci_fr_mean/pptop10_count/works_with_indicators numbers
+    move. A no_conf row's own works_with_indicators can (and does, for some persons) fall below 30;
+    the row still appears, since the gate was never re-applied per conf_state.
+  columns:
+    - {name: "author_id", dtype: string, from: "ul_authors.person_id"}
+    - {name: "conf_state", dtype: category, allowed: [all, no_conf]}
+    - {name: "fwci_fr_mean", dtype: float64, nullable: true,
+       from: "mean FWCI_FR over this person's works with indicator_status=='computed', restricted to
+              non-conference works when conf_state=='no_conf'"}
+    - {name: "pptop10_count", dtype: int32,
+       from: "count of this person's indicator-computed works with PPtop10_FR==True, same
+              conf_state restriction"}
+    - {name: "works_with_indicators", dtype: int32,
+       from: "count of this person's works with indicator_status=='computed', same conf_state
+              restriction (can be < the 30-work floor under no_conf -- see population_note)"}
+  invariants:
+    - "(author_id, conf_state) unique; exactly 480 distinct author_id values, each appearing once
+       per conf_state"
+    - "conf_state=='all' row count EXACTLY 480 (F0-P3 golden, reproduced to the digit)"
+    - "both conf_state row counts inside the 400-600 band"
+    - "independent recompute of works_with_indicators (conf_state=='all') == ul_authors.works_with_indicators
+       for all 12,680 persons -- 0 mismatches (the eligibility gate is built on this reconciled figure)"
+    - "no export path exists anywhere in the built pipeline (S6.4 exception, unchanged by this build)"
+  dropped_from_v1: []

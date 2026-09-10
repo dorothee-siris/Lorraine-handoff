@@ -1,0 +1,55 @@
+# Contract fragment -- subset_works.parquet (Stream W1, pipeline/48_build_subsets.py)
+# Per BUILD_PLAN.md S13. Design source: docs/foundry/data_foundation.yaml rev 3.1, table
+# `subset_works` (NEW, tunnel #8) + drill_layer.paths.subset_works.
+
+subset_works.parquet:
+  source: "same membership as work_subsets.parquet, joined against works_master.parquet for
+           per-work metadata + lib.artifact.flag_works for the artifact marker"
+  build_step: "pipeline/48_build_subsets.py"
+  keys: [subset_id, work_id]
+  read_by_app: true
+  read_by:
+    - "lib/lazy.py (W5), key subset_id -- the P-V4 award tile (32-work delta) and any
+       per-subset 'download these publications' export (S6.4 obligation 2)"
+  rows_expected: 2647
+  new_in_v2: true
+  row_grain: "work x subset, metadata-bearing (~2.7k rows: in_lue 1,839 + in_lue_award 808)"
+  write_spec: "sorted by subset_id, row_group_size=5000 (Foundry lazy-file rule; trivially 1
+               row group at this size -- the Class-1 floor num_row_groups >= n_rows/10000 still
+               holds, 1 >= 0.27)"
+  why_deployed: >
+    the ONLY drill source for subset-scoped publication lists/exports (data_foundation.yaml's own
+    drill_layer note: "ul_pubs is 1 row group and is NEVER the drill source"). Carries no
+    aggregate/measure columns at all (year/title/doi/type/is_conference are per-work facts,
+    in_lue/artifact_flag are per-row structural markers) -- being a work-grain list table, it is
+    exempt from the R-A _xa-twinning rule by construction (lib.artifact.check_completeness skips
+    any table whose columns include `work_id`; the row ITSELF is the artifact-toggle unit here,
+    same as ptn_works/aut_works).
+  columns:
+    - {name: "subset_id", dtype: string, allowed: [in_lue, in_lue_award], from: "FK to dim_subsets"}
+    - {name: "work_id", dtype: string, from: "works_master.work_id"}
+    - {name: "year", dtype: int32, from: "works_master.publication_year"}
+    - {name: "title", dtype: string, from: "works_master.title"}
+    - {name: "doi", dtype: string, nullable: true, from: "works_master.doi"}
+    - {name: "type", dtype: string, from: "works_master.type"}
+    - {name: "is_conference", dtype: bool, from: "works_master.is_conference"}
+    - name: "in_lue"
+      dtype: bool
+      from: "works_master.In_LUE for this work_id, evaluated REGARDLESS of which subset_id row
+             this is -- i.e. it is a cross-flag, not a restatement of subset membership"
+      why: >
+        this is the P-V4 32-work-delta mechanism (docs/indicator_plan_FINAL.md PM5 + the
+        acceptance note on the award cross-check): filtering subset_id=='in_lue_award' AND
+        in_lue==False returns exactly the 32 award-trace works that are NOT on the canonical hand
+        list, with no extra column needed. On subset_id=='in_lue' rows this is always True
+        (trivial, by construction of that subset).
+    - {name: "artifact_flag", dtype: bool, from: "lib.artifact.flag_works(corpus_topics) --
+       True iff the work's PRIMARY topic is on the 811-topic exclusion list"}
+  invariants:
+    - "(subset_id, work_id) unique"
+    - "filter subset_id=='in_lue_award' -> exactly 808 rows"
+    - "filter subset_id=='in_lue_award' AND in_lue==False -> exactly 32 rows (the award-only delta)"
+    - "filter subset_id=='in_lue' -> exactly 1,839 rows, in_lue==True on every row"
+    - "no orphan subset_id: every value here resolves in dim_subsets.subset_id"
+    - "num_row_groups >= 1 (Class-1 floor; trivially satisfied at ~2.7k rows)"
+  dropped_from_v1: []

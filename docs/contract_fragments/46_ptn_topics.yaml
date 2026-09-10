@@ -1,0 +1,119 @@
+# Contract fragment -- ptn_topics.parquet (Stream W2, pipeline/46_build_partner_views.py)
+# Full design rationale: docs/foundry/data_foundation.yaml rev 3.1, table `ptn_topics` (I11,
+# docs/indicator_plan_FINAL.md sec.6.3 -- the topic-depth extension of I5).
+
+ptn_topics.parquet:
+  source: "ptn_works' own >=10-floor partner x work pairs + corpus_topics.parquet (multi-label,
+           ALL topic rows per work, not just primary) + inputs/manual/frontierness_baseline.xlsx
+           (sheet 'FILTERING OUT TOPICS', column 'Average frontierness' -- frontier_score_std;
+           card-blessed vintage, sha256 b5017b7d2..., byte-verified before every build) +
+           lib.artifact.load_bad_topics (topic-grain flag + frontier_score_std exclusion)"
+  build_step: "pipeline/46_build_partner_views.py"
+  keys: [partner_id, topic_id, year, conf_state]
+  read_by_app: true
+  lazy: true
+  read_by:
+    - "Streamlit/lib/lazy.py key partner_id -- I5's topic-depth extension (I11)"
+    - "partner_topic_cell_pubs drill path (ptn_works, in-slice filter on this cell's topic_id)"
+  rows_expected: 429971
+  new_in_v2: true
+  row_grain: >
+    GRAIN CORRECTED (P2 catch, fix round 3, chain pass 3): partner x topic x year x
+    conf_state{all,no_conf}, sparse long (only years with >=1 co-work IN THAT STATE) --
+    docs/foundry/data_foundation.yaml's own grain line now reads this way too. Root cause: the
+    parent drill table ptn_fields IS conf-keyed, so a no_conf field-grain row drilling down into
+    ptn_topics rendered topic rows built from the ALL-types corpus -- a cross-grain inconsistency.
+    conf_state='all': 224,396 rows / 156,164 distinct cells (UNCHANGED, canonical, row-for-row
+    IDENTICAL to the pre-fix-round-3 table -- asserted in the builder against the on-disk
+    reference before overwrite). conf_state='no_conf': 205,575 rows / 144,096 cells (PINNED
+    reference, no golden exists -- cells >=3: 22,856; cells >=20 (total-count): 1,127; delta
+    populated on 741 cells). Total 429,971 rows. frontier_score_std and artifact_flag are
+    state-INVARIANT topic properties (never vary by conference-toggle state) -- computed once,
+    carried identically on both states' rows for the same topic_id.
+  why_deployed: "I11 hard requirement: per-topic volume, yearly sparkline, median FWCI_FR,
+    standardised frontierness, artifact flag, two-window numeric delta -- now correctly
+    conf-keyed to match its parent drill table ptn_fields."
+  write_spec: "sorted by [partner_id, conf_state] (partner_id primary -- unaffected for pruning),
+    row_group_size=5000, 86 row groups (Class-1 floor num_row_groups>=n_rows/10000=43.0: PASS).
+    Prune proof: 1/86 row groups touched (1.2% of partner_id-column bytes) for a mid-volume
+    partner, 162 rows returned (both conf_state rows for that partner's cells)."
+  frontier_score_std_note: >
+    CORRECTED (manager fix round, chain pass 3, E1a catch): originally computed as this stream's
+    own field-standardised z-score of OA_frontier_scores.xlsx, read in place before W3's copy-in
+    existed -- a cross-table inconsistency once thm_frontier.parquet shipped with the REAL
+    card-blessed baseline (the plan's OA_frontier_scores.xlsx pointer was a transcription error,
+    per data_foundation.yaml's supersessions block). Now reads the SAME file
+    inputs/manual/frontierness_baseline.xlsx thm_frontier.parquet reads (byte copy of RPF's
+    "Readout/Raw data/Cleaning bad OA topics.xlsx", sha256 b5017b7d298e088013951f2823b80f93739
+    fee8b9d26a9376868f029c7cf37ac -- asserted in frontier_score_lookup() before every build),
+    sheet "FILTERING OUT TOPICS", column "Average frontierness" taken AS-IS (already a
+    z-scored-within-bin ACCORD composite upstream; neither this builder nor
+    47_build_thematic_ext.py re-standardises it). NULL for the 811 excluded topics (assert
+    n_excluded==811, same set as lib.artifact.load_bad_topics()). Score vintage now stamped
+    CONSISTENT with thm_frontier: spot-checked 5 topics against thm_frontier's texture rows
+    (conf_state='all') -- 5/5 exact float match (T13146, T11714, T11765, T11636, T11458).
+    thm_frontier's own texture table is only a top-20-by-score subset (per
+    docs/foundry/data_foundation.yaml's "texture: topic top-N" grain note); ptn_topics computes
+    the FULL kept-topic lookup from the identical source so every topic the two tables share
+    agrees, not just that top-20 window.
+  delta_value_note: >
+    canonical_counts.ptn_topics_cells_ge20 (1,293) is a SIMPLE 5-year-total floor (no windowing,
+    F0-P1's own method) -- a cell-EXISTENCE count, not a delta-POPULATION count. delta_value/
+    delta_flag additionally require BOTH two-window halves populated (c1>0 AND c2>0) with their
+    sum >=20, mirroring the frozen method's own eligibility gate; there is no new/dormant fallback
+    at this grain (classes/acceleration refused by name, sec.6.6), so cells whose volume
+    concentrates in one window (or the unused 2021 hinge year) clear the total floor but get NULL
+    deltas by design. Measured this build: 878 of the 1,293 cells have both windows populated.
+  columns:
+    - {name: "partner_id", dtype: category}
+    - {name: "topic_id", dtype: category}
+    - {name: "subfield_id", dtype: category, from: "the topic's own (static) subfield -- corpus_topics"}
+    - {name: "year", dtype: int16}
+    - {name: "conf_state", dtype: category, allowed: [all, no_conf], from: "GRAIN ADDITION (fix
+       round 3) -- 'no_conf' rows drop is_conference works before cell assembly (co_works,
+       co_works_xa, fwci_fr_median_cell, delta_value, delta_flag ALL recomputed on the filtered
+       pairs, using ptn_mom_facts' no_conf d1/d2/med as the delta reference); frontier_score_std
+       and artifact_flag are state-invariant and identical on both rows for the same topic_id"}
+    - {name: "co_works", dtype: int32}
+    - {name: "co_works_xa", dtype: int32}
+    - {name: "fwci_fr_median_cell", dtype: float64, nullable: true, from: "median FWCI_FR over
+       indicator_status=='computed' works in this (partner,topic) CELL, all years combined --
+       DEFERRED twin (no _xa), floor-free (D53: NULL only if 0 works-with-indicators in the cell),
+       broadcast across every year-row of the same cell"}
+    - {name: "frontier_score_std", dtype: float64, nullable: true, from: "topic-level constant
+       (see frontier_score_std_note), broadcast across every partner/year row for that topic"}
+    - {name: "artifact_flag", dtype: bool, from: "TOPIC-grain marker (topic_id in the 811-topic
+       exclusion list) -- NOT the work-level flag; per sec.6.2 'topic grain: the topic row itself
+       carries the marker'"}
+    - {name: "delta_value", dtype: float64, nullable: true, from: "recentred two-window ratio
+       (c2/D2)/(c1/D1)/MED, reusing ptn_mom_facts('all' row)'s d1/d2/med as the shared recentring
+       reference; NULL unless both windows populated with sum>=20 (see delta_value_note),
+       broadcast across every year-row of the cell"}
+    - {name: "delta_flag", dtype: "boolean (nullable)", from: "delta_value's own two-proportion
+       significance test, p<0.05; NULL wherever delta_value is NULL"}
+    - {name: "snapshot_date", dtype: string}
+  artifact_invariant_columns: "frontier_score_std (topic-level baseline property) ·
+    fwci_fr_median_cell (DEFERRED twin)"
+  artifact_exempt_families: "delta_value/delta_flag (momentum-family ruling)"
+  floors: "sparkline >=3 (25,460 cells, total-count); delta populated on 878 (of the 1,293 cells
+    clearing the >=20 total-count floor) needing both windows"
+  invariants:
+    - "conf_state='all' slice: 224,396 rows / 156,164 distinct cells -- EXACT match to
+       canonical_counts AND row-for-row IDENTICAL to the pre-fix-round-3 table (asserted in the
+       builder by diffing against the on-disk table before overwrite)"
+    - "cells >=3 == 25,460; cells >=20 (total-count) == 1,293 -- EXACT match, asserted (all-state)"
+    - "conf_state='no_conf' slice: 205,575 rows / 144,096 cells (pinned reference, no golden)"
+    - "Class-1 row-group floor + <20% prune-proof bytes, both asserted in the builder"
+  known_downstream_blocker: >
+    docs/data_contract.yaml's ptn_topics entry (merged by E1a 2026-08-15) still declares
+    keys: [partner_id, topic_id, year] and has no conf_state column -- STALE as of this grain
+    correction. `pipeline/60_deploy.py` and `tests/test_contract_tables.py`
+    (test_contract_validation_passes[ptn_topics.parquet], test_pk_unique_on_every_deployed_file)
+    both FAIL against the corrected source table (duplicate key under the old 3-column
+    declaration -- 205,575 duplicates, exactly the no_conf row count). This is a cross-stream
+    contract-merge staleness, the same class of issue as this table's own now-resolved
+    frontier_score_std collision (E1a's prior comment: "reported to the orchestrator... not
+    silently patched") -- NOT fixed here (data_contract.yaml is out of this stream's scope
+    fence); needs E1a to re-merge this fragment (keys -> [partner_id, topic_id, year,
+    conf_state] + the conf_state column declaration) before deploy/pytest can go green again.
+  dropped_from_v1: []

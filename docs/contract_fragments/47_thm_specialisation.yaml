@@ -1,0 +1,75 @@
+# Contract fragment -- thm_specialisation.parquet (Stream W3, pipeline/47_build_thematic_ext.py)
+#
+# Per BUILD_PLAN.md S13: each builder emits per-table YAML fragments here; E1 (integrator) merges
+# them into docs/data_contract.yaml + the 60_deploy file set. Format mirrors the 48_* fragments
+# (see 48_dim_subsets.yaml for the reference shape).
+#
+# Full design rationale: docs/foundry/data_foundation.yaml rev 3.1, table `thm_specialisation`
+# (producers.47_build_thematic_ext.py). T4 "Specialisation index vs France"
+# (docs/indicator_plan_FINAL.md S4, depth map S6.6: headline+deepest level = field/subfield --
+# "the France baseline exists only at subfield grain, there is no topic-level reference population").
+
+thm_specialisation.parquet:
+  source: "works_master.parquet (primary_field_id/primary_subfield_id, In_LUE, is_conference,
+           artifact_flag via lib.artifact.flag_works) + france_baseline_strata.parquet +
+           all_topics.parquet (subfield->field rollup mapping)"
+  build_step: "pipeline/47_build_thematic_ext.py"
+  keys: [level, node_id, conf_state, subset_id]
+  read_by_app: true
+  read_by:
+    - "T4 Specialisation index vs France (Thematic Overview panel)"
+    - "PM3 Perimeter contrast (P-V4) -- consumes the in_lue subset rows"
+  rows_expected: 1112
+  new_in_v2: true
+  row_grain: >
+    one row per (level, node_id) x conf_state x subset_id -- level in {field (26), subfield (252)},
+    subset_id in {all, in_lue} per subset_row_matrix. 26 + 252 = 278 nodes x 2 conf_states x 2
+    subsets = 1,112 rows.
+  why_deployed: >
+    activity Location Quotient (LQ) vs the French baseline population, at both field and subfield
+    grain, per subset_row_matrix's declared thm_specialisation: [all, in_lue] expansion. LQ =
+    (UL node share of its subset total) / (France node share of the France total for that
+    conf_state). France side is a FIXED external reference (france_baseline_strata.parquet) --
+    identical across the `all` and `in_lue` subset rows for the same node/conf_state; only the UL
+    numerator side varies by subset.
+  construction_note: >
+    france_baseline_strata (5,271 rows: subfield_id x publication_year x type) is summed over
+    years, and over type (all types for conf_state=='all'; excluding type=='conference-paper' for
+    conf_state=='no_conf') to get france_works per subfield, then rolled up to field via
+    all_topics' subfield_id->field_id mapping. Golden reproduced exactly: 252 distinct subfields,
+    sum(n)==1,098,847 (conf_state=='all'); no_conf drops to 250 subfields / 891,704 (two subfields
+    have zero non-conference French works in this baseline -- a fact about the reference
+    population, not a pipeline defect). activity_index_lq_xa recomputes ONLY the UL-side
+    numerator+denominator on artifact-excluded works; the France side is artifact-INVARIANT by
+    construction (france_baseline_strata carries no topic grain, so there is no way to know which
+    France works sit on an excluded topic -- disclosed caveat, matches dim_corpus_facts' own
+    france_* artifact-invariance note).
+  columns:
+    - {name: "level", dtype: string, allowed: [field, subfield], from: "which taxonomy grain this row reports"}
+    - {name: "node_id", dtype: string, from: "field_id (26 values) when level=='field'; subfield_id
+       (252 values) when level=='subfield' -- both bare OpenAlex-taxonomy string ids, matching
+       all_topics.field_id/subfield_id"}
+    - {name: "conf_state", dtype: string, allowed: [all, no_conf], from: "is_conference toggle state"}
+    - {name: "subset_id", dtype: string, allowed: [all, in_lue], from: "PM1 perimeter selector (subset_row_matrix)"}
+    - {name: "ul_works", dtype: int64, from: "count of works_master rows in this subset/conf_state
+       whose primary_{field|subfield}_id == node_id"}
+    - {name: "ul_works_xa", dtype: int64, from: "ul_works restricted to artifact_flag==False"}
+    - {name: "france_works", dtype: int64, from: "france_baseline_strata.n summed for this node/conf_state
+       (subset-INVARIANT -- see construction_note)"}
+    - {name: "activity_index_lq", dtype: float64, nullable: true,
+       from: "(ul_works/ul_total) / (france_works/france_total[conf_state]); NULL (never 0/inf,
+       D53) when france_works==0 or ul_total==0"}
+    - {name: "activity_index_lq_xa", dtype: float64, nullable: true,
+       from: "same formula, ul_works_xa/ul_total_xa numerator, SAME france_works denominator
+       (artifact-invariant caveat)"}
+    - {name: "floor_flag", dtype: bool, from: "ul_works < config.metrics.min_stratum_n (30)"}
+    - {name: "snapshot_date", dtype: string, from: "config.yaml project.snapshot_id"}
+  artifact_invariant_columns: "france_works (no topic grain in the France baseline -- the
+    activity_index_lq_xa UL-side-only caveat, per data_foundation.yaml's own note on this table)"
+  invariants:
+    - "252 distinct subfields in france_baseline_strata; sum(n)==1,098,847 (conf_state=='all')"
+    - "no_conf: sum(n)==891,704 across the subfields that have >=1 non-conference French work"
+    - "level in {field, subfield}; node_id resolves in all_topics.field_id/subfield_id"
+    - "(level, node_id, conf_state, subset_id) unique"
+    - "activity_index_lq NEVER 0 or inf where undefined -- NULL instead (D53)"
+  dropped_from_v1: []

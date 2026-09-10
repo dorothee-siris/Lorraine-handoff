@@ -1,0 +1,107 @@
+# Contract fragment -- aut_coverage.parquet (Stream W4, pipeline/45b_build_author_views.py)
+# Per BUILD_PLAN.md S13. Design source: docs/foundry/data_foundation.yaml rev 3.1, table
+# `aut_coverage`. A3 "identifier coverage & freshness panel" (docs/indicator_plan_FINAL.md S5,
+# safeguard 5: "collective evidence, never a compliance scoreboard").
+
+aut_coverage.parquet:
+  source: "ul_authors.parquet (orcid/idhal presence, own_labs) + works_master.parquet
+           (Labs/primary_field*/publication_year/hal_authors_idhal, the 'hal-link fields') +
+           corpus_authorships.parquet (UL-side authorship rows, exploded to person_id) +
+           ul_authors_review_queue.parquet + MANIFEST.json step 45_build_authors' own
+           X_orcid_conflict_blocked count"
+  build_step: "pipeline/45b_build_author_views.py"
+  keys: [unit_kind, unit_id, conf_state]
+  read_by_app: false
+  new_in_v2: true
+  rows_measured: "212 (68 lab + 27 field-incl-UNKNOWN... see breakdown below + 5 year + 6 population,
+                  each x2 conf_state) -- 0.021 MB disk. Diverges from the YAML's own sizing comment
+                  ('rows ~3,390 x2') because that figure describes an EARLIER (F0-P3, pass 2) full
+                  lab x year x field CROSS grain prototype; the W4 dispatch's Build rules explicitly
+                  supersede that with a STACKED UNION of four independent grains ('collective grains
+                  ONLY: lab x year x field x population ROWS' -- read as a list of row kinds, not a
+                  cross-product), which is also the only grain that has room for the identity-ledger
+                  population rows (merged profiles / review queue / unresolved share) the dispatch
+                  also requires -- those facts do not fit any (lab, year, field) tuple. Breakdown per
+                  conf_state: 68 labs (67 curated + NO LAB, exploded from works_master.Labs -- a work
+                  with 2-7 pipe-joined labs counts once per lab, F0-P3's own explode method reused
+                  verbatim) + 27 fields (26 populated + 1 UNKNOWN bucket) + 5 years (2019-2023) + 6
+                  population rows = 106; x2 conf_state = 212."
+  row_grain: >
+    unit_kind in {lab, field, year, population} x unit_id x conf_state. NEVER a per-person row
+    (safeguard 5): the schema itself makes a lab-level ORCID league table unrepresentable, not just
+    discouraged in the UI.
+  unknown_vs_absent: >
+    'NO LAB' (unit_kind='lab') is a DEFINED ABSENCE -- a work genuinely outside any curated lab,
+    kept as its own explicit row, never dropped. unit_id='UNKNOWN' (unit_kind='field') is GENUINELY
+    UNKNOWN -- the topic classifier assigned no primary field (51 works, 0.14% of the corpus) -- kept
+    as its own explicit row with no person roster (field membership is undefined for these works).
+    The two are deliberately distinguished in unknown_distinct_note per row, per the dispatch's
+    explicit "unknown-vs-absent kept distinct" requirement.
+  column_overloads: >
+    Two deliberate, documented overloads of the fixed 13-column contract (both flagged per-row in
+    unknown_distinct_note, since the declared columns have no dedicated slot for either concept):
+    (1) unit_kind='year' rows use n_persons/n_persons_orcid/pct_orcid to carry UL-CREDITED
+    AUTHORSHIP ROW counts and their ORCID share for that year (not distinct persons) -- this is
+    indicator_plan_FINAL.md S5's "UL-side authorship ORCID share" figure (67.1/69.5/72.0/72.6/71.5%
+    across 2019-23), which is row-grain by construction (the same person recurs across years, so
+    only a row-level share captures the year-over-year identifier-uptake dynamic). n_works /
+    n_works_orcid_author / pct_works_orcid on the SAME year rows stay work-grain ("share of that
+    year's works with >=1 ORCID'd UL author"), giving both cuts on one row.
+    (2) the three identity-ledger population rows (merged_profiles / review_queue /
+    unresolved_share) repurpose n_persons and/or pct_orcid to carry raw counts and shares that are
+    not person-coverage rates at all (a merged-profile count, a raw pair count, and a
+    share-of-detected-conflicts figure respectively) -- see the population row list below.
+  columns:
+    - {name: "unit_kind", dtype: category, allowed: [lab, field, year, population]}
+    - {name: "unit_id", dtype: string,
+       from: "lab code (incl. 'NO LAB') | primary_field_id (incl. 'UNKNOWN') | 4-digit year string |
+              one of {all_persons, persons_ge5works, all_works, merged_profiles, review_queue,
+              unresolved_share}"}
+    - {name: "unit_label", dtype: string, from: "human-readable label per unit_id (field_name for
+       fields; the lab code itself for labs, no separate long name available; the year string
+       itself; a hand-written sentence for population rows)"}
+    - {name: "conf_state", dtype: category, allowed: [all, no_conf]}
+    - {name: "n_persons", dtype: float64, nullable: true,
+       from: "person-grain count -- see column_overloads for the year/population deviations. Person
+              roster for lab = ul_authors.own_labs_joined exploded (this person's OWN UL-credited
+              affiliation, conf_state-filtered on the underlying authorship rows -- NOT works_master's
+              Labs column, which would mis-attribute co-authors of a multi-lab work to labs they are
+              not personally affiliated with). Person roster for field = >=1 UL-credited work with
+              that primary field, conf_state-filtered (a whole-work property, no equivalent
+              mis-attribution risk)."}
+    - {name: "n_persons_orcid", dtype: float64, nullable: true, from: "same roster, ORCID-non-null subset"}
+    - {name: "pct_orcid", dtype: float64, nullable: true, from: "n_persons_orcid / n_persons (or a
+       repurposed value -- see column_overloads); D53 null-never-0, never computed on a 0-person roster"}
+    - {name: "n_works", dtype: float64, nullable: true, from: "ALL corpus works in this unit
+       (conf_state-filtered), work-grain, independent of UL-crediting -- matches F0-P3's own method"}
+    - {name: "n_works_orcid_author", dtype: float64, nullable: true,
+       from: "of those, count with >=1 ORCID'd UL-side author (any authorship row on that work where
+              institution is_ul==True and orcid is non-null)"}
+    - {name: "pct_works_orcid", dtype: float64, nullable: true, from: "n_works_orcid_author / n_works"}
+    - {name: "idhal_proxy_pct", dtype: float64, nullable: true,
+       from: "share of this unit's works with a non-empty works_master.hal_authors_idhal -- a
+              WORK-level proxy (corpus_authorships carries no per-author-row idHAL flag), same
+              modelling choice F0-P3 already documented, not a gap"}
+    - {name: "unknown_distinct_note", dtype: string, from: "per-row disclosure text -- documents the
+       NO LAB/UNKNOWN distinction, the year/population column overloads, or a plain collective-grain
+       statement"}
+    - {name: "snapshot_date", dtype: string, from: "config.yaml project.snapshot_id"}
+  population_rows: >
+    all_persons (n_persons=12,680; conf_state-invariant) * persons_ge5works (floor reapplied to the
+    conf_state-filtered n_works for no_conf, per S6.5) * all_works (work-grain; pct_works_orcid IS
+    the "works with >=1 ORCID'd UL author" golden on conf_state=all) * merged_profiles (n_persons =
+    count with ul_authors.n_profiles>1 = 1,043; pct_orcid repurposed = share of all persons) *
+    review_queue (n_persons repurposed = raw pair count = len(ul_authors_review_queue) = 20) *
+    unresolved_share (pct_orcid repurposed = 20 / MANIFEST's X_orcid_conflict_blocked (5,393) =
+    the share of every detected ORCID conflict that reached human review rather than being silently
+    dropped).
+  invariants:
+    - "(unit_kind, unit_id, conf_state) unique"
+    - "GOLDEN (F0-P3/plan S5, conf_state=all, tolerance <0.05pt): all_works.pct_works_orcid == 72.6%;
+       persons_ge5works.pct_orcid == 72.4%; all_persons.pct_orcid == 48.6%"
+    - "GOLDEN by-year (year rows, pct_orcid, conf_state=all, tolerance <=0.15pt -- see report for
+       the one explained 0.07pt rounding-boundary delta on 2022): 2019 67.1% / 2020 69.5% / 2021
+       72.0% / 2022 72.6% / 2023 71.5%"
+    - "2023 < 2022 on the by-year series (the dip is INTACT, never smoothed)"
+    - "NO LAB and UNKNOWN rows present and never silently dropped"
+  dropped_from_v1: []

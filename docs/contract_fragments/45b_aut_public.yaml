@@ -1,0 +1,89 @@
+# Contract fragment -- aut_public.parquet (Stream W4, pipeline/45b_build_author_views.py)
+#
+# Per BUILD_PLAN.md S13: each builder emits per-table YAML fragments here; E1 (integrator) merges
+# them into docs/data_contract.yaml + the 60_deploy file set. Shape mirrors the reference format
+# in docs/contract_fragments/48_dim_subsets.yaml.
+#
+# Full design rationale: docs/foundry/data_foundation.yaml rev 3.1, table `aut_public`
+# (producers.45b_build_author_views.py). A1 "author volume & thematic identity"
+# (docs/indicator_plan_FINAL.md S5); safeguard 1 (table split, no impact column, ever).
+
+aut_public.parquet:
+  source: "Streamlit/data/ul_authors.parquet (12,680-person reconciled directory, deployed input
+           per the W4 dispatch) + works_master.parquet (conf/artifact flags, primary field/subfield
+           for thematic identity) + corpus_authorships.parquet (author_id -> person_id mapping)"
+  build_step: "pipeline/45b_build_author_views.py"
+  keys: [author_id]
+  read_by_app: false   # W4 builds the table only; A-V1/A-V2 wiring is Studio's job, post-workshop
+  rows_expected: 12680
+  new_in_v2: true
+  row_grain: >
+    ONE row per person (author_id == ul_authors.person_id, renamed). conf_state and the artifact
+    toggle are COLUMNS (n_works / n_works_noconf / n_works_xa / n_works_noconf_xa), never row
+    dimensions -- same tunnel #12 RAM ruling already applied to dim_subsets, avoiding a 2x/4x
+    row-doubling on a 12,680-row directory table.
+  why_deployed: >
+    docs/indicator_plan_FINAL.md A1: "per person: works, UL-credited share, labs, thematic identity
+    (top fields/subfields), ORCID/idHAL presence" -- the A-V1 "Annuaire des auteur·es" directory
+    source. STRUCTURALLY carries no impact column (safeguard 1): a UI toggle cannot un-hide what
+    the schema never had. `laureate_tags` ships as an empty-string stub (A4 -- populated once the
+    client's ERC/IUF/HCR lists arrive, async, owner GT Indicateurs).
+  deviations_from_yaml_draft: >
+    The draft YAML names two bare columns, `thematic_identity_fields` / `thematic_identity_subfields`,
+    without specifying an encoding. The dispatch explicitly allowed either "a plain comma-joined
+    label string ONLY if the YAML says so" or "two compact columns with top-3 ids+labels" and asked
+    for the choice to be documented here. Since the YAML does not specify a single-string format,
+    this builder ships FOUR columns (ids + labels, per level) rather than two -- a comma-joined
+    single string mixing ids and labels would either lose the id (needed for any future drill-through
+    to the Thematic Overview taxonomy) or reintroduce a disallowed separator. No other deviation.
+  columns:
+    - {name: "author_id", dtype: string, from: "ul_authors.person_id"}
+    - {name: "display_name", dtype: string, from: "ul_authors.display_name"}
+    - name: "orcid"
+      dtype: string
+      nullable: true
+      from: "ul_authors.orcids_joined, first (lexicographically smallest, pre-sorted) token"
+      why: "27 persons (of 12,680) hold >1 distinct ORCID via a known transitive-merge edge case
+            documented in pipeline/45_build_authors.py's own module docstring (rule X blocks a
+            DIRECT conflict pair, but a same-cluster A-B-C chain routed through a no-ORCID
+            intermediate B can still land two different real ORCIDs in one person -- e.g. the
+            Patrick Rossignol case named there). This column keeps the first value deterministically
+            rather than silently averaging/concatenating; the multi-ORCID fact itself is NOT
+            re-surfaced on this table (it already lives in ul_authors' own n_profiles/review-queue
+            machinery, out of this stream's fence to touch)."
+    - {name: "idhal", dtype: string, nullable: true,
+       from: "ul_authors.idhals_joined, first token (same construction as orcid; 4 persons affected)"}
+    - {name: "n_works", dtype: int32, from: "count of aut_works rows for this author_id (== ul_authors.n_works,
+       asserted identical by independent recompute -- ALL corpus works this person's OpenAlex
+       profile(s) are credited author on, NOT filtered to UL-credited rows -- see aut_works'
+       fragment for the full design note)"}
+    - {name: "n_works_noconf", dtype: int32, from: "n_works restricted to is_conference==False"}
+    - {name: "n_works_xa", dtype: int32, from: "n_works restricted to artifact_flag==False (lib.artifact.flag_works)"}
+    - {name: "n_works_noconf_xa", dtype: int32, from: "both filters combined"}
+    - {name: "ul_credited_works", dtype: int64, from: "ul_authors.ul_credited_works, unchanged",
+       why: "D42 (docs/data_contract.yaml): 5,877+ persons are credited a Lorraine structure on far
+             fewer works than n_works suggests (e.g. Silvio Danese: 281 corpus works, 1 UL-credited)
+             -- carried through unfiltered as the credit-fact safeguard the plan names for this column"}
+    - {name: "main_labs", dtype: string, nullable: true,
+       from: "ul_authors.own_labs_joined, ' | ' replaced by ', ' (no-blob-separator convention)"}
+    - {name: "thematic_identity_fields_ids", dtype: string, nullable: true,
+       from: "top-3 primary_field_id by work count (ALL-corpus basis, ties broken by id ascending),
+              comma-joined"}
+    - {name: "thematic_identity_fields_labels", dtype: string, nullable: true,
+       from: "matching primary_field_name labels, same order"}
+    - {name: "thematic_identity_subfields_ids", dtype: string, nullable: true,
+       from: "top-3 primary_subfield_id by work count, comma-joined (S6.6: A1's deepest shipped
+              level is 'top subfields' -- no topic-level identity, small per-person corpora make
+              topic identity noise)"}
+    - {name: "thematic_identity_subfields_labels", dtype: string, nullable: true, from: "matching labels"}
+    - {name: "laureate_tags", dtype: string, from: "'' (empty string) for every row -- A4 stub"}
+    - {name: "snapshot_date", dtype: string, from: "config.yaml project.snapshot_id"}
+  invariants:
+    - "rows == 12,680 exactly"
+    - "STRUCTURAL: no column name matches the Class-1 regex fwci|pptop|impact|citation (case-insensitive)"
+    - "n_works >= n_works_noconf >= n_works_noconf_xa; n_works >= n_works_xa >= n_works_noconf_xa"
+    - "ul_credited_works <= n_works for every row"
+    - "n_works reconciles EXACTLY with the per-author row count of aut_works (required cross-table assert)"
+    - "independent recompute of n_works (via the exploded author_id->person_id mapping +
+       corpus_authorships) == ul_authors.n_works for all 12,680 persons -- 0 mismatches"
+  dropped_from_v1: []

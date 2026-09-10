@@ -1,0 +1,10 @@
+# requirements-dev.txt -- outils de VERIFICATION uniquement, jamais deployes en
+# production (Streamlit Community Cloud installe Streamlit/requirements.txt seul).
+# Ships avec le depot depuis la passe 7a (P7-R7/P15 -- tests/ + ops/ + ce fichier
+# reversent le whitelist du 2026-08-20 pour ces trois chemins). Versions figees
+# depuis le freeze de l'environnement pinned verifie, reports/pass7_probes_pipfreeze.txt
+# (S-PRB, W0) -- meme discipline de pin que Streamlit/requirements.txt : bump
+# deliberement, puis relancer la suite avant de commiter.
+pytest==9.1.1
+playwright==1.62.0
+# + `python -m playwright install chromium` (telecharge le binaire, hors pip -- README.md § Verifier)

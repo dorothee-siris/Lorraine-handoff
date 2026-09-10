@@ -1,0 +1,41 @@
+entity,page,metric,displayed_value,recomputed_value,note
+IJL,Lab_Overview,lab_pubs_total,2 188,2188,
+IJL,Lab_Overview,lab_international_count,1 334,1334,
+CREAT,Lab_Overview,lab_pubs_total,20,20,
+CREAT,Lab_Overview,lab_international_count,2,2,
+NO LAB,Lab_Overview,lab_pubs_total,4 568,4568,
+NO LAB,Lab_Overview,lab_international_count,1 958,1958,
+LORIA,Lab_Overview,lab_pubs_total,1 592,1592,
+LORIA,Lab_Overview,lab_international_count,863,863,
+CAPSID,Lab_Overview,lab_pubs_total,27,27,hors-liste openalex_id=I4405259729
+CREAT,Lab_Overview,d53_excluded_disclosure,1,1,
+IJL|I1311948675,Lab_Overview,partner_co_works,74,74,side=intl name=Consumer Product Safety grid_index=4
+IJL|I1294671590,Lab_Overview,partner_co_works,1578,1578,side=fr name=Centre National de la Recherche Scientifique grid_index=5
+LORIA|I4210099593,Lab_Overview,partner_co_works,76,76,side=intl name=Computer Algorithms for Medicine grid_index=3
+LORIA|I1294671590,Lab_Overview,partner_co_works,1018,1018,side=fr name=Centre National de la Recherche Scientifique grid_index=4
+CRAN|I154526488,Lab_Overview,partner_co_works,152,152,side=fr name=Inserm grid_index=4
+3312,Thematic_Drilldown,subfield_pubs_total,2 542,2542,Sociology and Political Science
+3312,Thematic_Drilldown,subfield_fwci_median,0.00,0.0,Sociology and Political Science
+3312,Thematic_Drilldown,subfield_pct_top10_display,5.4%,,Sociology and Political Science
+2505,Thematic_Drilldown,subfield_pubs_total,1 199,1199,Materials Chemistry
+2505,Thematic_Drilldown,subfield_fwci_median,0.43,0.4257,Materials Chemistry
+2505,Thematic_Drilldown,subfield_pct_top10_display,6.4%,,Materials Chemistry
+3600,Thematic_Drilldown,subfield_pubs_total,1 145,1145,General Health Professions
+3600,Thematic_Drilldown,subfield_fwci_median,0.00,0.0,General Health Professions
+3600,Thematic_Drilldown,subfield_pct_top10_display,5.9%,,General Health Professions
+2204,Thematic_Drilldown,subfield_pubs_total,987,987,Biomedical Engineering
+2204,Thematic_Drilldown,subfield_fwci_median,0.56,0.5608,Biomedical Engineering
+2204,Thematic_Drilldown,subfield_pct_top10_display,13.1%,,Biomedical Engineering
+1108,Thematic_Drilldown,subfield_pubs_total,2,2,Horticulture
+1108,Thematic_Drilldown,subfield_fwci_median,n/a,n/a,Horticulture
+1108,Thematic_Drilldown,subfield_pct_top10_display,n/a,,Horticulture
+1,Thematic_Overview,fwci_gradient_fill,"rgb(200, 139, 128)",0.3776,Life Sciences
+2,Thematic_Overview,fwci_gradient_fill,"rgb(236, 135, 115)",0.0,Social Sciences
+3,Thematic_Overview,fwci_gradient_fill,"rgb(201, 139, 128)",0.3598,Physical Sciences
+4,Thematic_Overview,fwci_gradient_fill,"rgb(211, 138, 124)",0.2597,Health Sciences
+0,Thematic_Overview,fwci_gradient_fill,"rgb(68, 68, 68)",n/a,Unclassified
+panel,Thematic_Overview,sdg_tagged_works,5447,,
+panel,Thematic_Overview,sdg_corpus_total,36819,,
+panel,Thematic_Overview,sdg_coverage_pct,14.8,,
+panel,Thematic_Overview,sdg_title_only_count,180,,
+panel,Thematic_Overview,sdg_total_assignments,7871,,
