@@ -2,23 +2,21 @@
 """
 Pass-7a (P-ZOOM) pins -- pages/9_Zoom_partenaire.py's new BenchUp-signature sections
 (balance bars, topic planes, reciprocity in BenchUp form, portage via bars_with_gutter,
-the phares KPI, the page workbook). Owned by stream P-ZOOM only.
+the phares KPI, the page workbook), PLUS the FIX-1 defects S-LENS's hostile-verification
+pass raised (docs/LENS_ABSORPTION_pass7a.md, D1/D2/D4-D11/D13).
 
     .venv-pinned\\Scripts\\python -m pytest tests\\test_page7_zoom.py -q
 
+FIX-1 / D9 (S-LENS A13): the page's own frame-building logic now lives in
+`Streamlit/lib/partner_frames.py` (pure pandas, no Streamlit import) SPECIFICALLY so this
+file can import and call it directly on real `Streamlit/data/*.parquet` frames -- every
+"never negative" / "reconstructs the frame" / "selection <= N" / "dropped and counted" pin
+below calls a `lib.partner_frames` function and mutates its INPUT (never a private copy of
+the formula), so a regression in that module fails the pin here, not just in the page.
+
 Idiom: same namespace-swap + AppTest pattern as tests/test_page_pf.py (this repo has TWO
 packages named `lib`; `_neutralize_page_link` works around the same pre-existing AppTest
-harness limitation that file already documents -- st.page_link() raises KeyError
-'url_pathname' under AppTest regardless of which page triggers it, so it is monkeypatched
-to a no-op for every test here, which lets AppTest.from_file() load page 9 DIRECTLY with
-`?partner_id=` in query_params, with no need to hop through Menu/Collaborations first).
-
-`tests/_registry.py` frame composers are the LIFT SOURCE this page's own frame-building
-functions were adapted from; several tests below independently recompute the same
-relationships straight from `Streamlit/data/*.parquet` (never by importing the page's
-internal functions -- the page is a script with module-level Streamlit calls, not an
-importable library) so a regression in the page's OWN logic is caught even though the
-computation is intentionally duplicated once, here, for the purpose of testing it.
+harness limitation that file already documents).
 
 Vacuity rule (P14): every assertion below is followed by an in-memory mutation (or a
 mutated copy) that makes the identical check FAIL -- a pin that cannot fail is theater.
@@ -67,9 +65,6 @@ def _exc_values(at: AppTest) -> list:
 
 
 def _neutralize_page_link(monkeypatch) -> None:
-    """Same pre-existing AppTest limitation tests/test_page_pf.py documents (KeyError
-    'url_pathname' on ANY st.page_link() call under direct AppTest.from_file()) --
-    neutralised so these tests isolate page 9's OWN logic."""
     import streamlit as st_mod
     monkeypatch.setattr(st_mod, "page_link", lambda *a, **k: None)
 
@@ -89,6 +84,20 @@ def _goto_partner(monkeypatch, partner_id: str) -> AppTest:
     return at
 
 
+def _taxonomy_maps():
+    t = pd.read_parquet(DATA_DIR / "all_topics.parquet")
+    field_id2name = dict(zip(t["field_id"].astype(int), t["field_name"]))
+    subfield_id2name = dict(zip(t["subfield_id"].astype(int), t["subfield_name"]))
+    field_id2domain = dict(zip(t["field_id"].astype(int), t["domain_id"]))
+    domain_id2name = dict(zip(t["domain_id"], t["domain_name"]))
+    return t, field_id2name, subfield_id2name, field_id2domain, domain_id2name
+
+
+def _cnrs_summary_row():
+    s = pd.read_parquet(DATA_DIR / "ptn_summary.parquet")
+    return s[(s["partner_id"] == CNRS_ID) & (s["subset_id"] == "all") & (s["conf_state"] == "all")].iloc[0]
+
+
 # ============================================================================
 # Smoke: the three reference partners render with no exception (deliverable 11's set)
 # ============================================================================
@@ -105,9 +114,6 @@ def test_chru_loads_via_query_param_no_exception(monkeypatch):
 
 
 def test_thin_partner_renders_without_exception_and_shows_a_thin_disclosure(monkeypatch):
-    """< 20 co-pubs (I4210137456, co_works_full=19): every new section must degrade to an
-    honest-empty/caption state, never raise -- and at least ONE of the thin-partner
-    disclosure captions this pass introduces must actually appear."""
     _skip_if_missing("ptn_summary.parquet", "ptn_fields.parquet", "ptn_topics.parquet")
     at = _goto_partner(monkeypatch, THIN_ID)
     body = " ".join(c.value for c in at.caption) + " ".join(i.value for i in at.info)
@@ -117,8 +123,7 @@ def test_thin_partner_renders_without_exception_and_shows_a_thin_disclosure(monk
         "sous le seuil", "Aucun", "mesuré",
     ]
     assert any(m in body for m in thin_markers), body
-    # vacuity: an empty marker list can never match -- proves the assertion is live
-    assert not any(m in body for m in [])
+    assert not any(m in body for m in [])  # vacuity: an empty marker list can never match
 
 
 def test_balance_bars_level_and_mode_controls_survive_a_rerun(monkeypatch):
@@ -130,8 +135,7 @@ def test_balance_bars_level_and_mode_controls_survive_a_rerun(monkeypatch):
     at.run(timeout=TIMEOUT)
     assert not at.exception, _exc_values(at)
     assert at.session_state["v2_balance_mode"] == "phares"
-    # vacuity
-    assert at.session_state["v2_balance_mode"] != "volume"
+    assert at.session_state["v2_balance_mode"] != "volume"  # vacuity
 
 
 def test_plane_selector_and_n_slider_survive_a_rerun(monkeypatch):
@@ -156,13 +160,12 @@ def test_page_workbook_download_button_is_present(monkeypatch):
 
 
 # ============================================================================
-# Phares KPI == ptn_summary.n_phares
+# D8: phares KPI and its id-list share the SAME filtered works set at every toggle state
 # ============================================================================
 
 def test_phares_kpi_equals_ptn_summary_n_phares_for_cnrs(monkeypatch):
     _skip_if_missing("ptn_summary.parquet")
-    s = pd.read_parquet(DATA_DIR / "ptn_summary.parquet")
-    row = s[(s["partner_id"] == CNRS_ID) & (s["subset_id"] == "all") & (s["conf_state"] == "all")].iloc[0]
+    row = _cnrs_summary_row()
     expected = int(row["n_phares"])
     from lib.helpers import fr_int
     at = _goto_partner(monkeypatch, CNRS_ID)
@@ -171,162 +174,420 @@ def test_phares_kpi_equals_ptn_summary_n_phares_for_cnrs(monkeypatch):
     assert metrics.get("Publications phares") != fr_int(expected + 1)  # vacuity
 
 
+def test_phares_id_list_uses_the_same_toggle_filters_as_the_kpi_count(monkeypatch):
+    """D8: PF.phares_work_ids must apply conference+artifact BEFORE counting -- proven by
+    calling the REAL function with the toggles flipped and checking the id-count tracks
+    ptn_works's own conf/artifact-filtered pptop10_fr count for CNRS (not the unfiltered one)."""
+    _skip_if_missing("ptn_works.parquet")
+    from lib import partner_frames as PF
+    from lib import lazy
+
+    partner_works = lazy.read_keyed(str(DATA_DIR / "ptn_works.parquet"), "partner_id", CNRS_ID)
+    all_ids = PF.phares_work_ids(partner_works, include_conference=True, artifact_on=False)
+    no_conf_ids = PF.phares_work_ids(partner_works, include_conference=False, artifact_on=False)
+    xa_ids = PF.phares_work_ids(partner_works, include_conference=True, artifact_on=True)
+
+    expected_no_conf = int((partner_works[~partner_works["is_conference"].fillna(False)]
+                            ["pptop10_fr"].fillna(False)).sum())
+    expected_xa = int((partner_works[~partner_works["artifact_flag"].fillna(False)]
+                       ["pptop10_fr"].fillna(False)).sum())
+    assert len(no_conf_ids) == expected_no_conf
+    assert len(xa_ids) == expected_xa
+    assert len(all_ids) >= len(no_conf_ids)  # dropping conference papers can only shrink the set
+    # vacuity: calling the function on an EMPTY frame (mutated input) must return an empty list,
+    # not the CNRS answer -- proves the function actually reads its `partner_works` argument.
+    empty_ids = PF.phares_work_ids(partner_works.iloc[0:0], include_conference=True, artifact_on=False)
+    assert empty_ids == []
+    assert empty_ids != all_ids
+
+
 # ============================================================================
-# Balance bars: derived partner-only volume never negative, over ALL partners
-# (pure-pandas, not AppTest -- P8's own floor-at-zero rule)
+# D1/D4/D5/D9: balance bars, via lib.partner_frames.build_balance_frame directly
 # ============================================================================
 
-def test_balance_bars_derived_partner_only_never_negative_over_all_partners():
-    _skip_if_missing("ptn_fields.parquet", "ptn_summary.parquet")
+def _balance_inputs(partner_id: str = CNRS_ID, conf_state: str = "all"):
+    from lib import lazy
     fld = pd.read_parquet(DATA_DIR / "ptn_fields.parquet")
-    summ = pd.read_parquet(DATA_DIR / "ptn_summary.parquet")
-    summ = summ[(summ["subset_id"] == "all") & (summ["conf_state"] == "all")].set_index("partner_id")
-    fields_only = fld[(fld["node_level"] == "field") & (fld["conf_state"] == "all")].copy()
-    fields_only["partner_total"] = fields_only["partner_id"].map(summ["partner_total_windowed"])
-    derived = (fields_only["partner_total"] * fields_only["baseline_partner_share"]
-               - fields_only["co_works"]).clip(lower=0.0)
-    assert (derived.dropna() >= 0.0).all()
-    assert len(derived.dropna()) > 1000  # the pin has teeth: exercised at scale, not on 1 row
+    fld_p = fld[(fld["partner_id"] == partner_id) & (fld["conf_state"] == conf_state)]
+    thematic_overview = pd.read_parquet(DATA_DIR / "thematic_overview.parquet")
+    all_topics, field_id2name, subfield_id2name, *_ = _taxonomy_maps()
+    partner_topics = lazy.read_keyed(str(DATA_DIR / "ptn_topics.parquet"), "partner_id", partner_id)
+    partner_works = lazy.read_keyed(str(DATA_DIR / "ptn_works.parquet"), "partner_id", partner_id)
+    row = pd.read_parquet(DATA_DIR / "ptn_summary.parquet")
+    row = row[(row["partner_id"] == partner_id) & (row["subset_id"] == "all") & (row["conf_state"] == "all")].iloc[0]
+    return dict(
+        fld_fields=fld_p, thematic_overview=thematic_overview, partner_topics=partner_topics,
+        all_topics=all_topics, partner_works=partner_works, partner_id=partner_id,
+        partner_name=str(row["display_name"]), conf_state=conf_state, include_conference=True,
+        artifact_on=False, partner_total_windowed=row.get("partner_total_windowed"),
+        field_id2name=field_id2name, subfield_id2name=subfield_id2name,
+    )
 
-    # vacuity: inject one row whose UNCLIPPED value would be strongly negative, apply the
-    # SAME clip formula, and check it lands at exactly 0 -- then show the unclipped value
-    # really was negative, so the clip (not luck) is what the main assertion depends on.
-    injected = fields_only.copy()
-    injected.loc[injected.index[0], "partner_total"] = 1000.0
-    injected.loc[injected.index[0], "baseline_partner_share"] = 0.0
-    injected.loc[injected.index[0], "co_works"] = 10_000_000.0
-    injected_derived = (injected["partner_total"] * injected["baseline_partner_share"]
-                        - injected["co_works"]).clip(lower=0.0)
-    injected_unclipped = (injected["partner_total"] * injected["baseline_partner_share"]
-                          - injected["co_works"])
-    assert injected_derived.loc[injected.index[0]] == 0.0
-    assert injected_unclipped.loc[injected.index[0]] < 0.0
+
+def test_balance_bars_derived_partner_only_never_negative_with_a_synthetic_node_total():
+    """D1/D9: calls the REAL `build_balance_frame` (not a test-local re-implementation)
+    with a SYNTHETIC `partner_node_total` column injected on a copy of the real CNRS input
+    (forward-compatible with S-DAT's column landing under that exact name) -- one row is
+    engineered so the raw `partner_node_total - co_works` WOULD go negative, and the
+    function's own OUTPUT for that row must still be >= 0 (or NULL), proving the clip is
+    exercised inside the function under test, not re-implemented here."""
+    _skip_if_missing("ptn_fields.parquet", "thematic_overview.parquet", "ptn_topics.parquet", "ptn_works.parquet")
+    from lib import partner_frames as PF
+
+    kwargs = _balance_inputs()
+    fld = kwargs["fld_fields"].copy()
+    field_rows = fld[fld["node_level"] == "field"].reset_index(drop=True)
+    assert len(field_rows) >= 3, "fixture assumption: CNRS has >= 3 field rows"
+    # Row 0: co_works > partner_node_total (would go negative unclipped).
+    field_rows.loc[0, "partner_node_total"] = float(field_rows.loc[0, "co_works"]) - 500.0
+    # Row 1: NULL partner_node_total (disclosed-absent path).
+    field_rows.loc[1, "partner_node_total"] = np.nan
+    # Remaining rows: a large, always-sufficient total (never negative unclipped).
+    field_rows.loc[2:, "partner_node_total"] = field_rows.loc[2:, "co_works"].astype(float) + 1_000_000.0
+    kwargs["fld_fields"] = field_rows
+
+    d, n_hidden = PF.build_balance_frame(mode="volume", level="field", **kwargs)
+    assert (d["vol_partner_only"].dropna() >= 0.0).all()
+    row0 = d[d["node_id"] == int(field_rows.loc[0, "node_id"])].iloc[0]
+    assert row0["vol_partner_only"] == 0.0  # engineered negative case clips to exactly 0
+    assert n_hidden >= 1  # the NULL row (row 1) is counted
+
+    # vacuity: mutate the INPUT so row 0's total is instead ABUNDANT (no clip needed) and
+    # re-call the SAME function -- the output must now differ (a real positive value, not 0).
+    field_rows2 = field_rows.copy()
+    field_rows2.loc[0, "partner_node_total"] = float(field_rows2.loc[0, "co_works"]) + 999.0
+    kwargs2 = dict(kwargs, fld_fields=field_rows2)
+    d2, _ = PF.build_balance_frame(mode="volume", level="field", **kwargs2)
+    row0b = d2[d2["node_id"] == int(field_rows.loc[0, "node_id"])].iloc[0]
+    assert row0b["vol_partner_only"] == 999.0
+    assert row0b["vol_partner_only"] != row0["vol_partner_only"]
 
 
 def test_balance_bars_volume_reconstructs_the_frame_for_three_cnrs_field_cells():
-    """'segments reconstruct the frame': independently recomputes vol_ul_only / vol_joint
-    / vol_partner_only for three real CNRS field cells and checks the page's own
-    construction rules (vol_ul_only = UL total - joint, floored; link_label ==
-    fmt_int(co_works); url == links.copubs_url(partner, node=('field', id)))."""
-    _skip_if_missing("ptn_fields.parquet", "thematic_overview.parquet")
-    from lib import links
+    """D9/A13: calls the REAL function (not `links.copubs_url(...) == links.copubs_url(...)`
+    on itself) and checks its OUTPUT's link/label construction for three real CNRS cells."""
+    _skip_if_missing("ptn_fields.parquet", "thematic_overview.parquet", "ptn_topics.parquet", "ptn_works.parquet")
+    from lib import links, partner_frames as PF
     from lib.helpers import fr_int
 
-    fld = pd.read_parquet(DATA_DIR / "ptn_fields.parquet")
-    ov = pd.read_parquet(DATA_DIR / "thematic_overview.parquet")
-    own = ov[ov["level"] == "field"].copy()
-    own["id"] = own["id"].astype(int)
-    own = own.drop_duplicates("id").set_index("id")
-
-    rows = fld[(fld["partner_id"] == CNRS_ID) & (fld["node_level"] == "field")
-               & (fld["conf_state"] == "all")].sort_values("co_works", ascending=False).head(3)
-    assert len(rows) == 3, "expected >= 3 field cells for CNRS -- fixture assumption broken"
-
-    for _, r in rows.iterrows():
+    kwargs = _balance_inputs()
+    d, _ = PF.build_balance_frame(mode="volume", level="field", **kwargs)
+    assert len(d) >= 3
+    top3 = d.sort_values("vol_joint", ascending=False).head(3)
+    for _, r in top3.iterrows():
         fid = int(r["node_id"])
-        vol_ul_total = float(own.loc[fid, "pubs_total"])
-        vol_joint = float(r["co_works"])
-        vol_ul_only = max(0.0, vol_ul_total - vol_joint)
-        assert vol_ul_only >= 0.0
-        link_label = fr_int(vol_joint)
-        assert link_label == fr_int(r["co_works"])
-        url = links.copubs_url(CNRS_ID, node=("field", fid))
-        assert url == links.copubs_url(CNRS_ID, node=("field", fid))  # deterministic
-        assert f"authorships.institutions.id:{CNRS_ID}" in url
-        assert f"primary_topic.field.id:{fid}" in url
-        # vacuity: a DIFFERENT field id must NOT produce the same url
-        assert links.copubs_url(CNRS_ID, node=("field", fid + 1)) != url
+        assert r["link_label"] == fr_int(r["vol_joint"])
+        assert r["url"] == links.copubs_url(CNRS_ID, node=("field", fid))
+        assert f"primary_topic.field.id:{fid}" in r["url"]
+        assert r["vol_ul_only"] >= 0.0
+
+    # vacuity: mutating the INPUT's co_works for the top row must change the REAL function's
+    # own output link_label (proves link_label is read from this call's result, not cached).
+    fld2 = kwargs["fld_fields"].copy()
+    fld2["node_id"] = fld2["node_id"].astype(int)  # raw column dtype != the function's internal cast
+    top_id = int(top3.iloc[0]["node_id"])
+    fld2.loc[fld2["node_id"] == top_id, "co_works"] = 999999
+    kwargs2 = dict(kwargs, fld_fields=fld2)
+    d2, _ = PF.build_balance_frame(mode="volume", level="field", **kwargs2)
+    r2 = d2[d2["node_id"] == top_id].iloc[0]
+    assert r2["link_label"] == fr_int(999999)
+    assert r2["link_label"] != top3.iloc[0]["link_label"]
+
+
+def test_balance_bars_subfield_selection_is_by_joint_volume_in_every_mode():
+    """D5: the top-30 subfield SET must be identical across volume/fwci/phares modes (only
+    the row ORDER differs) -- proven on the REAL function's output, not asserted in prose."""
+    _skip_if_missing("ptn_fields.parquet", "thematic_overview.parquet", "ptn_topics.parquet", "ptn_works.parquet")
+    from lib import partner_frames as PF
+
+    kwargs = _balance_inputs()
+    sets = {}
+    for mode in ("volume", "fwci", "phares"):
+        d, _ = PF.build_balance_frame(mode=mode, level="subfield", **kwargs)
+        sets[mode] = frozenset(d["node_id"])
+    assert sets["volume"] == sets["fwci"] == sets["phares"], sets
+    assert len(sets["volume"]) > 0
+
+    # vacuity: the volume-mode set restricted to CNRS's own top-30-by-co_works must be
+    # EXACTLY that computed set (proves the selection key really is co_works, not a tautology).
+    fld_sub = kwargs["fld_fields"]
+    fld_sub = fld_sub[fld_sub["node_level"] == "subfield"]
+    expected_top30 = frozenset(fld_sub.sort_values("co_works", ascending=False).head(30)["node_id"].astype(int))
+    assert sets["volume"] == expected_top30
+    wrong_top30 = frozenset(fld_sub.sort_values("co_works", ascending=True).head(30)["node_id"].astype(int))
+    assert sets["volume"] != wrong_top30
+
+
+def test_balance_bars_phares_mode_links_the_cells_own_work_ids():
+    """D11: in phares mode the linked column must open THIS node's own phares
+    publications (`links.phares_url`), not a generic `copubs_url` of the joint count."""
+    _skip_if_missing("ptn_fields.parquet", "thematic_overview.parquet", "ptn_topics.parquet", "ptn_works.parquet")
+    from lib import links, partner_frames as PF
+
+    kwargs = _balance_inputs()
+    d, _ = PF.build_balance_frame(mode="phares", level="field", **kwargs)
+    assert "phares_proxy" in d.columns
+    with_phares = d[d["n_phares_joint"] > 0]
+    if with_phares.empty:
+        pytest.skip("no CNRS field row has a joint phares publication in this snapshot")
+    r = with_phares.iloc[0]
+    assert r["url"] != links.copubs_url(CNRS_ID, node=("field", int(r["node_id"])))
+    # vacuity: a node with ZERO joint phares must NOT produce the same non-empty-id url
+    # shape (idlist_url) -- it degrades to the proxy branch instead (0 ids -> proxy=True).
+    zero_phares = d[d["n_phares_joint"] == 0]
+    if not zero_phares.empty:
+        r0 = zero_phares.iloc[0]
+        assert bool(r0["phares_proxy"]) is True
 
 
 # ============================================================================
-# Topic planes: rows <= N in every selector mode (pure-pandas reconstruction of
-# _cell_frame + the selector sort + head(N), for CNRS)
+# D6/D7/D9: topic planes, via lib.partner_frames directly
 # ============================================================================
 
-def _cnrs_cells() -> pd.DataFrame:
-    t = pd.read_parquet(DATA_DIR / "ptn_topics.parquet")
-    d = t[(t["partner_id"] == CNRS_ID) & (t["conf_state"] == "all")]
-    agg = (d.groupby("topic_id", as_index=False, observed=True)
-           .agg(co_works=("co_works", "sum"), n_phares=("n_phares", "sum"),
-                fwci_median=("fwci_fr_median_cell", "median"),
-                frontier_score_std=("frontier_score_std", "median"),
-                artifact_flag=("artifact_flag", "max")))
-    agg = agg[agg["co_works"] >= 5].reset_index(drop=True)
-    agg["artifact_flag"] = agg["artifact_flag"].fillna(False).astype(bool)
-    return agg
+def _plane_inputs(partner_id: str = CNRS_ID, conf_state: str = "all"):
+    from lib import lazy
+    partner_topics = lazy.read_keyed(str(DATA_DIR / "ptn_topics.parquet"), "partner_id", partner_id)
+    all_topics, *_ = _taxonomy_maps()
+    frontier = pd.read_parquet(DATA_DIR / "dim_frontier_components.parquet")
+    return partner_topics, all_topics, frontier
 
 
 @pytest.mark.parametrize("mode,n", [("volume", 10), ("fwci", 25), ("frontiere", 50), ("phares", 30)])
 def test_plane_selection_never_exceeds_n_for_cnrs(mode, n):
-    _skip_if_missing("ptn_topics.parquet")
-    cells = _cnrs_cells()
-    sort_col = {"volume": "co_works", "fwci": "fwci_median", "frontiere": "frontier_score_std", "phares": "n_phares"}[mode]
-    selection = cells.sort_values(sort_col, ascending=False, na_position="last").head(n)
-    assert len(selection) <= n
-    assert len(cells) > n, "fixture assumption: CNRS has more eligible cells than N, or this pin proves nothing"
-    # vacuity: taking head(n + 1000) on the SAME frame must exceed n (proves head(n) is load-bearing)
-    assert len(cells.sort_values(sort_col, ascending=False, na_position="last").head(n + 1000)) > n
+    """D9/A13: calls the REAL build_cell_frame + build_plane_impact_frame on real data."""
+    _skip_if_missing("ptn_topics.parquet", "dim_frontier_components.parquet")
+    from lib import partner_frames as PF
+
+    partner_topics, all_topics, frontier = _plane_inputs()
+    cells = PF.build_cell_frame(partner_topics, all_topics, frontier, conf_state="all")
+    assert len(cells) > n, "fixture assumption: CNRS has more eligible cells than N"
+    d, _ = PF.build_plane_impact_frame(cells, mode, n)
+    assert len(d) <= n
+
+    # vacuity: mutating the INPUT cells (dropping to 2 rows) must shrink the REAL output too.
+    d_small, _ = PF.build_plane_impact_frame(cells.head(2), mode, n)
+    assert len(d_small) <= 2
+    assert len(d_small) != len(d) or len(cells) <= 2
 
 
-def test_plane_artifact_flag_is_a_real_boolean_column_feeding_the_tint(monkeypatch):
-    """The tint-on-flagged-mark MECHANISM itself is lib.charts' own tested contract
-    (tests/test_charts.py, S-LIB-A's fence); this pin only proves the page's frame feeds
-    it a correct boolean column (tint is applied "iff artifact_flag", so a non-bool or
-    always-False column would silently defeat P11 without failing any chart-level test)."""
-    _skip_if_missing("ptn_topics.parquet")
-    cells = _cnrs_cells()
-    assert cells["artifact_flag"].dtype == bool
-    # vacuity: forcing every value to a NON-bool (float) must fail the identical dtype check
-    mutated = cells.assign(artifact_flag=cells["artifact_flag"].astype(float))
-    assert mutated["artifact_flag"].dtype != bool
+def test_frontier_plane_uses_the_latest_bin_component_not_the_composite():
+    """D6: `build_cell_frame` must NOT read `ptn_topics.frontier_score_std` (the all-period
+    composite) at all -- its own `frontier` column must come from
+    `dim_frontier_components.is_latest`, proven by injecting a synthetic frontier value for
+    one topic and checking it is the value the OUTPUT actually carries."""
+    _skip_if_missing("ptn_topics.parquet", "dim_frontier_components.parquet")
+    from lib import partner_frames as PF
+
+    partner_topics, all_topics, frontier = _plane_inputs()
+    cells = PF.build_cell_frame(partner_topics, all_topics, frontier, conf_state="all")
+    assert "frontier_score_std" not in cells.columns  # the composite never enters this frame
+    sample = cells[cells["frontier"].notna()]
+    if sample.empty:
+        pytest.skip("no CNRS cell has a latest-bin frontier component in this snapshot")
+    tid = sample.iloc[0]["topic_id"]  # topic_id is a string id (e.g. "T10001"), never cast to int
+    expected = frontier.loc[(frontier["topic_id"] == tid) & (frontier["is_latest"].astype(bool)), "frontier"].iloc[0]
+    assert float(sample.iloc[0]["frontier"]) == pytest.approx(float(expected))
+
+    # vacuity: inject a DIFFERENT frontier value for that topic's latest bin and re-call --
+    # the function's own output must track the injected value, proving it is read live.
+    frontier2 = frontier.copy()
+    mask = (frontier2["topic_id"] == tid) & (frontier2["is_latest"].astype(bool))
+    frontier2.loc[mask, "frontier"] = float(expected) + 12.5
+    cells2 = PF.build_cell_frame(partner_topics, all_topics, frontier2, conf_state="all")
+    row2 = cells2[cells2["topic_id"] == tid].iloc[0]
+    assert float(row2["frontier"]) == pytest.approx(float(expected) + 12.5)
+    assert float(row2["frontier"]) != float(sample.iloc[0]["frontier"])
+
+
+def test_bin_labels_are_read_from_the_table_never_typed():
+    """D7: `latest_and_previous_bin_labels` must return the LIVE bin_last/bin_prev, proven
+    by mutating which bin is flagged `is_latest` on a copy of the real table."""
+    _skip_if_missing("dim_frontier_components.parquet")
+    from lib import partner_frames as PF
+
+    frontier = pd.read_parquet(DATA_DIR / "dim_frontier_components.parquet")
+    bin_last, bin_prev = PF.latest_and_previous_bin_labels(frontier)
+    assert bin_last != bin_prev
+    real_latest_rows = frontier.loc[frontier["is_latest"].astype(bool), "bin_label"].unique()
+    assert bin_last in [str(x) for x in real_latest_rows]
+
+    # vacuity: flip is_latest to an EARLIER bin on a mutated copy -- the function's own
+    # return value must change to match, not stay pinned to the old bin_last.
+    labels = sorted(frontier["bin_label"].astype(str).unique())
+    earlier = labels[0]
+    mutated = frontier.copy()
+    mutated["is_latest"] = mutated["bin_label"].astype(str) == earlier
+    new_last, _ = PF.latest_and_previous_bin_labels(mutated)
+    assert new_last == earlier
+    assert new_last != bin_last
+
+
+def test_balance_and_recip_use_the_real_partner_node_total_for_three_cnrs_fields():
+    """Tier A (FIX-1 close, coordinator dispatch): now that
+    `ptn_fields.partner_node_total` is deployed, `build_balance_frame`'s
+    `vol_partner_only` must equal `partner_node_total - co_works` EXACTLY (no more
+    share-derived approximation) and `build_recip_frame`'s x share must equal
+    `partner_node_total / partner_total_windowed` EXACTLY, for CNRS Engineering (field 22)
+    and two more real fields -- on the REAL deployed column, not a synthetic one."""
+    _skip_if_missing("ptn_fields.parquet", "thematic_overview.parquet", "ptn_topics.parquet", "ptn_works.parquet")
+    from lib import partner_frames as PF
+
+    fld_raw = pd.read_parquet(DATA_DIR / "ptn_fields.parquet")
+    assert "partner_node_total" in fld_raw.columns, "S-DAT's column must be deployed for this pin to mean anything"
+    cnrs_fields = fld_raw[(fld_raw["partner_id"] == CNRS_ID) & (fld_raw["conf_state"] == "all")
+                          & (fld_raw["node_level"] == "field")].copy()
+    cnrs_fields["node_id"] = cnrs_fields["node_id"].astype(int)
+    check_ids = cnrs_fields.sort_values("co_works", ascending=False).head(3)["node_id"].tolist()
+    assert 22 in check_ids, f"expected field 22 (Engineering) among the top-3 CNRS fields, got {check_ids}"
+
+    bal_kwargs = _balance_inputs()
+    d_bal, _ = PF.build_balance_frame(mode="volume", level="field", **bal_kwargs)
+    recip_kwargs = _recip_inputs()
+    d_recip, _ = PF.build_recip_frame(level="field", **recip_kwargs)
+    partner_total_windowed = float(recip_kwargs["partner_total_windowed"])
+
+    for fid in check_ids:
+        raw_row = cnrs_fields[cnrs_fields["node_id"] == fid].iloc[0]
+        expected_partner_only = max(0.0, float(raw_row["partner_node_total"]) - float(raw_row["co_works"]))
+        bal_row = d_bal[d_bal["node_id"] == fid].iloc[0]
+        assert bal_row["vol_partner_only"] == pytest.approx(expected_partner_only), (fid, bal_row["vol_partner_only"], expected_partner_only)
+
+        expected_share = float(raw_row["partner_node_total"]) / partner_total_windowed
+        recip_row = d_recip[d_recip["node_id"] == fid]
+        if not recip_row.empty:  # a field could still be legitimately dropped if baseline_ul_share is NULL
+            assert recip_row.iloc[0]["share_partner_own"] == pytest.approx(expected_share), fid
+
+    # vacuity: mutate the INPUT's partner_node_total for field 22 and re-call BOTH real
+    # functions -- both outputs must track the mutation, not the original deployed value.
+    fld_mut = bal_kwargs["fld_fields"].copy()
+    fld_mut["node_id"] = fld_mut["node_id"].astype(int)
+    real_total_22 = float(cnrs_fields.loc[cnrs_fields["node_id"] == 22, "partner_node_total"].iloc[0])
+    fld_mut.loc[fld_mut["node_id"] == 22, "partner_node_total"] = real_total_22 + 10_000.0
+    bal_kwargs_mut = dict(bal_kwargs, fld_fields=fld_mut)
+    d_bal_mut, _ = PF.build_balance_frame(mode="volume", level="field", **bal_kwargs_mut)
+    row22_mut = d_bal_mut[d_bal_mut["node_id"] == 22].iloc[0]
+    row22_orig = d_bal[d_bal["node_id"] == 22].iloc[0]
+    assert row22_mut["vol_partner_only"] == pytest.approx(row22_orig["vol_partner_only"] + 10_000.0)
+    assert row22_mut["vol_partner_only"] != row22_orig["vol_partner_only"]
+
+    fld_all_mut = recip_kwargs["fld_all"].copy()
+    mask22 = (fld_all_mut["partner_id"] == CNRS_ID) & (fld_all_mut["conf_state"] == "all") & \
+             (fld_all_mut["node_level"] == "field") & (fld_all_mut["node_id"].astype(int) == 22)
+    fld_all_mut.loc[mask22, "partner_node_total"] = real_total_22 + 10_000.0
+    recip_kwargs_mut = dict(recip_kwargs, fld_all=fld_all_mut)
+    d_recip_mut, _ = PF.build_recip_frame(level="field", **recip_kwargs_mut)
+    row22_recip_mut = d_recip_mut[d_recip_mut["node_id"] == 22].iloc[0]
+    row22_recip_orig = d_recip[d_recip["node_id"] == 22].iloc[0]
+    assert row22_recip_mut["share_partner_own"] == pytest.approx((real_total_22 + 10_000.0) / partner_total_windowed)
+    assert row22_recip_mut["share_partner_own"] != row22_recip_orig["share_partner_own"]
 
 
 # ============================================================================
-# Reciprocity: level toggle changes the row count; dropped-NULL count is disclosed
+# D2/D13/D9: reciprocity, via lib.partner_frames.build_recip_frame directly
 # ============================================================================
 
-def test_reciprocity_level_toggle_changes_row_count(monkeypatch):
+def _recip_inputs(partner_id: str = CNRS_ID):
+    fld_all = pd.read_parquet(DATA_DIR / "ptn_fields.parquet")
+    all_topics, field_id2name, subfield_id2name, field_id2domain, domain_id2name = _taxonomy_maps()
+    row = _cnrs_summary_row() if partner_id == CNRS_ID else None
+    return dict(
+        fld_all=fld_all, all_topics=all_topics, partner_id=partner_id,
+        partner_name=(str(row["display_name"]) if row is not None else partner_id),
+        partner_total_windowed=(row.get("partner_total_windowed") if row is not None else None),
+        field_id2name=field_id2name, subfield_id2name=subfield_id2name,
+        field_id2domain=field_id2domain, domain_id2name=domain_id2name,
+    )
+
+
+def test_reciprocity_caps_before_dropping_nulls_d13():
+    """D13: P8's literal order is cap-to-top-30-by-volume FIRST, then drop+count NULL
+    rows -- proven on the REAL function with a SYNTHETIC partner_node_total column where
+    the NULL rows are deliberately OUTSIDE the top-30-by-volume set (drop-then-cap would
+    give a different n_hidden than cap-then-drop in that construction)."""
     _skip_if_missing("ptn_fields.parquet")
-    fld = pd.read_parquet(DATA_DIR / "ptn_fields.parquet")
-    base = fld[(fld["partner_id"] == CNRS_ID) & (fld["conf_state"] == "all")]
-    n_field = len(base[(base["node_level"] == "field") & base["baseline_partner_share"].notna()
-                        & base["baseline_ul_share"].notna()])
-    n_subfield_capped = min(30, len(base[(base["node_level"] == "subfield") & base["baseline_partner_share"].notna()
-                                          & base["baseline_ul_share"].notna()]))
-    assert n_field != n_subfield_capped, "fixture assumption: the two levels differ in row count for CNRS"
+    from lib import partner_frames as PF
 
-    at = _goto_partner(monkeypatch, CNRS_ID)
-    radios = {r.key: r for r in at.radio}
-    recip_radio_keys = [k for k in radios if k and "recip_level" in k]
-    assert recip_radio_keys, list(radios)
-    at.radio(key=recip_radio_keys[0]).set_value(1)  # index 1 = "Top 30 sous-champs..."
-    at.run(timeout=TIMEOUT)
-    assert not at.exception, _exc_values(at)
-    assert at.session_state["v2_pair_level"] == "subfield"
-    assert at.session_state["v2_pair_level"] != "field"  # vacuity
+    kwargs = _recip_inputs()
+    fld = kwargs["fld_all"].copy()
+    sub = fld[(fld["partner_id"] == CNRS_ID) & (fld["conf_state"] == "all") & (fld["node_level"] == "subfield")].copy()
+    assert len(sub) > 35, "fixture assumption: CNRS has > 35 subfield rows"
+    sub = sub.sort_values("co_works", ascending=False).reset_index(drop=True)
+    sub["partner_node_total"] = sub["co_works"].astype(float) + 100.0  # everyone measurable
+    # NULL out three rows OUTSIDE the top-30 (ranks 31-33) -- cap-then-drop must find them
+    # ALREADY EXCLUDED (n_hidden == 0 from this construction), never counted as "hidden".
+    null_ids = sub.iloc[30:33]["node_id"].tolist()
+    sub.loc[sub["node_id"].isin(null_ids), "partner_node_total"] = np.nan
+    fld_other = fld[~((fld["partner_id"] == CNRS_ID) & (fld["conf_state"] == "all") & (fld["node_level"] == "subfield"))]
+    kwargs["fld_all"] = pd.concat([fld_other, sub], ignore_index=True)
+
+    d, n_hidden = PF.build_recip_frame(level="subfield", **kwargs)
+    assert n_hidden == 0, "the 3 NULLs sit beyond the top-30 cut and must not be counted"
+    assert len(d) == 30
+
+    # vacuity: NULL out a row INSIDE the top-30 instead -- cap-then-drop must now count it.
+    sub2 = sub.copy()
+    sub2["partner_node_total"] = sub["co_works"].astype(float) + 100.0
+    inside_id = sub2.iloc[5]["node_id"]
+    sub2.loc[sub2["node_id"] == inside_id, "partner_node_total"] = np.nan
+    kwargs2 = dict(kwargs, fld_all=pd.concat([fld_other, sub2], ignore_index=True))
+    d2, n_hidden2 = PF.build_recip_frame(level="subfield", **kwargs2)
+    assert n_hidden2 == 1
+    assert len(d2) == 29
+    assert n_hidden2 != n_hidden
 
 
-def test_reciprocity_null_share_rows_are_dropped_and_counted():
-    """P8: a NULL baseline_partner_share row cannot sit on either axis of the
-    reciprocity scatter and must be dropped + counted, never plotted at zero."""
+def test_reciprocity_x_axis_is_the_partners_own_portfolio_weight_d2():
+    """D2: x = partner_node_total / partner_total_windowed (a portfolio weight, sums
+    towards <= 1 across a partner's own fields), never `baseline_partner_share` (an
+    involvement share, proven in LENS_ABSORPTION A1 to sum past 1 for real partners)."""
     _skip_if_missing("ptn_fields.parquet")
-    fld = pd.read_parquet(DATA_DIR / "ptn_fields.parquet")
-    base = fld[(fld["partner_id"] == CNRS_ID) & (fld["conf_state"] == "all") & (fld["node_level"] == "field")]
-    n_before = len(base)
-    kept = base[base["baseline_partner_share"].notna() & base["baseline_ul_share"].notna()]
-    n_hidden = n_before - len(kept)
-    assert n_hidden >= 0
-    # vacuity: an artificially all-NULL copy must hide EVERY row (n_hidden == n_before)
-    all_null = base.assign(baseline_partner_share=np.nan)
-    kept_all_null = all_null[all_null["baseline_partner_share"].notna() & all_null["baseline_ul_share"].notna()]
-    assert len(kept_all_null) == 0
-    assert (n_before - len(kept_all_null)) == n_before
+    from lib import partner_frames as PF
+
+    kwargs = _recip_inputs()
+    fld = kwargs["fld_all"].copy()
+    mask = (fld["partner_id"] == CNRS_ID) & (fld["conf_state"] == "all") & (fld["node_level"] == "field")
+    fld.loc[mask, "partner_node_total"] = fld.loc[mask, "co_works"].astype(float) * 7.0 + 50.0
+    kwargs["fld_all"] = fld
+    kwargs["partner_total_windowed"] = 1000.0
+
+    d, _ = PF.build_recip_frame(level="field", **kwargs)
+    assert not d.empty
+    row = d.iloc[0]
+    expected_x = float(row["partner_node_total"]) / 1000.0
+    assert row["share_partner_own"] == pytest.approx(expected_x)
+    assert row["share_partner"] == pytest.approx(expected_x * 100.0)
+
+    # vacuity: change ONLY partner_total_windowed (the denominator) and re-call the SAME
+    # function -- the output share must change accordingly, proving it is computed live.
+    kwargs2 = dict(kwargs, partner_total_windowed=2000.0)
+    d2, _ = PF.build_recip_frame(level="field", **kwargs2)
+    row2 = d2.iloc[0]
+    assert row2["share_partner"] == pytest.approx(expected_x * 100.0 / 2.0)
+    assert row2["share_partner"] != row["share_partner"]
+
+
+# ============================================================================
+# D10: field/subfield companions on bars_with_gutter (source-level, matches the
+# app-wide convention test_page1_annual_breakdown_uses_the_grouped_bars_grammar already
+# uses for an equivalent claim)
+# ============================================================================
+
+def test_field_and_subfield_companions_use_bars_with_gutter():
+    src = Path(PARTNER_PAGE).read_text(encoding="utf-8")
+    assert "C.bars_with_gutter(" in src
+    field_block = src.split('st.markdown("###### Volume par champ")', 1)[1][:1500]
+    assert "C.bars_with_gutter(" in field_block
+    assert "overlay.overlay_bars(" not in field_block
+    subfield_block = src.split('st.markdown("###### Volume par sous-champ")', 1)[1][:1700]
+    assert "C.bars_with_gutter(" in subfield_block
+    assert "overlay.overlay_bars(" not in subfield_block
+    # vacuity: a marker string that is NOT in the file must fail the same "in" check
+    assert "this_marker_does_not_exist_in_the_page" not in src
 
 
 # ============================================================================
 # Hover grammar: HOVERTEMPLATE is used verbatim (no format spec ever), and every
-# chart_key/mode this page renders has a HOVER_LABELS + READING entry (S-TT's own
-# contract, cross-checked from the page stream's side)
+# chart_key/mode this page renders has a HOVER_LABELS + READING entry
 # ============================================================================
 
 PAGE_CHART_MODES = {
@@ -358,8 +619,7 @@ def test_every_chart_mode_this_page_renders_has_hover_labels_and_reading_text():
     assert not missing_hover, missing_hover
     assert not missing_reading, missing_reading
 
-    # vacuity: a key/mode this page does NOT use should not exist for a nonsense chart_key
-    with pytest.raises(KeyError):
+    with pytest.raises(KeyError):  # vacuity
         reading_text("zoom_this_key_does_not_exist", "default")
 
 
@@ -368,8 +628,21 @@ def test_hovertemplate_constant_has_no_plotly_format_spec():
     import re
     assert HOVERTEMPLATE == "%{customdata}<extra></extra>"
     assert re.search(r"%\{[^}]*:[^}]*\}", HOVERTEMPLATE) is None
-    # vacuity: a template WITH a format spec must be caught by the same regex
-    assert re.search(r"%\{[^}]*:[^}]*\}", "%{customdata:.2f}") is not None
+    assert re.search(r"%\{[^}]*:[^}]*\}", "%{customdata:.2f}") is not None  # vacuity
+
+
+# ============================================================================
+# D14: {max_ids} is read from links.IDLIST_MAX, never retyped
+# ============================================================================
+
+def test_max_ids_placeholder_is_filled_from_links_idlist_max():
+    from lib import copy_fr, links
+    filled = copy_fr.CAPTIONS["PHARES_PROXY"].format(max_ids=links.IDLIST_MAX)
+    assert str(links.IDLIST_MAX) in filled
+    assert "cent identifiants" not in filled.lower() or str(links.IDLIST_MAX) in filled
+    # vacuity: a DIFFERENT max_ids value must produce different rendered text
+    filled_other = copy_fr.CAPTIONS["PHARES_PROXY"].format(max_ids=links.IDLIST_MAX + 1)
+    assert filled_other != filled
 
 
 # ============================================================================
@@ -387,5 +660,4 @@ def test_page_workbook_lecture_sheet_is_first():
     lecture_df = book.parse("Lecture")
     assert list(lecture_df.columns) == ["Clé", "Valeur"]
     assert filename.endswith(".xlsx")
-    # vacuity: the SECOND sheet must NOT be "Lecture" (proves position 0 is meaningful, not luck)
-    assert book.sheet_names[1] != "Lecture"
+    assert book.sheet_names[1] != "Lecture"  # vacuity

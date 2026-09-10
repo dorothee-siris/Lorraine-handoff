@@ -80,7 +80,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from lib import charts as C, controls, copy_fr, exports, fig_cache, hover as hv, lazy, links, overlay, ranked, reading
+from lib import charts as C, controls, copy_fr, exports, fig_cache, hover as hv, lazy, links, overlay, partner_frames as PF, ranked, reading
 from lib.countries_fr import country_label
 from lib.data_cache import DATA_DIR, get_corpus_facts_df, get_topics_df
 from lib.helpers import (
@@ -114,8 +114,9 @@ JOINT_FLOOR = 5             # P8: under-floor relation, matches hv.fmt_joint_or_
 PLANE_FLOOR = 5              # P9: pair x topic cell floor
 PLANE_N_DEFAULT = 25
 LEVEL_KEYS = ["field", "subfield"]     # copy_fr.LABELS["LEVEL_TOGGLE"] index order
-PLANE_FRONTIER_BIN_LAST = "2022-23"    # dim_frontier_components.is_latest bin (P6 disclosure)
-PLANE_FRONTIER_BIN_PREV = "2019-21"    # previous chronological bin, for the reading line's {bin_prev}
+# FIX-1 D7: bin labels are NEVER typed here -- read live from dim_frontier_components via
+# PF.latest_and_previous_bin_labels() at the point of use (S-LENS A5/D7: a module constant
+# passed as a reading_line kwarg is invisible to test_narrative's scanner).
 
 QUESTION_FR = (
     "Qu'est-ce qui relie l'Université de Lorraine à ce partenaire -- quels champs, quels "
@@ -181,9 +182,16 @@ def _area_sizeref(values, max_px: float = 40.0) -> float:
 
 
 def _kpi_help(key: str) -> str:
-    """copy_fr.KPI_HELP[key] with its {window} placeholder filled -- str.format ignores
-    any kwarg a given template does not reference, so this is safe for every KPI key."""
-    return copy_fr.KPI_HELP[key].format(window=window_label())
+    """copy_fr.KPI_HELP[key] with its {window}/{max_ids} placeholders filled -- str.format
+    ignores any kwarg a given template does not reference (copy_fr.KPI_PLACEHOLDERS says
+    which ones each key actually needs), so passing both is safe for every KPI key."""
+    return copy_fr.KPI_HELP[key].format(window=window_label(), max_ids=links.IDLIST_MAX)
+
+
+def _caption(key: str) -> str:
+    """copy_fr.CAPTIONS[key] with its {max_ids} placeholder filled where needed (FIX-1
+    D14: `links.IDLIST_MAX` is the single source, never retyped as "cent")."""
+    return copy_fr.CAPTIONS[key].format(max_ids=links.IDLIST_MAX)
 
 
 # =============================================================================
@@ -446,8 +454,12 @@ mom_facts_all = _load_ptn_mom_facts()
 _mf_rows = mom_facts_all[mom_facts_all["conf_state"] == CONF_STATE]
 mf_row = _mf_rows.iloc[0] if not _mf_rows.empty else None
 
-n_phares_val = partner_row.get("n_phares")
-_phares_work_ids = partner_works.loc[partner_works["pptop10_fr"].fillna(False), "work_id"].tolist()
+# FIX-1 D8: the KPI count and the id-list the arrow opens must read the SAME filtered
+# works set -- conference toggle (ptn_summary is conf_state-keyed, base_rows/partner_row
+# already reflect it) AND the artifact toggle (n_phares_xa vs n_phares -- ptn_summary
+# carries both, matching every neighbouring KPI's own controls.xa convention).
+n_phares_val = partner_row.get("n_phares_xa") if artifact_on else partner_row.get("n_phares")
+_phares_work_ids = PF.phares_work_ids(partner_works, include_conference=include_conference, artifact_on=artifact_on)
 phares_url_val, phares_is_proxy = links.phares_url(_phares_work_ids, partner_id)
 
 with st.container(border=True):
@@ -483,7 +495,7 @@ with st.container(border=True):
     k5.metric("Co-pubs ISITE", fr_int(int(partner_row['isite_co_works'])), fr_pct(float(partner_row['isite_share']) * 100),
               help=_kpi_help("zoom_kpi_isite"))
     with k6:
-        st.metric(copy_fr.LABELS["PHARES"].capitalize() if False else "Publications phares",
+        st.metric("Publications phares",
                   ("—" if pd.isna(n_phares_val) else fr_int(int(n_phares_val))),
                   help=_kpi_help("zoom_kpi_phares"))
         if phares_url_val:
@@ -491,7 +503,7 @@ with st.container(border=True):
     if pd.isna(_share_p):
         st.caption(SHARE_P_NULL_BY_DESIGN_FR)
     if phares_url_val and phares_is_proxy:
-        st.caption(copy_fr.CAPTIONS["PHARES_PROXY"])
+        st.caption(_caption("PHARES_PROXY"))
 
     st.divider()
 
@@ -647,93 +659,16 @@ fld_p = fld_all[(fld_all["partner_id"] == partner_id) & (fld_all["conf_state"] =
 
 
 def _balance_frame(mode: str, level: str):
-    """P8/P10 -- lifted from tests/_registry.py::frame_balance (S-LIB-A, tested), adapted
-    to the page's own already-loaded fld_p / partner_topics / taxonomy maps rather than
-    re-reading all_topics/ptn_fields from disk. `level` in {"field","subfield"}, matching
-    ptn_fields.node_level verbatim. conf_state = the page's ACTIVE toggle (fld_p already
-    is), per the brief's "conf_state as the page uses" for this section."""
-    d = fld_p[fld_p["node_level"] == level].copy()
-    if d.empty:
-        return d, 0
-    d["node_id"] = d["node_id"].astype(int)
-    d["node_name"] = d["node_id"].map(field_id2name if level == "field" else subfield_id2name)
-    d = d.dropna(subset=["node_name"]).reset_index(drop=True)
-
-    ov = _load_thematic_overview()
-    own = ov[ov["level"] == level].copy()
-    own["id"] = own["id"].astype(int)
-    own = own.drop_duplicates("id").set_index("id")
-    d["vol_ul_total"] = d["node_id"].map(own["pubs_total"]).astype(float)
-    d["fwci_ul"] = d["node_id"].map(own["fwci_median"]).astype(float)
-    d["n_phares_ul_total"] = (d["vol_ul_total"] * d["node_id"].map(own["pct_top10"]).astype(float)).round()
-
-    d["vol_joint"] = d["co_works"].astype(float)
-    d["n_phares_joint"] = d["n_phares"].astype(float)
-    d["vol_ul_only"] = (d["vol_ul_total"] - d["vol_joint"]).clip(lower=0.0)
-    # n_phares_ul is the UL side EXCLUDING the relation (mirrors vol_ul_only) -- otherwise
-    # the phares-mode gutter ("UL phares + joint phares") would double-count the joint
-    # phares (P7_LIBA.md NOTE 11's ruling, followed verbatim here).
-    d["n_phares_ul"] = (d["n_phares_ul_total"] - d["n_phares_joint"]).clip(lower=0.0)
-
-    partner_total = (float(partner_row["partner_total_windowed"])
-                      if pd.notna(partner_row.get("partner_total_windowed")) else np.nan)
-    derived = partner_total * d["baseline_partner_share"].astype(float) - d["vol_joint"]
-    d["vol_partner_only"] = derived.clip(lower=0.0)
-    d["partner_only_derived"] = d["vol_partner_only"].notna()
-
-    topics_idx = get_topics_df().set_index("topic_id")
-    cell = partner_topics[partner_topics["conf_state"] == CONF_STATE].copy()
-    key_col = "field_id" if level == "field" else "subfield_id"
-    cell["_k"] = cell["topic_id"].map(topics_idx[key_col])
-    grouped = cell.groupby("_k", observed=True)
-    med, mass = grouped["fwci_fr_median_cell"].median(), grouped["co_works"].sum()
-    d["fwci_joint"] = d["node_id"].map(med).astype(float)
-    d["n_fwci_joint"] = d["node_id"].map(mass).fillna(0.0).astype(float)
-
-    d["under_floor"] = d["vol_joint"] < JOINT_FLOOR
-    d["share_phares_joint"] = np.where(d["vol_joint"] > 0, d["n_phares_joint"] / d["vol_joint"] * 100.0, np.nan)
-    d["fwci_partner_absent"] = True
-    d["phares_partner_absent"] = True
-
-    sort_col = {"volume": "vol_joint", "fwci": "fwci_joint", "phares": "n_phares_joint"}[mode]
-    d = d.sort_values(sort_col, ascending=False).reset_index(drop=True)
-
-    n_hidden = 0
-    if level == "subfield":
-        n_before = len(d)
-        d = d.head(30).reset_index(drop=True)
-        n_hidden = max(0, n_before - len(d))
-    # NULL partner-share rows are KEPT here (UL-only + joint still render, partner side a
-    # dash) -- unlike reciprocity, a balance-bars row never needs to sit on an axis, so
-    # nothing is un-placeable; P8's "dropped and counted" rule is reciprocity's own.
-
-    node_kind = "field" if level == "field" else "subfield"
-    d["url"] = [links.copubs_url(partner_id, node=(node_kind, int(i))) for i in d["node_id"]]
-    d["link_label"] = [hv.fmt_int(v) for v in d["vol_joint"]]
-
-    key_mode = "{0}|{1}".format(mode, "champ" if level == "field" else "sous_champ")
-    labels = copy_fr.HOVER_LABELS["zoom_balance_bars"][key_mode]
-    partner_name = partner_row["display_name"]
-    hovers = []
-    for _, r in d.iterrows():
-        if mode == "volume":
-            vals = (r["node_name"], hv.fmt_joint_or_floor(r["vol_joint"]),
-                    hv.fmt_pair_volumes("UL", r["vol_ul_only"], partner_name, r["vol_partner_only"], derived_b=True),
-                    None, hv.fmt_pct(r["share_of_pair"] * 100.0), hv.fmt_pct(r["baseline_ul_share"] * 100.0),
-                    (None if pd.isna(r["baseline_partner_share"]) else hv.fmt_pct(r["baseline_partner_share"] * 100.0)))
-        elif mode == "fwci":
-            vals = (r["node_name"], hv.fmt_fwci_pair(r["fwci_joint"], r["fwci_joint"], int(r["n_fwci_joint"])),
-                    (None if pd.isna(r["fwci_ul"]) else hv.fmt_score(r["fwci_ul"])),
-                    hv.fmt_joint_or_floor(r["vol_joint"]), hv.fmt_int(r["n_fwci_joint"]), None, None)
-        else:
-            vals = (r["node_name"], hv.fmt_joint_or_floor(r["n_phares_joint"]),
-                    (None if pd.isna(r["n_phares_ul"]) else hv.fmt_int(r["n_phares_ul"])),
-                    hv.fmt_joint_or_floor(r["vol_joint"]),
-                    (None if pd.isna(r["share_phares_joint"]) else hv.fmt_pct_dagger(r["share_phares_joint"], int(r["vol_joint"]))),
-                    None, None)
-        hovers.append(hv.hover_lines(list(zip(labels, vals))))
-    d["hover"] = hovers
-    return d, n_hidden
+    """Thin page-side wrapper: FIX-1 D9 moved the real logic to
+    lib/partner_frames.py::build_balance_frame (pure pandas, independently testable) --
+    this only supplies the page's already-loaded frames/context."""
+    return PF.build_balance_frame(
+        fld_p, _load_thematic_overview(), partner_topics, get_topics_df(), partner_works,
+        mode=mode, level=level, partner_id=partner_id, partner_name=partner_row["display_name"],
+        conf_state=CONF_STATE, include_conference=include_conference, artifact_on=artifact_on,
+        partner_total_windowed=partner_row.get("partner_total_windowed"),
+        field_id2name=field_id2name, subfield_id2name=subfield_id2name,
+    )
 
 
 bb_c1, bb_c2 = st.columns(2)
@@ -758,10 +693,17 @@ else:
         lambda: C.balance_bars(bb_frame, mode=bb_mode, level=bb_level_word, partner_name=partner_row["display_name"]),
     )
     st.plotly_chart(fig_bb, width="stretch")
-    if bb_mode == "volume":
-        st.caption(copy_fr.CAPTIONS["DERIVED_PARTNER_VOLUME"])
-    if bb_level == "subfield" and bb_n_hidden:
-        st.caption(copy_fr.CAPTIONS["SUBFIELD_NULL_SHARE"])
+    # FIX-1 D1: vol_partner_only now reads ptn_fields.partner_node_total DIRECTLY (exact,
+    # from the 42b blob) -- it is no longer derived from a share, so DERIVED_PARTNER_VOLUME
+    # no longer applies and is not shown. A NULL/absent partner_node_total row still shows
+    # UL-only + joint with a dash on the partner side (disclosed, never a wrong number).
+    if bb_n_hidden:
+        # FIX-1 D4: bb_n_hidden is now EXACTLY the NULL-partner_node_total count among the
+        # already-capped top-30 set (never the "beyond the cut" count) -- SUBFIELD_NULL_SHARE
+        # fires whenever that count is nonzero, at EITHER level (a field row can be NULL too).
+        st.caption(_caption("SUBFIELD_NULL_SHARE"))
+    if bb_mode == "phares" and "phares_proxy" in bb_frame.columns and bool(bb_frame["phares_proxy"].any()):
+        st.caption(_caption("PHARES_PROXY"))
     # The mirror has no usable 390 px state (VIZ_SPEC_pass7 §5.7; P7_ST NOTE 5: "~110 px
     # of plot for two segments") -- the narrow-viewport answer is a compact table, always
     # available here (not gated behind a viewport check Streamlit cannot make server-side).
@@ -772,7 +714,7 @@ else:
                     "n_phares_joint": "Phares conjoints", "link_label": "Co-pubs"}
         st.dataframe(bb_frame[[c for c in _bb_cols if c in bb_frame.columns]].rename(columns=_bb_cols),
                      hide_index=True, width="stretch")
-    exports.attach_download(st, bb_frame.drop(columns=["hover", "url"], errors="ignore"),
+    exports.attach_download(st, bb_frame.drop(columns=["hover", "url", "phares_proxy"], errors="ignore"),
                              "v2-partner-drilldown", "balance", _EXPORT_STATE, entity=("p", partner_id))
 
 st.markdown("---")
@@ -784,68 +726,24 @@ st.markdown("### Plans thématiques de la relation")
 
 
 def _cell_frame() -> pd.DataFrame:
-    """Pair x topic cells aggregated over the window, floor >= 5 co-pubs (P9) -- common
-    base of both planes. conf_state = the page's active toggle."""
-    d = partner_topics[partner_topics["conf_state"] == CONF_STATE]
-    agg = (d.groupby("topic_id", as_index=False, observed=True)
-           .agg(co_works=("co_works", "sum"), n_phares=("n_phares", "sum"),
-                fwci_median=("fwci_fr_median_cell", "median"),
-                frontier_score_std=("frontier_score_std", "median"),
-                artifact_flag=("artifact_flag", "max")))
-    agg = agg[agg["co_works"] >= PLANE_FLOOR].reset_index(drop=True)
-    topics = get_topics_df().set_index("topic_id")
-    for col in ("topic_name", "keywords", "subfield_name", "domain_id", "domain_name"):
-        agg[col] = agg["topic_id"].map(topics[col])
-    agg["artifact_flag"] = agg["artifact_flag"].fillna(False).astype(bool)
-    return agg
-
-
-PLANE_SORT_COL = {"volume": "co_works", "fwci": "fwci_median", "frontiere": "frontier_score_std", "phares": "n_phares"}
+    """Thin wrapper: FIX-1 D6/D9 moved this to lib/partner_frames.py::build_cell_frame,
+    which reads the LATEST-BIN `frontier` component from dim_frontier_components (never
+    ptn_topics.frontier_score_std, the all-period composite the manager ruled OFF page 9)."""
+    return PF.build_cell_frame(partner_topics, get_topics_df(), _load_frontier_components(),
+                                conf_state=CONF_STATE, floor=PLANE_FLOOR)
 
 
 def _plane_impact_frame(cells: pd.DataFrame, mode: str, n: int):
-    ranked_cells = cells.sort_values(PLANE_SORT_COL[mode], ascending=False, na_position="last").head(n)
-    d = ranked_cells[ranked_cells["fwci_median"].notna()].reset_index(drop=True)
-    n_dropped = len(ranked_cells) - len(d)
-    labels = copy_fr.HOVER_LABELS["zoom_plane_impact"][mode]
-    hovers = []
-    for _, r in d.iterrows():
-        kw1, kw2 = hv.fmt_keywords_2x5(r["keywords"])
-        kw = "{0}<br>{1}".format(kw1, kw2) if kw2 else kw1
-        vals = (r["topic_name"], kw, hv.fmt_int(r["co_works"]),
-                hv.fmt_fwci_pair(r["fwci_median"], r["fwci_median"], int(r["co_works"])),
-                (None if pd.isna(r["n_phares"]) or r["n_phares"] <= 0 else hv.fmt_int(r["n_phares"])),
-                None, r["subfield_name"])
-        hovers.append(hv.hover_lines(list(zip(labels, vals))))
-    d = d.assign(hover=hovers)
-    return d, n_dropped
+    return PF.build_plane_impact_frame(cells, mode, n)
 
 
 def _plane_frontier_frame(cells: pd.DataFrame, mode: str, n: int):
-    ranked_cells = cells.sort_values(PLANE_SORT_COL[mode], ascending=False, na_position="last").head(n).copy()
-    comp = _load_frontier_components()
-    latest = comp[comp["is_latest"].astype(bool)].drop_duplicates("topic_id").set_index("topic_id")
-    ranked_cells["expansion"] = ranked_cells["topic_id"].map(latest["expansion"])
-    ranked_cells["acceleration"] = ranked_cells["topic_id"].map(latest["acceleration"])
-    d = ranked_cells[ranked_cells["expansion"].notna() & ranked_cells["acceleration"].notna()].reset_index(drop=True)
-    n_dropped = len(ranked_cells) - len(d)
-    labels = copy_fr.HOVER_LABELS["zoom_plane_frontier"][mode]
-    hovers = []
-    for _, r in d.iterrows():
-        kw1, kw2 = hv.fmt_keywords_2x5(r["keywords"])
-        kw = "{0}<br>{1}".format(kw1, kw2) if kw2 else kw1
-        vals = (r["topic_name"], kw, hv.fmt_score(r["expansion"]), hv.fmt_score(r["acceleration"]),
-                hv.fmt_int(r["co_works"]),
-                (None if pd.isna(r["frontier_score_std"]) else hv.fmt_score(r["frontier_score_std"])),
-                None)
-        hovers.append(hv.hover_lines(list(zip(labels, vals))))
-    d = d.assign(hover=hovers)
-    return d, n_dropped
+    return PF.build_plane_frontier_frame(cells, mode, n)
 
 
 plane_cells = _cell_frame()
 if len(plane_cells) < PLANE_FLOOR:
-    st.caption(copy_fr.CAPTIONS["THIN_PARTNER"])
+    st.caption(_caption("THIN_PARTNER"))
 else:
     pl_c1, pl_c2 = st.columns([2, 1])
     with pl_c1:
@@ -873,7 +771,7 @@ else:
             st.plotly_chart(fig_imp, width="stretch")
         reading.reading_line("zoom_plane_impact", plane_mode)
         if imp_dropped:
-            st.caption(copy_fr.CAPTIONS["PLANE_UNSCORED"])
+            st.caption(_caption("PLANE_UNSCORED"))
     with p_col2:
         st.markdown("#### Expansion × accélération")
         if fr_frame.empty:
@@ -884,11 +782,12 @@ else:
                 lambda: C.fig_plane_frontier(fr_frame),
             )
             st.plotly_chart(fig_frt, width="stretch")
-        reading.reading_line("zoom_plane_frontier", plane_mode,
-                              bin_prev=PLANE_FRONTIER_BIN_PREV, bin_last=PLANE_FRONTIER_BIN_LAST)
+        # FIX-1 D7: bin labels read live from the table, never typed as a page constant.
+        _bin_last, _bin_prev = PF.latest_and_previous_bin_labels(_load_frontier_components())
+        reading.reading_line("zoom_plane_frontier", plane_mode, bin_prev=_bin_prev, bin_last=_bin_last)
         if fr_dropped:
-            st.caption(copy_fr.CAPTIONS["PLANE_UNSCORED"])
-    st.caption(copy_fr.CAPTIONS["FRONTIER_VINTAGES"])
+            st.caption(_caption("PLANE_UNSCORED"))
+    st.caption(_caption("FRONTIER_VINTAGES"))
     exports.attach_download(st, imp_frame.drop(columns=["hover"], errors="ignore"),
                              "v2-partner-drilldown", "planes", _EXPORT_STATE, entity=("p", partner_id))
 
@@ -986,16 +885,26 @@ if drilled_field is None:
             has_members=False, progress_cols=_progress, mean_cols=_hidden, ref_labels=_ref_labels,
         )
 
-        chart_f = visible_f.head(FIELD_CHART_CAP).sort_values("co_works", ascending=True)
+        chart_f = visible_f.sort_values("co_works", ascending=False).head(FIELD_CHART_CAP).reset_index(drop=True)
         if not chart_f.empty:
             st.markdown("###### Volume par champ")
-            fig_f = overlay.overlay_bars(
-                categories=chart_f["field_label"].tolist(), totals=chart_f["co_works"].tolist(),
-                isite=chart_f["co_works_isite"].tolist(), colors=chart_f["domain_color"].tolist(),
-                isite_on=isite_overlay_on, orientation="h",
+            # FIX-1 D10 (S-LENS A17): the registry declares zoom_field_companion "bars
+            # (gutter)" -- migrated from overlay.overlay_bars to charts.bars_with_gutter.
+            chart_f["hover"] = [
+                hv.hover_lines(list(zip(copy_fr.HOVER_LABELS["zoom_field_companion"]["default"], (
+                    r["field_label"], hv.fmt_int(r["co_works"]), hv.fmt_pct(r["share_of_pair"]),
+                    hv.fmt_pct(r["baseline_ul_share"]), (None if r["partner_share_text"] == "—" else r["partner_share_text"]),
+                    None, (None if r["mom_text"] == "—" else r["mom_text"]),
+                ))))
+                for _, r in chart_f.iterrows()
+            ]
+            fig_f = fig_cache.cached_figure(
+                "zoom_field_companion", (partner_id, CONF_STATE, isite_overlay_on, len(chart_f)),
+                lambda: C.bars_with_gutter(
+                    chart_f, family="champ", label_col="field_label", value_col="co_works",
+                    color=chart_f["domain_color"].tolist(), isite_col="co_works_isite", isite_on=isite_overlay_on,
+                ),
             )
-            fig_f.update_layout(height=max(200, 26 * len(chart_f)), margin=dict(t=10, l=10, r=20, b=30),
-                                 xaxis_title="Co-publications", showlegend=isite_overlay_on)
             st.plotly_chart(fig_f, width="stretch")
             reading.reading_line("zoom_field_companion")
 
@@ -1084,16 +993,25 @@ elif drilled_subfield is None:
             has_members=False, progress_cols=_progress, mean_cols=_hidden, ref_labels=_ref_labels,
         )
 
-        chart_s = visible_s.head(SUBFIELD_CHART_CAP).sort_values("co_works", ascending=True)
+        chart_s = visible_s.sort_values("co_works", ascending=False).head(SUBFIELD_CHART_CAP).reset_index(drop=True)
         if not chart_s.empty:
             st.markdown("###### Volume par sous-champ")
-            fig_s = overlay.overlay_bars(
-                categories=chart_s["subfield_label"].tolist(), totals=chart_s["co_works"].tolist(),
-                isite=chart_s["co_works_isite"].tolist(), colors=chart_s["subfield_color"].tolist(),
-                isite_on=isite_overlay_on, orientation="h",
+            # FIX-1 D10 (S-LENS A17): migrated to charts.bars_with_gutter (was overlay_bars).
+            chart_s["hover"] = [
+                hv.hover_lines(list(zip(copy_fr.HOVER_LABELS["zoom_subfield_companion"]["default"], (
+                    r["subfield_label"], field_name, hv.fmt_int(r["co_works"]), hv.fmt_pct(r["share_of_pair"]),
+                    hv.fmt_pct(r["baseline_ul_share"]), None,
+                    (None if r["mom_text"] == "—" else r["mom_text"]) if "mom_text" in r else None,
+                ))))
+                for _, r in chart_s.iterrows()
+            ]
+            fig_s = fig_cache.cached_figure(
+                "zoom_subfield_companion", (partner_id, CONF_STATE, isite_overlay_on, drilled_field, len(chart_s)),
+                lambda: C.bars_with_gutter(
+                    chart_s, family="sous_champ", label_col="subfield_label", value_col="co_works",
+                    color=chart_s["subfield_color"].tolist(), isite_col="co_works_isite", isite_on=isite_overlay_on,
+                ),
             )
-            fig_s.update_layout(height=max(200, 26 * len(chart_s)), margin=dict(t=10, l=10, r=20, b=30),
-                                 xaxis_title="Co-publications", showlegend=isite_overlay_on)
             st.plotly_chart(fig_s, width="stretch")
             reading.reading_line("zoom_subfield_companion")
 
@@ -1278,41 +1196,18 @@ st.markdown("### Réciprocité stratégique")
 
 
 def _recip_frame(level: str):
-    """zoom_reciprocity (VIZ_SPEC_pass7 §5.13) -- lifted from
-    tests/_registry.py::frame_reciprocity. NULL-share rows are dropped and counted (P8):
-    they cannot be placed on either axis, and a zero would be a lie."""
-    d = fld_all[(fld_all["partner_id"] == partner_id) & (fld_all["conf_state"] == "all")
-                & (fld_all["node_level"] == level)].copy()
-    if d.empty:
-        return d, 0
-    d["node_id"] = d["node_id"].astype(int)
-    d["node_name"] = d["node_id"].map(field_id2name if level == "field" else subfield_id2name)
-    d = d.dropna(subset=["node_name"])
-    n_before = len(d)
-    d = d[d["baseline_partner_share"].notna() & d["baseline_ul_share"].notna()].copy()
-    n_hidden = n_before - len(d)
-    if level == "field":
-        d["domain_id"] = d["node_id"].map(field_id2domain)
-    else:
-        topics_idx2 = get_topics_df().drop_duplicates("subfield_id").set_index("subfield_id")
-        d["domain_id"] = d["node_id"].map(topics_idx2["domain_id"])
-        d["field_name"] = d["node_id"].map(topics_idx2["field_name"])
-    d["domain_name"] = d["domain_id"].map(domain_id2name)
-    d = d.sort_values("co_works", ascending=False).reset_index(drop=True)
-    if level == "subfield":
-        d = d.head(30).reset_index(drop=True)
-    d["share_ul"] = d["baseline_ul_share"] * 100.0
-    d["share_partner"] = d["baseline_partner_share"] * 100.0
-    mode_key = "champ" if level == "field" else "sous_champ"
-    labels = copy_fr.HOVER_LABELS["zoom_reciprocity"][mode_key]
-    hovers = []
-    for _, r in d.iterrows():
-        vals = (r["node_name"], (r["field_name"] if level == "subfield" else None),
-                hv.fmt_pct(r["share_ul"]), hv.fmt_pct(r["share_partner"]),
-                hv.fmt_int(r["co_works"]), hv.fmt_pct(r["share_of_pair"] * 100.0), r["domain_name"])
-        hovers.append(hv.hover_lines(list(zip(labels, vals))))
-    d["hover"] = hovers
-    return d, n_hidden
+    """Thin wrapper: FIX-1 D2/D9/D13 moved this to
+    lib/partner_frames.py::build_recip_frame (x axis is now the partner's OWN portfolio
+    weight of the node, `partner_node_total / partner_total_windowed` -- never the
+    involvement share `baseline_partner_share`; the top-30 cap runs BEFORE the NULL drop,
+    matching the balance bars' own order, D4/D13)."""
+    return PF.build_recip_frame(
+        fld_all, get_topics_df(), partner_id=partner_id, level=level,
+        partner_name=partner_row["display_name"],
+        partner_total_windowed=partner_row.get("partner_total_windowed"),
+        field_id2name=field_id2name, subfield_id2name=subfield_id2name,
+        field_id2domain=field_id2domain, domain_id2name=domain_id2name,
+    )
 
 
 rc_level = _pair_level_control("v2_recip_level_radio")
