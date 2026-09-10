@@ -78,6 +78,8 @@ from lib import charts, controls, copy_fr, exports, hover, lazy, links, ranked, 
 from lib.countries_fr import country_label
 from lib.data_cache import DATA_DIR, get_corpus_facts_df, get_topics_df
 from lib.helpers import (
+    MAP_CHROME,
+    NEUTRAL_GREY,
     YEARS, UL_COLOR, fr_int, fr_pct, window_label, snapshot_date_label,
     init_taxonomy, get_field_id_to_name, get_subfield_id_to_name, get_subfields_for_field,
 )
@@ -410,7 +412,7 @@ with col_map:
             locations=map_df["iso3"], locationmode="ISO-3",
             marker=dict(
                 size=map_df["co_works"], sizemode="area", sizeref=sizeref, sizemin=3,
-                color="#0072B2", opacity=0.75, line=dict(width=0.5, color="white"),
+                color=UL_COLOR, opacity=0.75, line=dict(width=0.5, color="white"),
             ),
             customdata=map_hover, hovertemplate=hover.HOVERTEMPLATE, mode="markers", showlegend=False,
         ))
@@ -420,13 +422,13 @@ with col_map:
         for i, v in enumerate(ref_vals):
             fig_map.add_trace(go.Scattergeo(
                 lon=[-25], lat=[-62 + i * 9], mode="markers",
-                marker=dict(size=[v], sizemode="area", sizeref=sizeref, sizemin=3, color="#8C9196", opacity=0.6),
+                marker=dict(size=[v], sizemode="area", sizeref=sizeref, sizemin=3, color=NEUTRAL_GREY, opacity=0.6),
                 name=f"{fr_int(v)} co-pubs", showlegend=True, hoverinfo="skip",
             ))
         fig_map.update_geos(
-            showcountries=True, countrycolor="#c9cdd1", showcoastlines=True, coastlinecolor="#9aa0a6",
-            projection_type="natural earth", showland=True, landcolor="#eef1f3",
-            showocean=True, oceancolor="#f7fafc", showframe=False,
+            showcountries=True, countrycolor=MAP_CHROME["country"], showcoastlines=True, coastlinecolor=MAP_CHROME["coast"],
+            projection_type="natural earth", showland=True, landcolor=MAP_CHROME["land"],
+            showocean=True, oceancolor=MAP_CHROME["ocean"], showframe=False,
         )
         fig_map.update_layout(height=520, margin=dict(t=10, b=10, l=0, r=0), legend=dict(x=0, y=0))
         reading.reading_line("geo_map", window=window_label())
@@ -599,7 +601,7 @@ else:
 
     yearly = unigr.groupby("year")["co_works_year"].sum()
     fig_g = go.Figure(go.Bar(
-        x=[str(y) for y in YEARS], y=[float(yearly.get(y, 0)) for y in YEARS], marker_color="#0072B2",
+        x=[str(y) for y in YEARS], y=[float(yearly.get(y, 0)) for y in YEARS], marker_color=UL_COLOR,
     ))
     fig_g.update_layout(
         height=220, margin=dict(t=10, l=40, r=20, b=30),

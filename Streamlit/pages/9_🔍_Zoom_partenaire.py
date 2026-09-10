@@ -84,6 +84,7 @@ from lib import charts as C, controls, copy_fr, exports, fig_cache, hover as hv,
 from lib.countries_fr import country_label
 from lib.data_cache import DATA_DIR, get_corpus_facts_df, get_topics_df
 from lib.helpers import (
+    TEXT_SECONDARY,
     YEARS, DOMAIN_EMOJI, NEUTRAL_GREY, UL_COLOR,
     MOMENTUM_DOWN_COLOR, MOMENTUM_METHOD_HELP_FR, MOMENTUM_NEUTRAL_COLOR,
     MOMENTUM_STABLE_COLOR, MOMENTUM_UP_COLOR,
@@ -105,7 +106,7 @@ PTN_WORKS_PATH = str(DATA_DIR / "ptn_works.parquet")
 PTN_TOPICS_PATH = str(DATA_DIR / "ptn_topics.parquet")
 FIELD_CHART_CAP = 20
 SUBFIELD_CHART_CAP = 20
-NODE_BASE_COLOR = "#0072B2"
+NODE_BASE_COLOR = UL_COLOR  # B6/B8: page-local hex retired -- single-sourced token
 PORTAGE_DEFAULT_N = 10
 PORTAGE_MAX_N = 20
 
@@ -582,7 +583,7 @@ with st.container(border=True):
         sig = mf_row.get("significance_p")
         sig_txt = _fr_float(sig, 2)
         st.markdown(
-            f'<div style="font-size:13px;color:#5A5F66">'
+            f'<div style="font-size:13px;color:{TEXT_SECONDARY}">'
             f'Part du collaboratif UL : {w1_pct} ({w1_lbl}) → {w2_pct} ({w2_lbl})<br>'
             f'Co-publications : {c1c2} &nbsp;&nbsp;&nbsp; Signification : p = {p_txt} '
             f'(seuil {sig_txt})</div>',
@@ -692,7 +693,19 @@ else:
         "zoom_balance_bars", (partner_id, CONF_STATE, bb_mode, bb_level),
         lambda: C.balance_bars(bb_frame, mode=bb_mode, level=bb_level_word, partner_name=partner_row["display_name"]),
     )
-    st.plotly_chart(fig_bb, width="stretch")
+    # B8/D15: the mirror has no usable 390 px state (VIZ_SPEC_pass7 §5.7; P7_ST NOTE 5:
+    # "~110 px of plot for two segments") -- below, a CSS media query (not a server-side
+    # width guess Streamlit cannot make) swaps the mirror for its table companion, which
+    # renders the SAME frame (no recompute): both live in the DOM, only one is visible.
+    st.markdown(
+        "<style>"
+        "@media (max-width: 640px) { .st-key-zoom_mirror { display: none; } }"
+        "@media (min-width: 641px) { .st-key-zoom_mirror_table { display: none; } }"
+        "</style>",
+        unsafe_allow_html=True,
+    )
+    with st.container(key="zoom_mirror"):
+        st.plotly_chart(fig_bb, width="stretch")
     # FIX-1 D1: vol_partner_only now reads ptn_fields.partner_node_total DIRECTLY (exact,
     # from the 42b blob) -- it is no longer derived from a share, so DERIVED_PARTNER_VOLUME
     # no longer applies and is not shown. A NULL/absent partner_node_total row still shows
@@ -704,16 +717,18 @@ else:
         st.caption(_caption("SUBFIELD_NULL_SHARE"))
     if bb_mode == "phares" and "phares_proxy" in bb_frame.columns and bool(bb_frame["phares_proxy"].any()):
         st.caption(_caption("PHARES_PROXY"))
-    # The mirror has no usable 390 px state (VIZ_SPEC_pass7 §5.7; P7_ST NOTE 5: "~110 px
-    # of plot for two segments") -- the narrow-viewport answer is a compact table, always
-    # available here (not gated behind a viewport check Streamlit cannot make server-side).
+    _bb_cols = {"node_name": "Nom", "vol_ul_only": "UL seule", "vol_joint": "Conjoint",
+                "vol_partner_only": "Partenaire seul (dérivé)", "fwci_ul": "FWCI UL",
+                "fwci_joint": "FWCI conjoint", "n_phares_ul": "Phares UL",
+                "n_phares_joint": "Phares conjoints", "link_label": "Co-pubs"}
+    _bb_display = bb_frame[[c for c in _bb_cols if c in bb_frame.columns]].rename(columns=_bb_cols)
+    # Narrow-viewport default (<= 640 px, CSS-gated above): the same frame, always in the
+    # DOM, no click needed. Above 640 px it is CSS-hidden and the collapsed expander below
+    # (unchanged wide-screen behaviour) is the reading path.
+    with st.container(key="zoom_mirror_table"):
+        st.dataframe(_bb_display, hide_index=True, width="stretch")
     with st.expander("Voir en tableau (lecture recommandée sur petit écran)"):
-        _bb_cols = {"node_name": "Nom", "vol_ul_only": "UL seule", "vol_joint": "Conjoint",
-                    "vol_partner_only": "Partenaire seul (dérivé)", "fwci_ul": "FWCI UL",
-                    "fwci_joint": "FWCI conjoint", "n_phares_ul": "Phares UL",
-                    "n_phares_joint": "Phares conjoints", "link_label": "Co-pubs"}
-        st.dataframe(bb_frame[[c for c in _bb_cols if c in bb_frame.columns]].rename(columns=_bb_cols),
-                     hide_index=True, width="stretch")
+        st.dataframe(_bb_display, hide_index=True, width="stretch")
     exports.attach_download(st, bb_frame.drop(columns=["hover", "url", "phares_proxy"], errors="ignore"),
                              "v2-partner-drilldown", "balance", _EXPORT_STATE, entity=("p", partner_id))
 

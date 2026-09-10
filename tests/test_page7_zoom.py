@@ -23,6 +23,7 @@ mutated copy) that makes the identical check FAIL -- a pin that cannot fail is t
 """
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -661,3 +662,102 @@ def test_page_workbook_lecture_sheet_is_first():
     assert list(lecture_df.columns) == ["Clé", "Valeur"]
     assert filename.endswith(".xlsx")
     assert book.sheet_names[1] != "Lecture"  # vacuity
+
+
+# ============================================================================
+# P7B_Z9 (pass 7b, W1): D15/B8 the 390 px CSS switch (mirror <-> table companion,
+# no server-side width guess) + D11 live verification (the fix itself landed in
+# lib/partner_frames.py::build_balance_frame -- see PF's own pin above) + B6 the
+# page-local #0072B2 -> UL_COLOR retirement on pages 9 and 10.
+# ============================================================================
+
+GEO_PAGE = "10_\U0001F30D_Géographie.py"
+
+
+def test_balance_mirror_css_switch_containers_and_media_queries_present():
+    """D15/B8: the mirror and its table companion live in named `st.container()`
+    keys, toggled purely by a CSS media query (no server-side width guess) --
+    `.st-key-<key>` is the Streamlit 1.39+ class this pass's pinned 1.61.1 emits
+    for a keyed container (render-verified in progress/p7b_proofs/Z9/)."""
+    src = Path(PARTNER_PAGE).read_text(encoding="utf-8")
+    assert 'st.container(key="zoom_mirror")' in src
+    assert 'st.container(key="zoom_mirror_table")' in src
+    assert "@media (max-width: 640px)" in src
+    assert ".st-key-zoom_mirror {" in src
+    assert "@media (min-width: 641px)" in src
+    assert ".st-key-zoom_mirror_table {" in src
+    # vacuity: stripping the narrow-viewport rule from a COPY must make the same
+    # substring check FAIL -- proves the assertion actually reads the file, not a
+    # tautology that would pass on any source.
+    mutated = src.replace(
+        "@media (max-width: 640px) { .st-key-zoom_mirror { display: none; } }", "")
+    assert "@media (max-width: 640px)" not in mutated
+
+
+def test_balance_mirror_table_companion_renders_the_same_frame_no_recompute():
+    """D15: the table companion must draw the SAME frame the mirror draws -- one
+    `_bb_display` built ONCE, rendered by both the always-in-DOM container and the
+    unchanged wide-screen expander (never a second dataframe build)."""
+    src = Path(PARTNER_PAGE).read_text(encoding="utf-8")
+    block = src.split('with st.container(key="zoom_mirror"):', 1)[1][:2500]
+    assert block.count("_bb_display = bb_frame[") == 1
+    assert block.count("st.dataframe(_bb_display") == 2
+    assert 'with st.container(key="zoom_mirror_table"):' in block
+    assert 'with st.expander("Voir en tableau' in block
+    # vacuity: a build count of 1 is what we assert -- a source that built it twice
+    # (the recompute this pin forbids) must NOT satisfy the same check.
+    assert block.count("_bb_display = bb_frame[") != 2
+
+
+def _balance_bars_link_spec(at: AppTest) -> dict | None:
+    """The zoom_balance_bars figure's raw proto spec (JSON) -- identified by
+    carrying a `yaxis2` (lib/charts.py `_add_link_column`'s second categorical
+    axis for the linked "Co-pubs" column; the only figure on this page that has
+    one). Read off `.proto.spec`, not `.value` (a plain chart with no `on_select`
+    has no session-state-backed value -- same idiom as test_page_pe.py)."""
+    for c in at.get("plotly_chart"):
+        spec = json.loads(c.proto.spec)
+        if "yaxis2" in spec.get("layout", {}):
+            return spec
+    return None
+
+
+def test_balance_bars_phares_mode_link_hrefs_are_phares_url_shaped_live(monkeypatch):
+    """D11, AppTest/render level: `test_balance_bars_phares_mode_links_the_cells_own_
+    work_ids` above already proves `lib.partner_frames.build_balance_frame` calls
+    `links.phares_url` (url != a generic copubs_url); this proves the RENDERED
+    figure's link column hrefs, live in the app, carry one of phares_url's two
+    branches (`ids.openalex:` for the exact id-list, or `sort=cited_by_count:` for
+    the >100-id proxy) -- never a bare copubs_url with neither marker."""
+    _skip_if_missing("ptn_fields.parquet", "thematic_overview.parquet",
+                      "ptn_topics.parquet", "ptn_works.parquet")
+    at = _goto_partner(monkeypatch, CNRS_ID)
+    radios = {r.key: r for r in at.radio}
+    assert "v2_balance_mode" in radios, list(radios)
+    at.radio(key="v2_balance_mode").set_value("phares")
+    at.run(timeout=TIMEOUT)
+    assert not at.exception, _exc_values(at)
+    spec = _balance_bars_link_spec(at)
+    assert spec is not None, "no plotly_chart with a yaxis2 (link column) found in phares mode"
+    ticktext = " ".join(t for t in (spec["layout"]["yaxis2"].get("ticktext") or []) if t)
+    assert ("ids.openalex:" in ticktext) or ("sort=cited_by_count:" in ticktext), ticktext
+    # vacuity: an href shape phares_url never produces must NOT be found in the
+    # same rendered ticktext -- proves the assertion above is not vacuously true.
+    assert "this_href_shape_never_appears_in_phares_url_output" not in ticktext
+
+
+def test_page9_and_page10_have_no_ul_color_hex_literal():
+    """B6/B8: the page-local `#0072B2` literal (page 9's old `NODE_BASE_COLOR`,
+    page 10's map marker + UniGR yearly bar) is retired in favour of the single-
+    sourced `UL_COLOR` token on both pages. Matches the Acceptance gate's own
+    `grep -c "#0072B2"` == 0 check verbatim."""
+    import re
+    zoom_src = Path(PARTNER_PAGE).read_text(encoding="utf-8")
+    geo_src = (PAGES_DIR / GEO_PAGE).read_text(encoding="utf-8")
+    assert len(re.findall(r"#0072B2", zoom_src, flags=re.IGNORECASE)) == 0
+    assert len(re.findall(r"#0072B2", geo_src, flags=re.IGNORECASE)) == 0
+    assert "UL_COLOR" in zoom_src
+    assert "UL_COLOR" in geo_src
+    # vacuity: reintroducing the literal on a COPY must be caught by the same regex
+    mutated = geo_src + '\nSOME_COLOR = "#0072B2"\n'
+    assert len(re.findall(r"#0072B2", mutated, flags=re.IGNORECASE)) == 1

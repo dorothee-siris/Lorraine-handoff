@@ -1342,6 +1342,12 @@ def momentum_display(row: Any, facts: Any) -> tuple[str, str, str | None]:
 # ADDITIVE ONLY (S-LIB-B scope fence): nothing above this banner moves.
 # ============================================================================
 
+# ---- pass 7b: chrome tokens (BUILD_PLAN 7b B6 -- zero hex literal in any page file) ----
+TEXT_SECONDARY = "#5A5F66"   # VIZ_SPEC SS1.6 secondary text ink (captions, small HTML notes)
+MAP_CHROME = {               # scattergeo basemap chrome (page 10) -- chrome, never an identity slot
+    "country": "#c9cdd1", "coast": "#9aa0a6", "land": "#eef1f3", "ocean": "#f7fafc",
+}
+
 # ---- SS2.1 pair colour grammar (P5) ----
 UL_COLOR = "#0072B2"        # focal, UNCHANGED (VIZ_SPEC SS1.1) -- single-sourced here; pages still
                             # carry their OWN page-local "#0072B2" literals (FOCAL_BLUE etc.) as of
