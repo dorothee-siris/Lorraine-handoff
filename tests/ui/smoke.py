@@ -378,6 +378,289 @@ def assert_sdg_bar_colors(page, name: str) -> None:
         print(f"  [FAIL] {name}: SDG colour mismatch {colors[:1]!r} vs goal {goal}")
 
 
+# ---------------------------------------------------------------------------
+# pass-7b additions (S-INSP battery, W4): generic, content-addressed probes for
+# the pass-7b contract (B2 gutter numbers, B3 `<b>label</b> : value` hover
+# grammar, B6 red-dashed REFERENCE_RED shapes) -- read from the LIVE plotly
+# JSON / DOM, never assumed from the page's Python source. See
+# docs/INSPECTION_REPORT_pass7b.md.
+# ---------------------------------------------------------------------------
+GUTTER_TRACE_PROBE = """() => Array.from(document.querySelectorAll('.js-plotly-plot')).map((gd, i) => {
+  const traces = gd.data || [];
+  const last = traces[traces.length - 1] || {};
+  return {index: i, hoverinfo: last.hoverinfo || '', text: (last.text || []).map(String)};
+})"""
+
+
+def find_gutter_chart(page):
+    """The first chart whose LAST trace is a gutter phantom (`hoverinfo:
+    'skip'`) carrying at least one non-empty, digit-bearing text label -- the
+    `bars_with_gutter` signature (`_add_gutter_column`, lib/charts.py)."""
+    info = page.evaluate(GUTTER_TRACE_PROBE)
+    for c in info:
+        texts = [t for t in c["text"] if t.strip()]
+        if c["hoverinfo"] == "skip" and texts and all(re.search(r"\d", t) for t in texts):
+            return c
+    return None
+
+
+def assert_gutter_number(page, name: str) -> None:
+    """B2/P1: a converted horizontal bar chart carries a rendered gutter
+    NUMBER (the phantom trace's own `text`), not merely a phantom trace."""
+    global checks
+    checks += 1
+    g = find_gutter_chart(page)
+    if g:
+        print(f"  [ok] {name}: gutter number(s) on chart #{g['index']}, e.g. {g['text'][:2]!r}")
+    else:
+        failures.append(f"{name}: no bar chart with a rendered gutter NUMBER found (bars_with_gutter, B2)")
+        print(f"  [FAIL] {name}: gutter number missing")
+
+
+HOVER_SAMPLE_PROBE = """() => {
+  const plots = Array.from(document.querySelectorAll('.js-plotly-plot'));
+  for (const gd of plots) {
+    for (const t of (gd.data || [])) {
+      const tmpl = t.hovertemplate || '';
+      const cd = t.customdata;
+      if (tmpl.indexOf('customdata') >= 0 && Array.isArray(cd) && cd.length
+          && typeof cd[0] === 'string' && cd[0]) {
+        return cd[0];
+      }
+    }
+  }
+  return null;
+}"""
+
+
+def assert_hover_grammar(page, name: str) -> None:
+    """B3: the hover grammar is `<b>label</b> : value` lines joined by
+    `<br>`, built by `lib.hover.hover_lines` -- checked against the LIVE
+    plotly JSON's own `customdata`, never the page's Python source."""
+    global checks
+    checks += 1
+    sample = page.evaluate(HOVER_SAMPLE_PROBE)
+    if sample and re.search(r"<b>[^<]+</b>\s*:\s*\S", sample):
+        shown = sample.split("<br>")[0]
+        print(f"  [ok] {name}: hover grammar '<b>label</b> : value' confirmed, e.g. {shown!r}")
+    else:
+        failures.append(f"{name}: no '<b>label</b> : value' hover string found in the live plotly JSON (sample={sample!r})")
+        print(f"  [FAIL] {name}: hover grammar not found (sample={sample!r})")
+
+
+REFERENCE_SHAPE_PROBE = """() => Array.from(document.querySelectorAll('.js-plotly-plot')).flatMap((gd) => {
+  const lay = gd.layout || {};
+  return (lay.shapes || []).map(s => ({dash: (s.line && s.line.dash) || '', color: (s.line && s.line.color) || ''}));
+})"""
+
+
+def assert_reference_dash(page, name: str) -> None:
+    """B2/B6: the caution/parity reference is ALWAYS a dashed line in
+    `H.REFERENCE_RED` (#821D13) -- one red, one meaning, never the pre-7b
+    grey dotted convention."""
+    global checks
+    checks += 1
+    shapes = page.evaluate(REFERENCE_SHAPE_PROBE)
+    hit = next((s for s in shapes if s["dash"] == "dash" and str(s["color"]).lower() == "#821d13"), None)
+    if hit:
+        print(f"  [ok] {name}: red dashed REFERENCE_RED shape present ({len(shapes)} shape(s) total)")
+    else:
+        failures.append(f"{name}: no dashed #821D13 (REFERENCE_RED) shape found on any chart (shapes seen: {shapes})")
+        print(f"  [FAIL] {name}: red dashed reference shape missing (shapes={shapes})")
+
+
+def assert_reading_present_absent(page, name: str, present_substr: str,
+                                   absent_substr: str = "Comment lire",
+                                   check_absent: bool = True) -> None:
+    """B2/P3: a chart's `reading_line(key, mode)` sentence renders live, and
+    the OLD static paragraph it replaced is gone from the page's own text.
+
+    `check_absent=False`: for a page that carries a DIFFERENT chart's own,
+    explicitly-unmigrated static caption in the SAME body (B2 names
+    `ov_breakdown_annual`'s `lib.overlay` grouped-bars caption as staying as
+    it is -- 'year-axis bars ... keep lib.overlay ... hover + reading +
+    tokens only', not a re-grammar) -- a whole-body substring scan cannot
+    otherwise tell that legitimate text apart from a real P3 regression on
+    THIS pin's own chart. Confirmed live: `lib/overlay.py:224` is the one
+    surviving 'Comment lire' source in the whole `Streamlit/pages` tree that
+    also renders on this page (page-1 source itself carries ZERO)."""
+    global checks
+    body = page.inner_text("body")
+    checks += 1
+    if present_substr in body:
+        print(f"  [ok] {name}: reading line present ({present_substr[:40]!r}...)")
+    else:
+        failures.append(f"{name}: reading-line text ({present_substr[:40]!r}...) not found on the rendered page")
+        print(f"  [FAIL] {name}: reading line missing")
+    if not check_absent:
+        return
+    checks += 1
+    if absent_substr not in body:
+        print(f"  [ok] {name}: static '{absent_substr}' paragraph absent (P3)")
+    else:
+        failures.append(f"{name}: static '{absent_substr}' paragraph still present (P3 violation)")
+        print(f"  [FAIL] {name}: '{absent_substr}' still present")
+
+
+def check_page7_floor_style(page) -> None:
+    """D9 (docs/LENS_ABSORPTION_pass7b.md): floor rows on I-SITE's
+    `isite_ratio_dots` use the SAME caution channel as page 4's identical dot
+    chart -- hollow marker, REFERENCE_RED (#821D13) outline, dagger baked
+    into the y ticktext -- never a translucent grey fill / legend-only
+    disclosure (the pre-fix divergence)."""
+    global checks
+    print("page I-SITE - floor-row caution channel: hollow ring + dagger ticktext (D9)")
+    info = page.evaluate("""
+      () => Array.from(document.querySelectorAll('.js-plotly-plot')).map((gd) => ({
+        traces: (gd.data || []).map(t => ({name: t.name || '', marker: t.marker || {}})),
+        ytext: (gd.layout && gd.layout.yaxis) ? gd.layout.yaxis.ticktext : null,
+      }))
+    """)
+    floor_chart = next((c for c in info if any(str(t["name"]).startswith("< 30") for t in c["traces"])), None)
+    checks += 1
+    if not floor_chart:
+        failures.append("isite_ratio_dots: floor trace ('< 30 travaux I-SITE') not found on I-SITE")
+        print("  [FAIL] D9: floor trace not found")
+        return
+    tr = next(t for t in floor_chart["traces"] if str(t["name"]).startswith("< 30"))
+    mk = tr["marker"] or {}
+    line = mk.get("line") or {}
+    fill = str(mk.get("color", "")).replace(" ", "")
+    ring = str(line.get("color", "")).lower()
+    ok_marker = fill == "rgba(255,255,255,0)" and ring == "#821d13"
+    if ok_marker:
+        print(f"  [ok] D9: floor marker hollow (fill={fill!r}) + REFERENCE_RED ring")
+    else:
+        failures.append(f"D9: floor marker style off -- fill={fill!r} ring={ring!r} (want hollow + #821d13)")
+        print(f"  [FAIL] D9: floor marker fill={fill!r} ring={ring!r}")
+
+    checks += 1
+    ytext = floor_chart["ytext"] or []
+    ok_tick = any("†" in str(t) and "821d13" in str(t).lower() for t in ytext)
+    if ok_tick:
+        print("  [ok] D9: a y-tick label carries the dagger inside a REFERENCE_RED span")
+    else:
+        failures.append(f"D9: no y-tick combines the dagger with a REFERENCE_RED span (ticktext sample={ytext[:3]})")
+        print(f"  [FAIL] D9: dagger/red-span y-tick missing (sample={ytext[:3]})")
+
+
+def check_page7_click_drill(page) -> None:
+    """B7: the ratio dot chart's `on_select='rerun'` drill wiring, exercised
+    with a REAL Playwright click on a rendered marker (never a synthetic
+    session_state write) -- the 'Sélectionné' caption and the drill
+    `page_link` must appear live."""
+    global checks
+    print("page I-SITE - dot click -> drill section changes (B7, live on_select)")
+    checks += 1
+    try:
+        marker = page.locator('.js-plotly-plot .scatterlayer .trace path.point').first
+        marker.scroll_into_view_if_needed()
+        page.wait_for_timeout(300)
+        marker.click(force=True)
+        settle(page)
+        body = page.inner_text("body")
+        if "Sélectionné" in body and "Ouvrir l'exploration thématique pour" in body:
+            print("  [ok] B7: dot click renders the drill caption + page_link live")
+        else:
+            failures.append("B7: dot click on isite_ratio_dots did not render the 'Sélectionné'/drill page_link section")
+            print("  [FAIL] B7: drill section did not appear after a live click")
+    except Exception as e:
+        failures.append(f"B7: page-7 dot-click drill probe raised: {e}")
+        print(f"  [FAIL] B7 probe exception: {e}")
+
+
+def check_page13_orcid_yearly(page) -> None:
+    """D7 (docs/LENS_ABSORPTION_pass7b.md): the yearly ORCID bar must plot
+    the WORK-level share (`pct_works_orcid`), never the person-level
+    `pct_orcid` the pre-fix hover mismatched against its own two counts --
+    and the caution dagger + REFERENCE_RED ink must land exactly on the
+    year(s) where that work-level share fell vs the prior year, recomputed
+    independently from `aut_coverage.parquet`, never assumed from the page."""
+    global checks
+    print("page Identifiants - yearly ORCID bar = work-level share + caution dagger on decline (D7)")
+    info = page.evaluate("""
+      () => Array.from(document.querySelectorAll('.js-plotly-plot')).map((gd, i) => {
+        const d0 = (gd.data && gd.data[0]) || {};
+        return {index: i, x: (d0.x || []).map(String), y: (d0.y || []),
+                text: (d0.text || []).map(String),
+                inks: (d0.textfont && d0.textfont.color) || []};
+      })
+    """)
+    year_re = re.compile(r"^(19|20)\d{2}$")
+    cand = [c for c in info if len(c["x"]) >= 3 and all(year_re.match(x) for x in c["x"])]
+    checks += 1
+    if not cand:
+        failures.append("id_orcid_yearly: no chart with a year-labelled x-axis found on Identifiants et couverture")
+        print("  [FAIL] D7: yearly ORCID chart not found")
+        return
+    c = cand[0]
+    years = [int(v) for v in c["x"]]
+    df = pd.read_parquet(DATA_DIR / "aut_coverage.parquet",
+                          columns=["conf_state", "unit_kind", "unit_id", "pct_works_orcid"])
+    yr = df[df["unit_kind"] == "year"].copy()
+    yr["unit_id"] = yr["unit_id"].astype(int)
+    rendered = [round(float(v), 1) for v in c["y"]]
+    match_state = None
+    for state, grp in yr.groupby("conf_state"):
+        g = grp.set_index("unit_id").reindex(years)
+        recomputed = (g["pct_works_orcid"] * 100).round(1).tolist()
+        if recomputed == rendered:
+            match_state = state
+            match_vals = recomputed
+            break
+    checks += 1
+    if match_state is None:
+        failures.append(f"D7: rendered y-values {rendered} match neither conf_state's pct_works_orcid for years {years} "
+                        f"(may be plotting person-level pct_orcid instead)")
+        print(f"  [FAIL] D7: rendered % values are not pct_works_orcid for any conf_state ({rendered})")
+        return
+    print(f"  [ok] D7: rendered % == pct_works_orcid (work-level share, conf_state={match_state!r})")
+
+    checks += 1
+    expected_flag = [False] + [match_vals[i] < match_vals[i - 1] for i in range(1, len(match_vals))]
+    has_dagger = ["†" in t for t in c["text"]]
+    inks = c["inks"] if isinstance(c["inks"], list) else [c["inks"]] * len(c["text"])
+    red_ink = [str(ink).lower() == "#821d13" for ink in inks]
+    if has_dagger == expected_flag and red_ink == expected_flag:
+        flagged_years = [y for y, f in zip(years, expected_flag) if f]
+        print(f"  [ok] D7: caution dagger + REFERENCE_RED ink present exactly on the declining year(s) {flagged_years}")
+    else:
+        failures.append(f"D7: caution dagger/ink pattern dagger={has_dagger} ink={red_ink} != expected decline pattern {expected_flag} (years {years})")
+        print(f"  [FAIL] D7: caution pattern mismatch dagger={has_dagger} ink={red_ink} expected={expected_flag}")
+
+
+def check_page9_mirror_breakpoint(page) -> None:
+    """B8: the balance-mirror <-> table-companion CSS switch is a real
+    `@media` query, proven at 390 px (table shown, mirror hidden) and
+    reverted at the wide viewport (mirror shown, table hidden) -- a
+    pure-CSS behaviour no AppTest/unit test can see, real-browser only."""
+    global checks
+    print("page Zoom partenaire - CSS breakpoint: table at 390px, mirror at wide viewport (B8)")
+    mirror = page.locator(".st-key-zoom_mirror").first
+    table = page.locator(".st-key-zoom_mirror_table").first
+    checks += 1
+    try:
+        page.set_viewport_size({"width": 390, "height": 900})
+        page.wait_for_timeout(400)
+        m_390 = mirror.is_visible() if mirror.count() else None
+        t_390 = table.is_visible() if table.count() else None
+        page.set_viewport_size(VIEWPORT)
+        page.wait_for_timeout(400)
+        m_wide = mirror.is_visible() if mirror.count() else None
+        t_wide = table.is_visible() if table.count() else None
+        ok_390 = (m_390 is False) and (t_390 is True)
+        ok_wide = (m_wide is True) and (t_wide is False)
+        if ok_390 and ok_wide:
+            print(f"  [ok] B8: 390px -> table visible/mirror hidden; {VIEWPORT['width']}px -> mirror visible/table hidden")
+        else:
+            failures.append(f"B8: CSS breakpoint wrong at one width (390: mirror={m_390} table={t_390}; "
+                            f"{VIEWPORT['width']}: mirror={m_wide} table={t_wide})")
+            print(f"  [FAIL] B8: 390 mirror={m_390} table={t_390} | {VIEWPORT['width']} mirror={m_wide} table={t_wide}")
+    except Exception as e:
+        failures.append(f"B8: page-9 mirror/table breakpoint probe raised: {e}")
+        print(f"  [FAIL] B8 probe exception: {e}")
+
+
 def check(page, name: str, charts: bool = True) -> bool:
     """Screenshot the page, fail on a Streamlit exception or an empty chart."""
     global checks
@@ -690,6 +973,20 @@ def run(base: str, sdg_variant: str) -> None:
             failures.append("Vue d'ensemble: grouped-bars overlay caption (GROUPED_BARS_HOWTOREAD_FR) not found with I-SITE overlay ON")
             print("  [FAIL] grouped-bars overlay caption missing")
         check(page, f"01_vue_ensemble_isite_on_{sdg_variant}")
+
+        # ---------------- pass-7b B2/B3/P3 (S-INSP) -- ov_breakdown_bars ----------------
+        assert_gutter_number(page, "ov_breakdown_bars (Vue d'ensemble)")
+        assert_hover_grammar(page, "Vue d'ensemble hover grammar")
+        # check_absent=False: this page ALSO carries ov_breakdown_annual's own
+        # lib.overlay grouped-bars caption (B2-named exception, its OWN
+        # "Comment lire" text, not this pin's chart) -- see the function
+        # docstring. The full present+absent pin lives on page 12 below,
+        # a page with zero "Comment lire" source anywhere.
+        assert_reading_present_absent(
+            page, "ov_breakdown_bars reading line",
+            "la plus fournie en haut : la longueur donne le",
+            check_absent=False)
+
         toggle_isite_overlay(page)  # back to default OFF
 
         # ---------------- page 1 ----------------
@@ -700,6 +997,10 @@ def run(base: str, sdg_variant: str) -> None:
         # a large lab
         select_option(page, "Sélectionner une structure", LARGE_LAB)
         check(page, f"11_lab_large_{sdg_variant}")
+
+        # ---------------- pass-7b B2 (S-INSP) -- lab_breakdown_bars / lab_field_share ----------------
+        assert_gutter_number(page, "lab_breakdown_bars (Laboratoires)")
+
         count_on = big_number(page)
         # regression evidence: the FWCI whisker plot shipped as an empty frame once
         shot_element(page, FWCI_CHART_INDEX, SHOTS / "fwci_by_field_conference_on.png")
@@ -772,6 +1073,9 @@ def run(base: str, sdg_variant: str) -> None:
         goto(page, base, "/Portefeuille_thématique")
         check(page, f"30_thematic_overview_{sdg_variant}")
 
+        # ---------------- pass-7b B2/B6 (S-INSP) -- pf_lq_fields / pf_fwci_box reference ----------------
+        assert_reference_dash(page, "Portefeuille thematique (page 4) reference line")
+
         body = page.inner_text("body")
         # NOTE (incidental fix, this pass): the panel heading was FR-wrapped (D61
         # reversed, pass 5) from "Sustainable Development Goals" to "Objectifs de
@@ -820,6 +1124,10 @@ def run(base: str, sdg_variant: str) -> None:
         goto(page, base, "/Positionnement")
         check(page, f"25_positionnement_{sdg_variant}")
 
+        # ---------------- pass-7b B2/B6 (S-INSP) -- pos_frontier_labs / pos_lq_frontier ----------------
+        assert_gutter_number(page, "pos_frontier_labs (Positionnement)")
+        assert_reference_dash(page, "Positionnement (page 5) reference line")
+
         # Zero-fill "quantum incl. zero-pub topics" query (#20's own acceptance
         # criterion) actually lives on Portefeuille thematique's "Topics (OpenAlex)"
         # panel (topics_zero_fill, 4 516 rows -- the WHOLE OpenAlex vocabulary), NOT
@@ -861,6 +1169,9 @@ def run(base: str, sdg_variant: str) -> None:
         print("page 4 - Thematic Drilldown")
         goto(page, base, "/Exploration_thématique")
         check(page, f"40_drilldown_default_{sdg_variant}")
+
+        # ---------------- pass-7b B2 (S-INSP) -- ex_dept_bars / ex_lab_bars ----------------
+        assert_gutter_number(page, "ex_dept_bars/ex_lab_bars (Exploration thematique)")
 
         # ---------------- Lien column (pass-7a, P4) -- page 6 partner tables ----------------
         print("page Exploration - 'Lien' OpenAlex column on the partner tables")
@@ -952,6 +1263,11 @@ def run(base: str, sdg_variant: str) -> None:
         else:
             failures.append("#37: canonical-list recall block ('Recoupement avec la trace de subvention ANR') not found on I-SITE")
             print("  [FAIL] #37: recall block missing")
+
+        # ---------------- pass-7b B2/B6/B7/D9 (S-INSP) -- isite_ratio_dots ----------------
+        assert_reference_dash(page, "I-SITE (page 7) parity reference line")
+        check_page7_floor_style(page)
+        check_page7_click_drill(page)
 
         # ---------------- Collaborations (pass-6 NEW page 8) ----------------
         print("page Collaborations - consortium caption + momentum column help (#38)")
@@ -1186,6 +1502,9 @@ def run(base: str, sdg_variant: str) -> None:
             failures.append(f"page workbook: download/parse failed: {e}")
             print(f"  [FAIL] page workbook: {e}")
 
+        # ---------------- pass-7b B8 (S-INSP) -- balance mirror/table CSS switch ----------------
+        check_page9_mirror_breakpoint(page)
+
         # ---------------- Geographie (pass-6 NEW page 10) ----------------
         print("page Geographie - FR country label round-trip (Namibie, P3) + query-box audit")
         goto(page, base, "/Géographie")
@@ -1280,15 +1599,26 @@ def run(base: str, sdg_variant: str) -> None:
         goto(page, base, f"/Profil_auteur?author_id={AUTHOR_ID}")
         check(page, f"55_profil_auteur_{sdg_variant}", charts=False)
 
+        # ---------------- pass-7b P3 (S-INSP) -- author_yearly_bars reading line ----------------
+        assert_reading_present_absent(page, "author_yearly_bars reading line",
+                                       "garde sa place sur l'axe")
+
         # ---------------- Identifiants et couverture (pass-6 NEW page 13) ----------------
         print("page Identifiants et couverture")
         goto(page, base, "/Identifiants_et_couverture")
         check(page, f"56_identifiants_{sdg_variant}")
 
+        # ---------------- pass-7b B2/D7 (S-INSP) -- id_orcid_fields / id_orcid_yearly ----------------
+        assert_gutter_number(page, "id_orcid_fields (Identifiants et couverture)")
+        check_page13_orcid_yearly(page)
+
         # ---------------- Benchmark (pass-6 NEW page 14) ----------------
         print("page Benchmark - log/linear toggle (R18) inside its drill-down expander")
         goto(page, base, "/Benchmark")
         check(page, f"57_benchmark_{sdg_variant}")
+
+        # ---------------- pass-7b B2/B6 (S-INSP) -- bench_rung_forest / bench_dot_ratio ----------------
+        assert_reference_dash(page, "Benchmark (page 14) reference line")
         try:
             exp = page.get_by_text("Vérifier une spécialisation précise", exact=False).first
             exp.click()

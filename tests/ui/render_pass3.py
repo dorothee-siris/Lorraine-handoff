@@ -76,9 +76,11 @@ assert STRIP_FRAGMENT in SHIPS_V2_STRIP_TEXT_FR
 # note further down.
 PAGES = [
     ("Home", "/", "HOME"),
+    ("Vue_d_ensemble", "/Vue_d_ensemble", "NEW"),
     ("Laboratoires", "/Laboratoires", "SHIPS_V2"),
     ("Périmètres_personnalisés", "/Périmètres_personnalisés", "NEW"),
     ("Portefeuille_thématique", "/Portefeuille_thématique", "SHIPS_V2"),
+    ("Positionnement", "/Positionnement", "INLINE_DISCLOSURE"),
     ("Exploration_thématique", "/Exploration_thématique", "SHIPS_V2"),
     ("I-SITE", "/I-SITE", "NEW"),
     ("Collaborations", "/Collaborations", "NEW"),
@@ -87,7 +89,24 @@ PAGES = [
     ("Annuaire_auteurs", "/Annuaire_auteurs", "NEW"),
     ("Profil_auteur", f"/Profil_auteur?author_id={AUTHOR_ID}", "NEW"),
     ("Identifiants_et_couverture", "/Identifiants_et_couverture", "EXEMPT"),
+    ("Benchmark", "/Benchmark", "INLINE_DISCLOSURE"),
 ]
+# pass-7b (S-INSP, W4): 3 surfaces this pass converted (Vue d'ensemble, Positionnement,
+# Benchmark) were ABSENT from this registry entirely -- a pre-existing render-coverage
+# gap (pages 1/5/14 predate this addition), not something pass-7b introduced. Added so
+# deliverable 4 (render 1920/1280/390, 0 overflow/exception, PNG read of every converted
+# chart) actually covers them. Vue_d_ensemble classifies "NEW" (confirmed live:
+# `controls.banner()` is called at `1_..py:91`, the same full S6.2 disclosure mechanism
+# every other "NEW" page uses). Positionnement and Benchmark call NEITHER
+# `controls.banner()` NOR `controls.ships_v2_strip()` -- both use
+# `controls.filtered_by_strip(page=...)` instead, disclosing the artifact toggle INLINE,
+# per panel, where it actually changes a number (page 5's own comment, `5_..py:96-102`,
+# citing page 4's post-split NEW panels as the precedent this page follows; page 14 at
+# `14_..py:626`). Neither of the 3 known markers (SHIPS_V2 strip / NEW banner / page-13's
+# specific EXEMPT caption) describes that shape honestly, so a NEW class is added rather
+# than mis-tagging them -- `run_state_matrix` skips it explicitly below (a genuinely
+# different, already-existing, in-code-documented disclosure mechanism this dispatch did
+# not invent and is not this pass's mandate to unify).
 
 results: dict[tuple[str, int], dict] = {}   # (slug, width) -> {exception, scroll_ok, shot}
 state_results: list[str] = []               # human-readable PASS/FAIL lines
@@ -321,7 +340,7 @@ def run_width_matrix(page, base: str) -> None:
 def run_state_matrix(page, base: str) -> None:
     global checks
     for slug, url, cls in PAGES:
-        if cls == "HOME":
+        if cls in ("HOME", "INLINE_DISCLOSURE"):
             continue
         goto_width(page, base, url, 1920)
 
