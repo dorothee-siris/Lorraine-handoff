@@ -120,10 +120,12 @@ def _render_domain_identity_legend() -> None:
         f'margin-right:6px;"></span>{name}</span>'
         for name, color in DOMAIN_IDENTITY.items()
     )
+    # FIX-1 (D9): the floor swatch matches the mark it describes -- REFERENCE_RED hollow
+    # outline + dagger, never grey (same channel as the Plotly legend's own floor trace).
     items += (
         '<span style="display:inline-flex;align-items:center;">'
-        f'<span style="width:12px;height:12px;border-radius:50%;border:2px solid {H.NEUTRAL_GREY};'
-        'margin-right:6px;"></span>&lt; 30 travaux I-SITE (creux)</span>'
+        f'<span style="width:12px;height:12px;border-radius:50%;border:2px solid {H.REFERENCE_RED};'
+        f'margin-right:6px;"></span>&lt; 30 travaux I-SITE (creux) {controls.DAGGER}</span>'
     )
     st.markdown(f'<div style="margin:4px 0 10px 0;">{items}</div>', unsafe_allow_html=True)
 
@@ -492,10 +494,15 @@ _below = _plot_df[_plot_df["floor_flag"]]
 fig_ratio = go.Figure()
 
 if not _below.empty:
+    # FIX-1 (D9, docs/LENS_ABSORPTION_pass7b.md l.408): the P1 caution channel, same
+    # grammar as page 4's identical dot chart (pf_lq_fields, ~l.1470-1480) -- hollow
+    # mark, REFERENCE_RED outline, never a translucent-grey fill. The dagger + red ink
+    # move to the y ticktext below (kept OFF the trace's own `y` so the click handler,
+    # which reads `point["y"]`, still gets the bare field name).
     fig_ratio.add_trace(go.Scatter(
         x=_below["plot_x"], y=_below["field_name"], mode="markers",
-        marker=dict(size=_below["size"], color="rgba(140,145,150,0.15)",
-                    line=dict(color=H.NEUTRAL_GREY, width=2)),
+        marker=dict(size=_below["size"], color="rgba(255,255,255,0)",
+                    line=dict(color=H.REFERENCE_RED, width=2)),
         name="< 30 travaux I-SITE",
         customdata=_below["hover"], hovertemplate=hv.HOVERTEMPLATE,
     ))
@@ -520,10 +527,26 @@ _ratio_axis_kwargs = dict(type=_ratio_axis_type, title="Part I-SITE / part du si
 if _ratio_axis_type == "log":
     _ratio_axis_kwargs["dtick"] = 1
 fig_ratio.update_xaxes(**_ratio_axis_kwargs)
+# FIX-1: DAGGER + REFERENCE_RED ink on the floor rows' own tick label (page-4 channel,
+# ported to a ticktext override since THIS chart's y-DATA must stay the bare field name
+# for the click handler -- see the floor trace's own comment above). Plotly tick labels
+# accept the same pseudo-html span/br the rest of this app's HTML legends already rely
+# on (_render_domain_identity_legend, _chip_row), so a token-interpolated `<span
+# style="color:{H.REFERENCE_RED}">` is not a hex literal in this file's SOURCE (B6).
+_ratio_floor_fields = set(_plot_df.loc[_plot_df["floor_flag"], "field_name"])
+
+
+def _ratio_ticktext(field_name: str) -> str:
+    wrapped = C.wrap_label_px(field_name, "champ")
+    if field_name in _ratio_floor_fields:
+        return f'<span style="color:{H.REFERENCE_RED}">{wrapped} {controls.DAGGER}</span>'
+    return wrapped
+
+
 fig_ratio.update_yaxes(
     categoryorder="array", categoryarray=_category_order,
     tickmode="array", tickvals=_category_order,
-    ticktext=[C.wrap_label_px(v, "champ") for v in _category_order],
+    ticktext=[_ratio_ticktext(v) for v in _category_order],
     title="",
 )
 fig_ratio.update_layout(

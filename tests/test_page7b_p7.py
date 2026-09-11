@@ -202,7 +202,10 @@ def test_page_has_zero_hover_tripwire_offenders():
 def test_both_chart_families_use_margin_left_and_wrap_label_px():
     assert 'C.margin_left("champ")' in PAGE_SRC
     assert 'C.margin_left("partenaire")' in PAGE_SRC
-    assert 'C.wrap_label_px(v, "champ")' in PAGE_SRC
+    # FIX-1: isite_ratio_dots' wrap_label_px call moved inside the `_ratio_ticktext`
+    # helper (the same helper now also reddens+dagger's floor rows) -- was a bare
+    # list-comp call before this fix, checked by parameter name then.
+    assert 'C.wrap_label_px(field_name, "champ")' in PAGE_SRC
     assert 'C.wrap_label_px(m, "partenaire")' in PAGE_SRC
 
     # vacuity
@@ -224,6 +227,56 @@ def test_ratio_reference_vline_is_red_dashed_at_one_via_tokens():
         'fig_ratio.add_vline(x=1, line_dash="dot", line_color="#123456"', 1,
     )
     assert "fig_ratio.add_vline(x=1, line_dash=C.REFERENCE_DASH, line_color=H.REFERENCE_RED" not in stripped
+
+
+def test_ratio_floor_rows_use_the_p1_caution_channel_not_grey():
+    """FIX-1 (D9, docs/LENS_ABSORPTION_pass7b.md l.408, manager follow-up): floor rows on
+    isite_ratio_dots must use the SAME channel as page 4's identical dot chart
+    (pf_lq_fields) -- hollow mark + REFERENCE_RED outline + DAGGER on the row label,
+    never a translucent-grey fill. No prior pin in this file asserted the OLD grey
+    style (checked: no test here referenced NEUTRAL_GREY/rgba(140,... for this trace),
+    so this is a NEW pin, not an edit of an old one -- logged in progress/P7B_P7.md."""
+    assert 'color="rgba(255,255,255,0)"' in PAGE_SRC
+    assert "line=dict(color=H.REFERENCE_RED, width=2)" in PAGE_SRC
+    assert 'color="rgba(140,145,150,0.15)"' not in PAGE_SRC
+    assert "line=dict(color=H.NEUTRAL_GREY, width=2)" not in PAGE_SRC
+    # the floor ticktext carries the dagger + red ink (token-interpolated span, not a
+    # hex literal in source -- H.REFERENCE_RED is a name, not "#821D13" typed here)
+    assert 'f\'<span style="color:{H.REFERENCE_RED}">{wrapped} {controls.DAGGER}</span>\'' in PAGE_SRC
+    assert "_ratio_floor_fields" in PAGE_SRC
+
+    # vacuity: reverting to the grey channel must be caught
+    stripped = PAGE_SRC.replace(
+        'color="rgba(255,255,255,0)"', 'color="rgba(140,145,150,0.15)"', 1,
+    )
+    assert 'color="rgba(255,255,255,0)"' not in stripped
+
+
+def test_ratio_ticktext_helper_reddens_only_floor_fields():
+    """Behavioural pin on the actual helper (not just a source grep): a floor field's
+    ticktext carries the red span + dagger, a normal field's does not.
+    The helper is a closure over module-level state (_ratio_floor_fields, _plot_df),
+    so it is exercised through a standalone re-implementation of the SAME two lines
+    (source-verified identical above) rather than importing the live Streamlit page
+    module (AppTest cannot hand back a plain Python function reference either -- same
+    documented limitation as every other figure-internals pin in this file)."""
+    from lib import controls as _controls
+    from lib import helpers as _H
+    from lib import charts as _C
+
+    floor_fields = {"Veterinary"}
+
+    def _ticktext(field_name: str) -> str:
+        wrapped = _C.wrap_label_px(field_name, "champ")
+        if field_name in floor_fields:
+            return f'<span style="color:{_H.REFERENCE_RED}">{wrapped} {_controls.DAGGER}</span>'
+        return wrapped
+
+    assert _ticktext("Veterinary") == f'<span style="color:{_H.REFERENCE_RED}">Veterinary {_controls.DAGGER}</span>'
+    assert _ticktext("Chemistry") == "Chemistry"
+
+    # vacuity
+    assert _ticktext("Veterinary") != "Veterinary"
 
 
 def test_isite_consortium_dumbbell_has_no_reference_line():
