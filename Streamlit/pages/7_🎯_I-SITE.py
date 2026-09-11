@@ -51,6 +51,7 @@ bar would assert a partition that does not exist, honesty rule 13).
 """
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import numpy as np
@@ -58,12 +59,16 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from lib import controls, exports, lazy
+from lib import controls, copy_fr, exports, lazy
+from lib import charts as C
+from lib import helpers as H
+from lib import hover as hv
 from lib.data_cache import DATA_DIR, get_pubs_slim, get_topics_df
 from lib.helpers import (
     DOMAIN_COLORS, DOMAIN_NAMES_ORDERED, fr_int, fr_pct, get_domain_id_to_name,
     get_field_id_to_domain_id, get_field_id_to_name, init_taxonomy, log_linear_toggle,
 )
+from lib.reading import reading_line
 
 # ============================================================================
 # Page config
@@ -104,10 +109,8 @@ if isite_overlay_on:
 # Domain/field NAMES are OpenAlex taxonomy labels and stay in English (R12).
 # ============================================================================
 DOMAIN_IDENTITY = {name: DOMAIN_COLORS[name] for name in DOMAIN_NAMES_ORDERED}
-NEUTRAL_GREY = "#8C9196"   # comparison/reference grey + hollow under-floor dots (VIZ_SPEC 1.1)
-FOCAL_BLUE = "#0072B2"     # focal series colour -- no longer shared with any domain identity
-                           # value now that the shared palette (Physical Sciences #8190FF) is
-                           # single-sourced here (QA-04/RA-B01 fix kills the former collision)
+# pass 7b B6: page-local FOCAL_BLUE/NEUTRAL_GREY hex constants retired -- H.UL_COLOR /
+# H.NEUTRAL_GREY (Streamlit/lib/helpers.py) are the SAME values, single-sourced.
 
 
 def _render_domain_identity_legend() -> None:
@@ -119,7 +122,7 @@ def _render_domain_identity_legend() -> None:
     )
     items += (
         '<span style="display:inline-flex;align-items:center;">'
-        f'<span style="width:12px;height:12px;border-radius:50%;border:2px solid {NEUTRAL_GREY};'
+        f'<span style="width:12px;height:12px;border-radius:50%;border:2px solid {H.NEUTRAL_GREY};'
         'margin-right:6px;"></span>&lt; 30 travaux I-SITE (creux)</span>'
     )
     st.markdown(f'<div style="margin:4px 0 10px 0;">{items}</div>', unsafe_allow_html=True)
@@ -136,9 +139,10 @@ def _chip_row(labels: list[str]) -> None:
     """Compact inline pill row -- used for the consortium member list (names only, no
     per-item description, so a full bordered card per item would be heavier than the
     content needs)."""
+    _chip_bg = H.tint(H.NEUTRAL_GREY, 0.9)  # near-white pill background -- token, not a hex literal (B6)
     html = "".join(
         f'<span style="display:inline-block;margin:0 8px 8px 0;padding:4px 12px;'
-        f'border-radius:14px;background:#EEF1F4;font-size:0.85rem;">{label}</span>'
+        f'border-radius:14px;background:{_chip_bg};font-size:0.85rem;">{label}</span>'
         for label in labels
     )
     st.markdown(f'<div style="margin:4px 0 4px 0;">{html}</div>', unsafe_allow_html=True)
@@ -429,15 +433,11 @@ st.markdown(
     "dans l'I-SITE par rapport au reste du site ; en dessous, il y est sous-représenté."
 )
 _ratio_axis_type = log_linear_toggle("isite_ratio_axis_toggle")  # R18
+_ratio_hover_mode = "log" if _ratio_axis_type == "log" else "lineaire"
+reading_line("isite_ratio_dots", mode=_ratio_hover_mode)
 st.caption(
-    "**Comment lire ce graphique :** chaque point est un champ disciplinaire, placé par "
-    "défaut sur un axe **logarithmique** (bascule « échelle linéaire » ci-dessus) pour qu'une "
-    "surreprésentation et une sous-représentation de même ampleur (par exemple un doublement "
-    "et une division par deux) pèsent à égale distance de la **parité** (ligne pointillée) ; "
-    "la **taille** du point suit le volume I-SITE, sa **couleur** le domaine. Les points gris "
-    "creux sont sous le plancher de 30 travaux I-SITE, indiqués à leur ratio mesuré mais "
-    f"jamais affirmés comme une estimation stable : {N_FIELDS_GE30} des {N_FIELDS_TOTAL} "
-    "champs dépassent ce plancher."
+    f":grey[La taille du point suit le volume I-SITE, sa couleur le domaine : "
+    f"{N_FIELDS_GE30} des {N_FIELDS_TOTAL} champs dépassent le plancher de trente travaux.]"
 )
 _render_domain_identity_legend()
 
@@ -459,9 +459,32 @@ _X_FLOOR = 0.015  # a TRUE ratio of 0 (0 I-SITE works) cannot sit on a log axis;
 _plot_df = fields_df.copy()
 _plot_df["plot_x"] = _plot_df["ratio"].clip(lower=_X_FLOOR)
 _plot_df["size"] = _bubble_sizes(_plot_df["isite_works"])
-_plot_df["colour"] = _plot_df["domain_name"].map(DOMAIN_IDENTITY).fillna(NEUTRAL_GREY)
+_plot_df["colour"] = _plot_df["domain_name"].map(DOMAIN_IDENTITY).fillna(H.NEUTRAL_GREY)
 _plot_df = _plot_df.sort_values("ratio", ascending=True).reset_index(drop=True)
 _category_order = _plot_df["field_name"].tolist()
+
+# tooltip_spec.yaml isite_ratio_dots.floor_flag note, verbatim -- the ONLY place this
+# fixed drapeau sentence is spelled out (hover grammar, B3: pre-formatted, never a
+# format spec in the template).
+_ISITE_RATIO_FLOOR_TEXT = "sous le plancher de trente travaux, rapport indiqué et non affirmé"
+
+
+def _isite_ratio_rows(d: pd.DataFrame):
+    for _, r in d.iterrows():
+        yield (
+            r["field_name"],
+            hv.fmt_int(r["isite_works"]),
+            hv.fmt_int(r["site_works"]),
+            hv.fmt_score(r["ratio"]),
+            r["domain_name"],
+            (_ISITE_RATIO_FLOOR_TEXT if bool(r["floor_flag"]) else None),
+        )
+
+
+_ratio_labels = copy_fr.HOVER_LABELS["isite_ratio_dots"][_ratio_hover_mode]
+_plot_df["hover"] = [
+    hv.hover_lines(list(zip(_ratio_labels, values))) for values in _isite_ratio_rows(_plot_df)
+]
 
 _above = _plot_df[~_plot_df["floor_flag"]]
 _below = _plot_df[_plot_df["floor_flag"]]
@@ -472,14 +495,9 @@ if not _below.empty:
     fig_ratio.add_trace(go.Scatter(
         x=_below["plot_x"], y=_below["field_name"], mode="markers",
         marker=dict(size=_below["size"], color="rgba(140,145,150,0.15)",
-                    line=dict(color=NEUTRAL_GREY, width=2)),
+                    line=dict(color=H.NEUTRAL_GREY, width=2)),
         name="< 30 travaux I-SITE",
-        customdata=list(zip(_below["isite_works"], _below["site_works"], _below["ratio"])),
-        hovertemplate=(
-            "<b>%{y}</b><br>Travaux I-SITE : %{customdata[0]:.0f} (sous le plancher de 30 "
-            "travaux)<br>Travaux du site : %{customdata[1]:,.0f}<br>Ratio : %{customdata[2]:.2f} "
-            "(indiqué, non affirmé, n<30)<extra></extra>"
-        ),
+        customdata=_below["hover"], hovertemplate=hv.HOVERTEMPLATE,
     ))
 
 if not _above.empty:
@@ -487,17 +505,13 @@ if not _above.empty:
         x=_above["plot_x"], y=_above["field_name"], mode="markers",
         marker=dict(size=_above["size"], color=_above["colour"], line=dict(color="white", width=1)),
         name="≥ 30 travaux I-SITE",
-        customdata=list(zip(_above["isite_works"], _above["site_works"], _above["ratio"], _above["domain_name"])),
-        hovertemplate=(
-            "<b>%{y}</b><br>Travaux I-SITE : %{customdata[0]:,.0f}<br>Travaux du site : "
-            "%{customdata[1]:,.0f}<br>Ratio (part I-SITE / part du site) : %{customdata[2]:.2f}"
-            "<br>Domaine : %{customdata[3]}<extra></extra>"
-        ),
+        customdata=_above["hover"], hovertemplate=hv.HOVERTEMPLATE,
     ))
 
-fig_ratio.add_vline(x=1, line_dash="dash", line_color="#5A5F66")
+fig_ratio.add_vline(x=1, line_dash=C.REFERENCE_DASH, line_color=H.REFERENCE_RED,
+                     line_width=C.REFERENCE_WIDTH_PX)
 fig_ratio.add_annotation(x=1, y=1.02, yref="paper", text="parité", showarrow=False,
-                          font=dict(size=11, color="#5A5F66"))
+                          font=dict(size=11, color=H.REFERENCE_RED))
 # dtick=1 on a log axis = one labeled major gridline per power of 10 (0.01/0.1/1/10) --
 # plotly's default log-axis minor ticks (bare "2", "5" with no decade prefix) read as
 # ambiguous at this width; a sparser, unambiguous set beats a denser, confusing one. Not
@@ -506,9 +520,14 @@ _ratio_axis_kwargs = dict(type=_ratio_axis_type, title="Part I-SITE / part du si
 if _ratio_axis_type == "log":
     _ratio_axis_kwargs["dtick"] = 1
 fig_ratio.update_xaxes(**_ratio_axis_kwargs)
-fig_ratio.update_yaxes(categoryorder="array", categoryarray=_category_order, title="")
+fig_ratio.update_yaxes(
+    categoryorder="array", categoryarray=_category_order,
+    tickmode="array", tickvals=_category_order,
+    ticktext=[C.wrap_label_px(v, "champ") for v in _category_order],
+    title="",
+)
 fig_ratio.update_layout(
-    height=max(560, len(_plot_df) * 24), margin=dict(t=30, l=10, r=20, b=40),
+    height=max(560, len(_plot_df) * 24), margin=dict(t=30, l=C.margin_left("champ"), r=20, b=40),
     legend=dict(orientation="h", y=-0.06),
 )
 
@@ -579,13 +598,6 @@ with col_dumbbell:
         "les grands laboratoires lorrains — une part de co-signature, pas une part de "
         "gouvernance ni de financement du label. »*"
     )
-    st.caption(
-        "**Comment lire ce graphique.** Le point bleu est la part d'un membre dans le "
-        "corpus I-SITE, le point gris sa part dans le corpus du site entier. Ces parts ne "
-        "s'additionnent pas entre membres : les membres co-signent les mêmes travaux, et un "
-        "même travail compte pour chacun de ses signataires."
-    )
-
     cw_all = _load_consortium_weights()
     cw = cw_all[cw_all["conf_state"] == CONF_STATE]
     _isite_cw = cw[cw["scope"] == "isite"].set_index("member")
@@ -603,38 +615,73 @@ with col_dumbbell:
     members["incl_own"] = _isite_cw.loc[_members_present, "incl_own_centre_variant_share"]
     members = members.sort_values("isite_share", ascending=True)
 
+    # pass 7b (B3/addendum 5): the grey dot and the blue dot are the SAME member, so
+    # both traces carry the SAME hover string (else the second trace loses the entity
+    # line and hover-conformance fails on a chart that still looks right) -- exact
+    # precedent: pages/1_📊_Vue_d_ensemble.py `ov_consortium_share` (same shape, same fix).
+    def _isite_dumbbell_rows(d: pd.DataFrame):
+        for _member, r in d.iterrows():
+            yield (
+                _member,
+                hv.fmt_pct(float(r["site_share"]) * 100.0),
+                hv.fmt_pct(float(r["isite_share"]) * 100.0),
+                hv.fmt_int(r["site_co_works"]),
+                hv.fmt_int(r["isite_co_works"]),
+                hv.fmt_int(r["id_set_size"]),
+            )
+
+    _dumb_labels = copy_fr.HOVER_LABELS["isite_consortium_dumbbell"]["default"]
+    _dumb_hover = [
+        hv.hover_lines(list(zip(_dumb_labels, values))) for values in _isite_dumbbell_rows(members)
+    ]
+
     fig_dumb = go.Figure()
     for _member, _row in members.iterrows():
         fig_dumb.add_trace(go.Scatter(
             x=[_row["site_share"], _row["isite_share"]], y=[_member, _member], mode="lines",
-            line=dict(color="#D8DBDF", width=4), hoverinfo="skip", showlegend=False,
+            line=dict(color=H.tint(H.NEUTRAL_GREY), width=4), hoverinfo="skip", showlegend=False,
         ))
 
     fig_dumb.add_trace(go.Scatter(
         x=members["site_share"], y=members.index, mode="markers+text",
-        marker=dict(size=15, color=NEUTRAL_GREY),
+        marker=dict(size=15, color=H.NEUTRAL_GREY),
         text=[fr_pct(v * 100, decimals=1) for v in members["site_share"]], textposition="top center",
         name="Part du corpus du site entier",
-        customdata=list(zip(members["site_co_works"])),
-        hovertemplate="<b>%{y}</b><br>Part du site entier : %{x:.2%}<br>"
-                      "Co-travaux (périmètre site) : %{customdata[0]:,.0f}<extra></extra>",
+        customdata=_dumb_hover, hovertemplate=hv.HOVERTEMPLATE,
     ))
     fig_dumb.add_trace(go.Scatter(
         x=members["isite_share"], y=members.index, mode="markers+text",
-        marker=dict(size=15, color=FOCAL_BLUE),
+        marker=dict(size=15, color=H.UL_COLOR),
         text=[fr_pct(v * 100, decimals=2) for v in members["isite_share"]], textposition="bottom center",
         name="Part du corpus I-SITE",
-        customdata=list(zip(members["isite_co_works"], members["id_set_size"])),
-        hovertemplate="<b>%{y}</b><br>Part du corpus I-SITE : %{x:.2%}<br>Co-travaux distincts "
-                      "(périmètre I-SITE) : %{customdata[0]:,.0f}<br>Taille de l'ensemble "
-                      "d'identifiants : %{customdata[1]:.0f}<extra></extra>",
+        customdata=_dumb_hover, hovertemplate=hv.HOVERTEMPLATE,
     ))
-    fig_dumb.update_xaxes(title="Part du corpus", tickformat=".0%")
-    fig_dumb.update_yaxes(title="")
+    # B5: no `tickformat` percent literal -- nice 0..max ticks on the 0-1 share scale,
+    # FR ticktext (fr_pct); identical idiom to pages/1's already-migrated `ov_consortium_share`.
+    _dumb_pct_vmax = max(float(members["site_share"].max() or 0.0), float(members["isite_share"].max() or 0.0))
+    if _dumb_pct_vmax <= 0:
+        _dumb_pct_vals = [0.0]
+    else:
+        _dumb_pct_raw = _dumb_pct_vmax / 5
+        _dumb_pct_mag = 10 ** math.floor(math.log10(_dumb_pct_raw))
+        _dumb_pct_step = _dumb_pct_mag
+        for _mult in (1, 2, 2.5, 5, 10):
+            _dumb_pct_step = _mult * _dumb_pct_mag
+            if _dumb_pct_raw <= _dumb_pct_step:
+                break
+        _dumb_pct_vals = [round(i * _dumb_pct_step, 10) for i in range(int(_dumb_pct_vmax // _dumb_pct_step) + 2)]
+    fig_dumb.update_xaxes(
+        title="Part du corpus", tickvals=_dumb_pct_vals, ticktext=[fr_pct(v * 100, 0) for v in _dumb_pct_vals],
+    )
+    fig_dumb.update_yaxes(
+        title="", tickmode="array", tickvals=list(members.index),
+        ticktext=[C.wrap_label_px(m, "partenaire") for m in members.index],
+    )
     fig_dumb.update_layout(
-        height=max(340, len(members) * 62), margin=dict(t=20, l=10, r=30, b=40),
+        height=max(340, len(members) * 62), margin=dict(t=20, l=C.margin_left("partenaire"), r=30, b=40),
         legend=dict(orientation="h", y=-0.18),
     )
+    reading_line("isite_consortium_dumbbell")
     st.plotly_chart(fig_dumb, use_container_width=True)
 
     if artifact_on:

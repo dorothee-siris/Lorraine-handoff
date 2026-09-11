@@ -187,7 +187,6 @@ def _path_for(relkey: str) -> Path:
 # zero-fill tables, specialisation view) are untouched this pass -- 7b's job.
 EXEMPT_PAGES: set[str] = {
     "pages/6_🔎_Exploration_thématique.py",
-    "pages/7_🎯_I-SITE.py",
 }
 
 ACTIVE = [p for p in _all_streamlit_py_files() if _relkey(p) not in EXEMPT_PAGES]

@@ -105,7 +105,6 @@ def _path_for(relkey: str) -> Path:
 # a la cloture demande donc une decision du manager sur ces cinq litteraux.
 EXEMPT_PAGES: set[str] = {
     "pages/6_🔎_Exploration_thématique.py",
-    "pages/7_🎯_I-SITE.py",
 }
 
 ACTIVE = [p for p in _scanned_files() if _relkey(p) not in EXEMPT_PAGES]
