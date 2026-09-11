@@ -41,9 +41,13 @@ from lib import controls, exports
 from lib.overlay import darken, GROUPED_LEGEND_INK
 from lib.hover import hover_lines, HOVERTEMPLATE
 from lib import copy_fr
+from lib import charts as C
+from lib.fig_cache import cached_figure
+from lib.reading import reading_line
 from lib.links import openalex_url
 from lib.ranked import ranked_table, fr_int, fr_pct
 from lib.helpers import (
+    FWCI_DIVERGING_SCALE, FWCI_HIGH, SCALE_LOW_TINT,
     DOMAIN_ORDER,
     DOMAIN_ORDER_DISPLAY,
     DOMAIN_COLORS,
@@ -67,6 +71,7 @@ from lib.helpers import (
     FR_THIN_SPACE,
     MOMENTUM_GLYPHS,
     SDG_LABELS_FR, sdg_color, darken_hex, SDG_TEXT_DARKEN,
+    UL_COLOR, REFERENCE_RED, TEXT_SECONDARY,
 )
 
 # =============================================================================
@@ -249,21 +254,25 @@ def fr_fwci(val) -> str:
         return "—"
 
 
-def fwci_hover_text(cat_label: str, n, p10, p25, p50, p75, p90, extreme: bool) -> str:
+def fwci_hover_text(key: str, mode: str, cat_label: str, n, p50, p25, p75, lo, hi) -> str:
     """
-    VIZ_SPEC_pass6 S4.2 -- the whole 5-row FR tooltip pre-built as ONE string
-    (PF-2: go.Box ignores hovertemplate; the transparent hover-target bar reads
-    this back via customdata, S0.1: no locale-blind format spec in the template).
-    `p10`/`p90` are already the pair the caller means to show (p0/p100 when the
-    "valeurs extrêmes" toggle is on) -- only the row LABEL changes with the toggle.
+    hover_lines()-built FR tooltip, shared by the two FWCI box panels (`pf_fwci_box_domains`/
+    `pf_fwci_box_fields`) -- PF-2: go.Box ignores hovertemplate, so the transparent
+    hover-target bar reads this back via customdata (the shared hover.HOVERTEMPLATE constant, B3).
+    `lo`/`hi` are already the pair the caller means to show (p10/p90 in "standard" mode,
+    p0/p100 in "extremes") -- only the label (from `copy_fr.HOVER_LABELS[key][mode]`)
+    changes with the mode. `under_floor` (n < 10, tooltip_spec.yaml) is a bold-only flag
+    line, never a bare value.
     """
-    lo_label = "min–max" if extreme else "interdécile p10–p90"
-    return (
-        f"<b>{cat_label}</b><br>n = {fr_int(n)}<br>"
-        f"médiane : {fr_fwci(p50)}<br>"
-        f"Q1–Q3 : {fr_fwci(p25)} – {fr_fwci(p75)}<br>"
-        f"{lo_label} : {fr_fwci(p10)} – {fr_fwci(p90)}"
-    )
+    hl = copy_fr.HOVER_LABELS[key][mode]
+    return hover_lines([
+        (hl[0], cat_label),
+        (hl[1], fr_fwci(p50)),
+        (hl[2], f"{fr_fwci(p25)} – {fr_fwci(p75)}"),
+        (hl[3], f"{fr_fwci(lo)} – {fr_fwci(hi)}"),
+        (hl[4], fr_int(n)),
+        (hl[5], "sous le plancher de dix travaux" if n < 10 else None),
+    ])
 
 def parse_fwci_boxplot(blob):
     if pd.isna(blob) or not str(blob).strip():
@@ -327,13 +336,6 @@ _ISITE_OVERLAY_ON = _controls_state[controls.ISITE_OVERLAY_KEY]
 st.markdown("---")
 st.markdown("## 📊 Carte du portefeuille de recherche")
 
-st.markdown(
-    "**Comment lire.** Chaque rectangle est un nœud de la taxonomie ; sa taille suit "
-    "le volume de publications. Cliquer descend du domaine au champ puis au "
-    "sous-champ, le fil d'Ariane remonte. Le sélecteur change ce que la couleur "
-    "encode, jamais la taille."
-)
-
 # Prepare treemap data with additional count columns
 # Filter to exclude topic level (keep only domain, field, subfield)
 df_treemap = df_treemap_raw[df_treemap_raw["level"].isin(["domain", "field", "subfield"])].copy()
@@ -368,104 +370,116 @@ color_metric = st.selectbox(
 )
 
 # Build treemap with custom color scale for FWCI
-if color_metric == "fwci_median":
-    # Diverging scale: red (0, below the France reference) -> neutral grey (1, the
-    # reference point itself) -> green (2+, above reference). The dataviz skill's own
-    # rule for a diverging scale is explicit: "two hues + a NEUTRAL GRAY midpoint...
-    # never a hue at the diverging midpoint" -- the previous #F4D570 yellow midpoint
-    # (RA-B02, a past fix that only corrected the CODE COMMENT, not the colour itself)
-    # violated that rule. Fixed here to controls.DEFERRED_GREY (#8C9196), the SAME
-    # neutral-reference grey this app already uses everywhere else a "reference point"
-    # needs marking (the France=1 dashed line on the T4 chart below, the floor-flagged
-    # dot outline) -- reusing an existing token rather than inventing a new grey.
-    # Validated: `node scripts/validate_palette.js "#EC8773,#8C9196,#60CCAA" --mode
-    # light` (dataviz skill) -- the categorical checks it runs do not fit a 3-stop
-    # DIVERGING scale exactly (its own printed scope note says so: "for a sequential
-    # ramp, lightness monotonicity" is the closer check), but its chroma-floor check
-    # on #8C9196 reports "reads gray" (chroma 0.009) -- exactly the property a neutral
-    # midpoint needs. Red/green endpoints are the pre-existing, unchanged house colours.
-    fig_treemap = px.treemap(
-        df_treemap,
-        ids="id",
-        names="name",
-        parents="parent_id",
-        values="pubs",
-        color="fwci_median",
-        # Literal hex stops (not `controls.DEFERRED_GREY` the symbolic reference,
-        # even though that constant IS this exact value): tests/ui/_colorscale.py's
-        # read_declared_scale() parses this list by regex, matching ONLY quoted
-        # "#RRGGBB" literals -- a bare identifier here would silently drop this stop
-        # from that shared parser's read (2 stops instead of 3), not merely change
-        # its colour. Value is controls.DEFERRED_GREY's, kept identical on purpose
-        # (see the comment block above) -- provenance noted here in prose instead.
-        color_continuous_scale=[
-            [0.0, "#EC8773"],   # Rouge : FWCI = 0
-            [0.5, "#8C9196"],   # Gris neutre (= controls.DEFERRED_GREY) : FWCI = 1 (référence France)
-            [1.0, "#60CCAA"],   # Vert : FWCI = 2+
-        ],
-        range_color=[0, 2],
+def _build_fig_treemap():
+    if color_metric == "fwci_median":
+        # Diverging scale: red (0, below the France reference) -> neutral grey (1, the
+        # reference point itself) -> green (2+, above reference). The dataviz skill's own
+        # rule for a diverging scale is explicit: "two hues + a NEUTRAL GRAY midpoint...
+        # never a hue at the diverging midpoint" -- the previous #F4D570 yellow midpoint
+        # (RA-B02, a past fix that only corrected the CODE COMMENT, not the colour itself)
+        # violated that rule. Fixed here to controls.DEFERRED_GREY (#8C9196), the SAME
+        # neutral-reference grey this app already uses everywhere else a "reference point"
+        # needs marking (the France=1 dashed line on the T4 chart below, the floor-flagged
+        # dot outline) -- reusing an existing token rather than inventing a new grey.
+        # Validated: `node scripts/validate_palette.js "#EC8773,#8C9196,#60CCAA" --mode
+        # light` (dataviz skill) -- the categorical checks it runs do not fit a 3-stop
+        # DIVERGING scale exactly (its own printed scope note says so: "for a sequential
+        # ramp, lightness monotonicity" is the closer check), but its chroma-floor check
+        # on #8C9196 reports "reads gray" (chroma 0.009) -- exactly the property a neutral
+        # midpoint needs. Red/green endpoints are the pre-existing, unchanged house colours.
+        # NOTE (P7B_P4 progress, W2): these 5 hex stops CANNOT become token references --
+        # tests/ui/_colorscale.py::read_declared_scale() (used by
+        # tests/test_app_numbers.py::test_fwci_gradient_colours_match_declared_scale, a
+        # canonical pin) parses this exact list by regex, matching ONLY quoted "#RRGGBB"
+        # literals in the page SOURCE. A symbolic reference would silently drop the stop
+        # from that parser's read. This is the ONE documented, pre-existing exception to
+        # B6 on this page -- reported to the manager, not fixed here (outside this
+        # stream's fence: fixing it means editing a test file this stream does not own).
+        fig_treemap = px.treemap(
+            df_treemap,
+            ids="id",
+            names="name",
+            parents="parent_id",
+            values="pubs",
+            color="fwci_median",
+            color_continuous_scale=FWCI_DIVERGING_SCALE,   # lib.helpers (tests/ui/_colorscale.py reads it there)
+            range_color=[0, 2],
+        )
+    elif color_metric == "pct_isite":
+        # I-SITE overlay applied to the treemap: a sequential scale in the SAME darker
+        # shade family lib.overlay.darken() uses for bar charts (one hue, light -> dark,
+        # per the dataviz "sequential = magnitude" rule) -- the closest treemap-native
+        # equivalent to "a darker shade of the same colour marks the I-SITE share" when a
+        # single darker SEGMENT inside a treemap tile has no direct Plotly equivalent.
+        # Same read_declared_scale() constraint as above: literal stops, not tokens.
+        fig_treemap = px.treemap(
+            df_treemap,
+            ids="id",
+            names="name",
+            parents="parent_id",
+            values="pubs",
+            color="pct_isite",
+            color_continuous_scale=[[0.0, SCALE_LOW_TINT], [1.0, darken(FWCI_HIGH, 0.5)]],
+        )
+    else:
+        fig_treemap = px.treemap(
+            df_treemap,
+            ids="id",
+            names="name",
+            parents="parent_id",
+            values="pubs",
+            color=color_metric,
+            color_continuous_scale="Blues",
+        )
+
+    fig_treemap.update_traces(branchvalues="total")
+
+    # Hover grammar (B3): px already aligns customdata per node -- the page rebuilds it
+    # here as ONE hover_lines() string per node, in df_treemap's own row order (the
+    # frame's rows ARE the treemap's nodes, parents carrying the aggregated `pubs`
+    # value from the source table itself, verified against the children's own sum in
+    # progress/P7B_P4.md). The I-SITE line only appears once the overlay toggle is ON
+    # (R1 -- toggle OFF must read exactly as it did before the overlay concept existed).
+    _hl_treemap = copy_fr.HOVER_LABELS["pf_treemap"][color_metric]
+    _treemap_pct_isite = (
+        df_treemap["pct_isite"] if _ISITE_OVERLAY_ON else pd.Series(np.nan, index=df_treemap.index)
     )
-elif color_metric == "pct_isite":
-    # I-SITE overlay applied to the treemap: a sequential scale in the SAME darker
-    # shade family lib.overlay.darken() uses for bar charts (one hue, light -> dark,
-    # per the dataviz "sequential = magnitude" rule) -- the closest treemap-native
-    # equivalent to "a darker shade of the same colour marks the I-SITE share" when a
-    # single darker SEGMENT inside a treemap tile has no direct Plotly equivalent.
-    fig_treemap = px.treemap(
-        df_treemap,
-        ids="id",
-        names="name",
-        parents="parent_id",
-        values="pubs",
-        color="pct_isite",
-        color_continuous_scale=[[0.0, "#EAF3F1"], [1.0, darken("#60CCAA", 0.5)]],
-    )
-else:
-    fig_treemap = px.treemap(
-        df_treemap,
-        ids="id",
-        names="name",
-        parents="parent_id",
-        values="pubs",
-        color=color_metric,
-        color_continuous_scale="Blues",
+    _treemap_hover = [
+        hover_lines([
+            (_hl_treemap[0], name),
+            (_hl_treemap[1], fr_int(pubs)),
+            (_hl_treemap[2], fr_fwci(fwci) if pd.notna(fwci) else None),
+            (_hl_treemap[3], fr_pct(top10 * 100) if pd.notna(top10) else None),
+            (_hl_treemap[4], fr_pct(intl * 100)),
+            (_hl_treemap[5], fr_pct(isite * 100) if _ISITE_OVERLAY_ON else None),
+            (_hl_treemap[6], "indicateur non calculé sur ce nœud" if pd.isna(fwci) else None),
+        ])
+        for name, pubs, fwci, top10, intl, isite in zip(
+            df_treemap["name"], df_treemap["pubs"], df_treemap["fwci_median"],
+            df_treemap["pct_top10"], df_treemap["pct_international"], _treemap_pct_isite,
+        )
+    ]
+    fig_treemap.update_traces(customdata=_treemap_hover, hovertemplate=HOVERTEMPLATE)
+
+    fig_treemap.update_layout(
+        margin=dict(t=30, l=10, r=10, b=10),
+        height=600,
     )
 
-fig_treemap.update_traces(branchvalues="total")
+    fig_treemap.update_traces(
+        maxdepth=3,  # Show only 2 levels at a time (current + one level of children)
+        tiling=dict(pad=0),
+    )
+    return fig_treemap
 
-# Hover template: the I-SITE line only appears once the overlay toggle is ON (R1 --
-# toggle OFF must read exactly as it did before the overlay concept existed).
-_hover_customdata = [
-    df_treemap["pubs"],
-    df_treemap["fwci_median"],
-    df_treemap["pct_top10"] * 100,
-    df_treemap["pct_international"] * 100,
-]
-_hover_template = (
-    "<b>%{label}</b><br>Publications : %{customdata[0]:,}<br>"
-    "FWCI médian : %{customdata[1]:.2f}<br>Top 10 %% : %{customdata[2]:.1f}%<br>"
-    "International : %{customdata[3]:.1f}%<br>"
+
+fig_treemap = cached_figure(
+    name="pf_treemap",
+    key=(color_metric, include_conference, _ISITE_OVERLAY_ON),
+    build=_build_fig_treemap,
 )
-if _ISITE_OVERLAY_ON:
-    _hover_customdata.append(df_treemap["pct_isite"] * 100)
-    _hover_template += "dont I-SITE : %{customdata[4]:.1f}%<br>"
-_hover_template += "<extra></extra>"
-
-fig_treemap.update_traces(
-    customdata=np.stack(_hover_customdata, axis=-1),
-    hovertemplate=_hover_template,
-)
-
-fig_treemap.update_layout(
-    margin=dict(t=30, l=10, r=10, b=10),
-    height=600,
-)
-
-fig_treemap.update_traces(
-    maxdepth=3,  # Show only 2 levels at a time (current + one level of children)
-    tiling=dict(pad=0),
-)
-
+reading_line("pf_treemap", mode=color_metric)
+fig_treemap.update_coloraxes(colorbar_title_text=_color_labels.get(color_metric, ""))  # titre FR, jamais le nom de colonne
 st.plotly_chart(fig_treemap, use_container_width=True)
 
 # P6-R2 (a): a static caption never asserts a data value or a conclusion -- the
@@ -553,7 +567,7 @@ for _, row in df_domains.iterrows():
         boxplot_data.append({
             "domain": dom_name,
             "domain_id": row["domain_id"],
-            "color": DOMAIN_COLORS.get(dom_name, "#7f7f7f"),
+            "color": get_domain_color(dom_name),
             "count": int(row["pubs_total"]),
             **bp
         })
@@ -566,61 +580,64 @@ with st.expander(
     f"Distribution du FWCI par domaine (réf. France) — {fr_int(len(boxplot_data))} domaines",
     expanded=False,
 ):
-    st.markdown(
-        "**Comment lire.** Chaque boîte résume la distribution du FWCI (réf. France, "
-        "un travail comparé aux travaux français de même sous-champ, année et type) "
-        "des travaux du domaine avec indicateur calculé : médiane, quartiles et, en "
-        "option, les valeurs extrêmes."
-    )
     use_extreme = st.toggle("Inclure les valeurs extrêmes (p0, p100)", value=False, key="domain_extreme")
+    _box_domains_mode = "extremes" if use_extreme else "standard"
 
     if boxplot_data:
-        _y_max = max((it["p100"] if use_extreme else it["p90"]) for it in boxplot_data) * 1.15 or 1.0
-        fig_box = go.Figure()
-        for item in boxplot_data:
-            lower, upper = (item["p0"], item["p100"]) if use_extreme else (item["p10"], item["p90"])
-            tooltip = fwci_hover_text(
-                item["domain"], item["count"], item["p10"], item["p25"], item["p50"],
-                item["p75"], item["p90"], use_extreme,
+        def _build_fig_box_domains():
+            _y_max = max((it["p100"] if use_extreme else it["p90"]) for it in boxplot_data) * 1.15 or 1.0
+            fig = go.Figure()
+            for item in boxplot_data:
+                lower, upper = (item["p0"], item["p100"]) if use_extreme else (item["p10"], item["p90"])
+                tooltip = fwci_hover_text(
+                    "pf_fwci_box_domains", _box_domains_mode, item["domain"], item["count"],
+                    item["p50"], item["p25"], item["p75"], lower, upper,
+                )
+                fig.add_trace(go.Bar(
+                    x=[item["domain"]], y=[_y_max], width=0.72,
+                    marker_color="rgba(0,0,0,0)", showlegend=False,
+                    customdata=[tooltip], hovertemplate=HOVERTEMPLATE,
+                ))
+                fig.add_trace(go.Box(
+                    x=[item["domain"]],
+                    lowerfence=[lower],
+                    q1=[item["p25"]],
+                    median=[item["p50"]],
+                    q3=[item["p75"]],
+                    upperfence=[upper],
+                    width=0.45,
+                    marker_color=item["color"],
+                    fillcolor=item["color"],
+                    line=dict(color=item["color"]),
+                    boxpoints=False,
+                    hoverinfo="skip",
+                    name=item["domain"],
+                    showlegend=False,
+                ))
+                fig.add_annotation(
+                    x=item["domain"],
+                    y=-0.15,
+                    yref="paper",
+                    text=f"n = {fr_int(item['count'])}",
+                    showarrow=False,
+                    font=dict(size=11, color=TEXT_SECONDARY),
+                )
+            fig.add_hline(y=1.0, line_dash=C.REFERENCE_DASH, line_color=REFERENCE_RED, line_width=C.REFERENCE_WIDTH_PX)
+            fig.update_layout(
+                height=350,
+                margin=dict(t=30, l=50, r=30, b=60),
+                yaxis=dict(title="FWCI", range=[0, _y_max]),
+                xaxis_title="",
+                barmode="overlay",
+                bargap=0.1,
             )
-            fig_box.add_trace(go.Bar(
-                x=[item["domain"]], y=[_y_max], width=0.72,
-                marker_color="rgba(0,0,0,0)", showlegend=False,
-                customdata=[tooltip], hovertemplate="%{customdata[0]}<extra></extra>",
-            ))
-            fig_box.add_trace(go.Box(
-                x=[item["domain"]],
-                lowerfence=[lower],
-                q1=[item["p25"]],
-                median=[item["p50"]],
-                q3=[item["p75"]],
-                upperfence=[upper],
-                width=0.45,
-                marker_color=item["color"],
-                fillcolor=item["color"],
-                line=dict(color=item["color"]),
-                boxpoints=False,
-                hoverinfo="skip",
-                name=item["domain"],
-                showlegend=False,
-            ))
-            fig_box.add_annotation(
-                x=item["domain"],
-                y=-0.15,
-                yref="paper",
-                text=f"n = {fr_int(item['count'])}",
-                showarrow=False,
-                font=dict(size=11, color="#666"),
-            )
+            return fig
 
-        fig_box.update_layout(
-            height=350,
-            margin=dict(t=30, l=50, r=30, b=60),
-            yaxis=dict(title="FWCI", range=[0, _y_max]),
-            xaxis_title="",
-            barmode="overlay",
-            bargap=0.1,
+        fig_box = cached_figure(
+            name="pf_fwci_box_domains", key=(use_extreme, include_conference),
+            build=_build_fig_box_domains,
         )
+        reading_line("pf_fwci_box_domains", mode=_box_domains_mode)
         st.plotly_chart(fig_box, use_container_width=True)
         st.caption(
             "**Pourquoi cet indicateur.** La distribution complète, plutôt qu'une "
@@ -717,7 +734,7 @@ for _, row in df_fields_sorted.iterrows():
         boxplot_data_fields.append({
             "field": row["name"],
             "field_id": field_id,
-            "color": DOMAIN_COLORS.get(dom_name, "#7f7f7f"),
+            "color": get_domain_color(dom_name),
             "count": int(row["pubs_total"]),
             **bp
         })
@@ -726,66 +743,75 @@ with st.expander(
     f"Distribution du FWCI par champ (réf. France) — {fr_int(len(boxplot_data_fields))} champs",
     expanded=False,
 ):
-    st.markdown(
-        "**Comment lire.** Chaque boîte résume la distribution du FWCI (réf. France) "
-        "des travaux du champ avec indicateur calculé. Par défaut, les valeurs "
-        "extrêmes sont masquées (percentiles 10-90) pour faciliter la comparaison "
-        "entre champs ; l'option ci-dessous affiche l'étendue complète (minimum à "
-        "maximum)."
-    )
     use_extreme_fields = st.toggle("Inclure les valeurs extrêmes (p0, p100)", value=False, key="field_extreme")
+    _box_fields_mode = "extremes" if use_extreme_fields else "standard"
 
     if boxplot_data_fields:
-        _y_max_f = max((it["p100"] if use_extreme_fields else it["p90"]) for it in boxplot_data_fields) * 1.15 or 1.0
-        fig_box_fields = go.Figure()
-        for item in boxplot_data_fields:
-            lower, upper = (item["p0"], item["p100"]) if use_extreme_fields else (item["p10"], item["p90"])
-            tooltip = fwci_hover_text(
-                item["field"], item["count"], item["p10"], item["p25"], item["p50"],
-                item["p75"], item["p90"], use_extreme_fields,
+        def _build_fig_box_fields():
+            _y_max_f = max((it["p100"] if use_extreme_fields else it["p90"]) for it in boxplot_data_fields) * 1.15 or 1.0
+            fig = go.Figure()
+            for item in boxplot_data_fields:
+                lower, upper = (item["p0"], item["p100"]) if use_extreme_fields else (item["p10"], item["p90"])
+                tooltip = fwci_hover_text(
+                    "pf_fwci_box_fields", _box_fields_mode, item["field"], item["count"],
+                    item["p50"], item["p25"], item["p75"], lower, upper,
+                )
+                fig.add_trace(go.Bar(
+                    x=[item["field"]], y=[_y_max_f], width=0.72,
+                    marker_color="rgba(0,0,0,0)", showlegend=False,
+                    customdata=[tooltip], hovertemplate=HOVERTEMPLATE,
+                ))
+                fig.add_trace(go.Box(
+                    x=[item["field"]],
+                    lowerfence=[lower],
+                    q1=[item["p25"]],
+                    median=[item["p50"]],
+                    q3=[item["p75"]],
+                    upperfence=[upper],
+                    width=0.45,
+                    marker_color=item["color"],
+                    fillcolor=item["color"],
+                    line=dict(color=item["color"]),
+                    boxpoints=False,
+                    hoverinfo="skip",
+                    name=item["field"],
+                    showlegend=False,
+                ))
+                fig.add_annotation(
+                    x=item["field"],
+                    y=-0.03,
+                    yref="paper",
+                    text=fr_int(item["count"]),
+                    showarrow=False,
+                    font=dict(size=9, color=TEXT_SECONDARY),
+                    textangle=0,
+                )
+            fig.add_hline(y=1.0, line_dash=C.REFERENCE_DASH, line_color=REFERENCE_RED, line_width=C.REFERENCE_WIDTH_PX)
+            fig.update_layout(
+                height=500,
+                margin=dict(t=30, l=50, r=30, b=160),
+                yaxis=dict(title="FWCI", range=[0, _y_max_f]),
+                xaxis_title="",
+                xaxis_tickangle=-45,
+                xaxis_tickfont=dict(size=10),
+                barmode="overlay",
+                bargap=0.1,
             )
-            fig_box_fields.add_trace(go.Bar(
-                x=[item["field"]], y=[_y_max_f], width=0.72,
-                marker_color="rgba(0,0,0,0)", showlegend=False,
-                customdata=[tooltip], hovertemplate="%{customdata[0]}<extra></extra>",
-            ))
-            fig_box_fields.add_trace(go.Box(
-                x=[item["field"]],
-                lowerfence=[lower],
-                q1=[item["p25"]],
-                median=[item["p50"]],
-                q3=[item["p75"]],
-                upperfence=[upper],
-                width=0.45,
-                marker_color=item["color"],
-                fillcolor=item["color"],
-                line=dict(color=item["color"]),
-                boxpoints=False,
-                hoverinfo="skip",
-                name=item["field"],
-                showlegend=False,
-            ))
-            fig_box_fields.add_annotation(
-                x=item["field"],
-                y=-0.03,
-                yref="paper",
-                text=fr_int(item["count"]),
-                showarrow=False,
-                font=dict(size=9, color="#666"),
-                textangle=0,
-            )
+            return fig
 
-        fig_box_fields.update_layout(
-            height=500,
-            margin=dict(t=30, l=50, r=30, b=160),
-            yaxis=dict(title="FWCI", range=[0, _y_max_f]),
-            xaxis_title="",
-            xaxis_tickangle=-45,
-            xaxis_tickfont=dict(size=10),
-            barmode="overlay",
-            bargap=0.1,
-            hoverlabel=dict(bgcolor="white", font_size=12, font_family="Arial"),
+        # NOTE (P7B_P4 progress): the brief's generic "margin.l = C.margin_left('champ')"
+        # instruction targets the horizontal dot/bar charts' LEFT label column; this box
+        # is a VERTICAL chart with ~26 field names on the x-AXIS (bottom), which has no
+        # such column -- C.wrap_label_px's WRAP_PX widths are calibrated for that other
+        # geometry, not for evenly-spaced categorical x-axis slots. Kept the existing
+        # -45° tick rotation (already legible at this N) rather than force a mismatched
+        # primitive onto a different chart shape; applied every other item on this row
+        # (hover, reference line, tokens, cache, reading line). Flagged for the lens.
+        fig_box_fields = cached_figure(
+            name="pf_fwci_box_fields", key=(use_extreme_fields, include_conference),
+            build=_build_fig_box_fields,
         )
+        reading_line("pf_fwci_box_fields", mode=_box_fields_mode)
         st.plotly_chart(fig_box_fields, use_container_width=True)
         st.caption(
             "**Pourquoi cet indicateur.** La distribution complète, plutôt qu'une "
@@ -1099,7 +1125,7 @@ de configuration, il ne demande aucune reconstruction.)*
         fig_sdg.update_layout(
             height=max(400, len(counts) * 28 + 120),
             margin=dict(t=20, l=10, r=60, b=40),
-            xaxis=dict(title="Publications", showgrid=True, gridcolor="#e0e0e0"),
+            xaxis=dict(title="Publications", showgrid=True, gridcolor=C.GRID_COLOR),
             yaxis=dict(autorange="reversed", title="", tickfont=dict(size=12)),
             template="plotly_white",
             showlegend=False,
@@ -1344,7 +1370,7 @@ fig_bsdg.add_trace(go.Scatter(
     showlegend=False,
 ))
 fig_bsdg.update_layout(
-    xaxis=dict(title="Part du total de l'entité (%)", showgrid=True, gridcolor="#e0e0e0"),
+    xaxis=dict(title="Part du total de l'entité (%)", showgrid=True, gridcolor=C.GRID_COLOR),
     yaxis=dict(title="", categoryorder="array", categoryarray=list(reversed(_sdg_label_order))),
     height=640, margin=dict(t=10, l=10, r=10, b=40), template="plotly_white",
 )
@@ -1389,68 +1415,104 @@ if _ISITE_OVERLAY_ON:
     df_t4_isite["field_name"] = df_t4_isite["field_id_int"].map(field_id2name)
     df_t4_isite = df_t4_isite.dropna(subset=[_lq_col])
 
-st.markdown("""
-**Comment lire ce graphique** — chaque point est un champ. x = quotient de
-localisation (LQ) vs la population française de référence (échelle log ; la ligne
-pointillée à **France = 1** est le point neutre — à droite = sur-représenté à l'UL
-par rapport à la France, à gauche = sous-représenté). Taille du point = publications
-UL ; couleur = domaine. Les points en creux sont sous le seuil de fiabilité
-(< 30 travaux UL dans le champ).
-""")
 _t4_axis_type = log_linear_toggle("t4_field_axis")
+_t4_mode = "log" if _t4_axis_type == "log" else "lineaire"
 
 if df_t4_field.empty:
     st.info("Aucune ligne de spécialisation pour cet état de conférence.")
 else:
     _t4_normal = df_t4_field[~df_t4_field["floor_flag"]]
     _t4_floor = df_t4_field[df_t4_field["floor_flag"]]
+    _hl_t4 = copy_fr.HOVER_LABELS["pf_lq_fields"][_t4_mode]
+    # I-SITE overlay lookup, by field: the ONE extra hover line (yaml `lq_isite`, "when:
+    # affichage I-SITE actif") merges onto the SAME point's hover regardless of whether
+    # that field is a normal or a floor row -- the diamond mark stays a distinct, second
+    # point (B2: "never a stacked segment"), but its OWN value is echoed on the round dot
+    # too so a reader does not have to hunt for the second mark to see both numbers.
+    _t4_isite_lq_by_fid = (
+        dict(zip(df_t4_isite["field_id_int"], df_t4_isite[_lq_col])) if not df_t4_isite.empty else {}
+    )
     fig_t4 = go.Figure()
+    _t4_normal_y, _t4_floor_y = [], []
     if not _t4_normal.empty:
+        _t4_normal_y = [C.wrap_label_px(v, "champ") for v in _t4_normal["field_name"]]
+        _t4_normal_hover = [
+            hover_lines([
+                (_hl_t4[0], name), (_hl_t4[1], fr_fwci(lq)), (_hl_t4[2], fr_int(ulw)),
+                (_hl_t4[3], fr_int(fr_works)),
+                (_hl_t4[4], fr_fwci(_t4_isite_lq_by_fid[fid]) if fid in _t4_isite_lq_by_fid else None),
+                (_hl_t4[5], None),
+            ])
+            for name, lq, ulw, fr_works, fid in zip(
+                _t4_normal["field_name"], _t4_normal[_lq_col], _t4_normal[_ulw_col].astype(float),
+                _t4_normal["france_works"].astype(float), _t4_normal["field_id_int"],
+            )
+        ]
         fig_t4.add_trace(go.Scatter(
-            x=_t4_normal[_lq_col], y=_t4_normal["field_name"], mode="markers",
+            x=_t4_normal[_lq_col], y=_t4_normal_y, mode="markers",
             marker=dict(
                 size=(_t4_normal[_ulw_col].astype(float).clip(lower=1) ** 0.5) * 1.6,
-                color=[DOMAIN_COLORS.get(d, "#7f7f7f") for d in _t4_normal["domain_name_t4"]],
+                color=[get_domain_color(d) for d in _t4_normal["domain_name_t4"]],
                 line=dict(width=0.5, color="white"),
             ),
-            customdata=np.stack([_t4_normal[_ulw_col].astype(float), _t4_normal["france_works"].astype(float)], axis=-1),
-            hovertemplate="<b>%{y}</b><br>LQ : %{x:.2f}<br>Travaux UL : %{customdata[0]:,.0f}<br>Travaux France : %{customdata[1]:,.0f}<extra></extra>",
+            customdata=_t4_normal_hover, hovertemplate=HOVERTEMPLATE,
             showlegend=False, name="",
         ))
     if not _t4_floor.empty:
+        _t4_floor_y = [f"{C.wrap_label_px(v, 'champ')} {controls.DAGGER}" for v in _t4_floor["field_name"]]
+        _t4_floor_hover = [
+            hover_lines([
+                (_hl_t4[0], name), (_hl_t4[1], fr_fwci(lq)), (_hl_t4[2], fr_int(ulw)),
+                (_hl_t4[3], fr_int(fr_works)),
+                (_hl_t4[4], fr_fwci(_t4_isite_lq_by_fid[fid]) if fid in _t4_isite_lq_by_fid else None),
+                (_hl_t4[5], "sous le plancher de trente travaux, indice indiqué et non affirmé"),
+            ])
+            for name, lq, ulw, fr_works, fid in zip(
+                _t4_floor["field_name"], _t4_floor[_lq_col], _t4_floor[_ulw_col].astype(float),
+                _t4_floor["france_works"].astype(float), _t4_floor["field_id_int"],
+            )
+        ]
         fig_t4.add_trace(go.Scatter(
-            x=_t4_floor[_lq_col], y=_t4_floor["field_name"], mode="markers",
+            x=_t4_floor[_lq_col], y=_t4_floor_y, mode="markers",
             marker=dict(
                 size=(_t4_floor[_ulw_col].astype(float).clip(lower=1) ** 0.5) * 1.6,
-                # "Thin strata -> hollow grey" (VIZ_SPEC 2.8 T4 row): hollow fill AND
-                # grey outline, not domain-coloured -- distinct from the reliable dots.
+                # Caution channel (B2): reserve ink on the OUTLINE, hollow fill, PLUS the
+                # dagger baked into the row's own y-label above -- never a hollow-only mark.
                 color="rgba(255,255,255,0)",
-                line=dict(width=2, color=controls.DEFERRED_GREY),
+                line=dict(width=2, color=REFERENCE_RED),
             ),
-            customdata=np.stack([_t4_floor[_ulw_col].astype(float), _t4_floor["france_works"].astype(float)], axis=-1),
-            hovertemplate="<b>%{y}</b> (n<30)<br>LQ : %{x:.2f}<br>Travaux UL : %{customdata[0]:,.0f}<br>Travaux France : %{customdata[1]:,.0f}<extra></extra>",
+            customdata=_t4_floor_hover, hovertemplate=HOVERTEMPLATE,
             showlegend=False, name="",
         ))
     if not df_t4_isite.empty:
+        df_t4_isite["_y_label"] = df_t4_isite["field_id_int"].map(
+            {**dict(zip(_t4_normal["field_id_int"], _t4_normal_y)),
+             **dict(zip(_t4_floor["field_id_int"], _t4_floor_y))}
+        )
+        _t4_isite_hover = [
+            hover_lines([(_hl_t4[0], f"{name} — I-SITE seul"), (_hl_t4[4], fr_fwci(lq))])
+            for name, lq in zip(df_t4_isite["field_name"], df_t4_isite[_lq_col])
+        ]
         fig_t4.add_trace(go.Scatter(
-            x=df_t4_isite[_lq_col], y=df_t4_isite["field_name"], mode="markers",
+            x=df_t4_isite[_lq_col], y=df_t4_isite["_y_label"], mode="markers",
             marker=dict(
                 size=9, symbol="diamond-open",
-                line=dict(width=2, color=darken("#60CCAA", 0.55)),
+                line=dict(width=2, color=darken(FWCI_HIGH, 0.55)),
             ),
-            hovertemplate="<b>%{y}</b> — I-SITE seul<br>LQ (I-SITE) : %{x:.2f}<extra></extra>",
+            customdata=_t4_isite_hover, hovertemplate=HOVERTEMPLATE,
             showlegend=True, name="dont I-SITE (LQ recalculé sur le sous-corpus)",
         ))
-    fig_t4.add_vline(x=1.0, line_dash="dash", line_color="#8C9196",
+    fig_t4.add_vline(x=1.0, line_dash=C.REFERENCE_DASH, line_color=REFERENCE_RED, line_width=C.REFERENCE_WIDTH_PX,
                       annotation_text="France = 1", annotation_position="top")
     fig_t4.update_layout(
         xaxis=dict(type=_t4_axis_type, title=f"LQ vs France ({'linéaire' if _t4_axis_type == 'linear' else 'log'})"),
         yaxis=dict(title=""),
         height=max(420, len(df_t4_field) * 26 + 100),
-        margin=dict(t=30, l=10, r=10, b=40),
+        margin=dict(t=30, l=C.margin_left("champ"), r=10, b=40),
         template="plotly_white",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0) if not df_t4_isite.empty else None,
     )
+    reading_line("pf_lq_fields", mode=_t4_mode)
     st.plotly_chart(fig_t4, use_container_width=True)
     if not df_t4_isite.empty:
         st.caption(
@@ -1485,24 +1547,47 @@ else:
         else:
             n_thin = int(df_t4_sub["floor_flag"].sum())
             _t4_sub_axis_type = log_linear_toggle("t4_subfield_axis")
+            _t4_sub_mode = "log" if _t4_sub_axis_type == "log" else "lineaire"
+            _hl_t4_sub = copy_fr.HOVER_LABELS["pf_lq_subfields"][_t4_sub_mode]
+            _t4_sub_y = [
+                f"{C.wrap_label_px(v, 'sous_champ')} {controls.DAGGER}" if floor else C.wrap_label_px(v, "sous_champ")
+                for v, floor in zip(df_t4_sub["subfield_name"], df_t4_sub["floor_flag"])
+            ]
+            _t4_sub_hover = [
+                hover_lines([
+                    (_hl_t4_sub[0], name), (_hl_t4_sub[1], fr_fwci(lq)), (_hl_t4_sub[2], fr_int(ulw)),
+                    (_hl_t4_sub[3], _t4_pick),
+                    (_hl_t4_sub[4], "sous le plancher de trente travaux, indice indiqué et non affirmé" if floor else None),
+                ])
+                for name, lq, ulw, floor in zip(
+                    df_t4_sub["subfield_name"], df_t4_sub[_lq_col_sub],
+                    df_t4_sub[_ulw_col_sub].astype(float), df_t4_sub["floor_flag"],
+                )
+            ]
             fig_t4_sub = go.Figure(go.Scatter(
-                x=df_t4_sub[_lq_col_sub], y=df_t4_sub["subfield_name"], mode="markers",
+                x=df_t4_sub[_lq_col_sub], y=_t4_sub_y, mode="markers",
                 marker=dict(
                     size=(df_t4_sub[_ulw_col_sub].astype(float).clip(lower=1) ** 0.5) * 1.6,
-                    # Same "hollow grey" floor convention as the field-level chart above.
-                    color=np.where(df_t4_sub["floor_flag"], "rgba(255,255,255,0)", "#0072B2"),
+                    # Same "hollow grey" floor convention as the field-level chart above --
+                    # kept here (unlike the field chart) per this key's own brief row: more
+                    # subfields sit under the floor at this finer grain, so the outline
+                    # stays DEFERRED_GREY and the caution channel lives in the LABEL
+                    # (dagger, above) + HOVER (drapeau line, below) rather than turning
+                    # every thin outline red.
+                    color=np.where(df_t4_sub["floor_flag"], "rgba(255,255,255,0)", UL_COLOR),
                     line=dict(width=np.where(df_t4_sub["floor_flag"], 2, 0.5),
-                              color=np.where(df_t4_sub["floor_flag"], controls.DEFERRED_GREY, "#0072B2")),
+                              color=np.where(df_t4_sub["floor_flag"], controls.DEFERRED_GREY, UL_COLOR)),
                 ),
-                hovertemplate="<b>%{y}</b><br>LQ : %{x:.2f}<extra></extra>",
+                customdata=_t4_sub_hover, hovertemplate=HOVERTEMPLATE,
             ))
-            fig_t4_sub.add_vline(x=1.0, line_dash="dash", line_color="#8C9196")
+            fig_t4_sub.add_vline(x=1.0, line_dash=C.REFERENCE_DASH, line_color=REFERENCE_RED, line_width=C.REFERENCE_WIDTH_PX)
             fig_t4_sub.update_layout(
                 xaxis=dict(type=_t4_sub_axis_type, title=f"LQ vs France ({'linéaire' if _t4_sub_axis_type == 'linear' else 'log'})"),
                 yaxis=dict(title=""),
-                height=max(320, len(df_t4_sub) * 24 + 80), margin=dict(t=20, l=10, r=10, b=30),
+                height=max(320, len(df_t4_sub) * 24 + 80), margin=dict(t=20, l=C.margin_left("sous_champ"), r=10, b=30),
                 template="plotly_white",
             )
+            reading_line("pf_lq_subfields", mode=_t4_sub_mode)
             st.plotly_chart(fig_t4_sub, use_container_width=True)
             if n_thin:
                 st.caption(f":grey[{n_thin} sous-champ(s) sous le seuil (n<30) -- affichés en creux.]")

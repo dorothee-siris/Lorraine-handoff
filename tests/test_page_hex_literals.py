@@ -104,7 +104,6 @@ def _path_for(relkey: str) -> Path:
 # et la mediane pointillee L926 (-> `NEUTRAL_GREY` ou `REFERENCE_RED`). Vider ce cliquet
 # a la cloture demande donc une decision du manager sur ces cinq litteraux.
 EXEMPT_PAGES: set[str] = {
-    "pages/4_🔬_Portefeuille_thématique.py",
     "pages/6_🔎_Exploration_thématique.py",
     "pages/7_🎯_I-SITE.py",
     "pages/12_👤_Profil_auteur.py",

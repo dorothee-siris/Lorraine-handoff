@@ -186,7 +186,6 @@ def _path_for(relkey: str) -> Path:
 # peers-scatter sites are fixed, but the page's many OTHER charts (treemap, boxplots,
 # zero-fill tables, specialisation view) are untouched this pass -- 7b's job.
 EXEMPT_PAGES: set[str] = {
-    "pages/4_🔬_Portefeuille_thématique.py",
     "pages/6_🔎_Exploration_thématique.py",
     "pages/7_🎯_I-SITE.py",
 }

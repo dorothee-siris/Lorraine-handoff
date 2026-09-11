@@ -85,18 +85,19 @@ def test_page4_source_has_no_perimeter_selector_dead_code():
 def test_page4_treemap_fwci_midpoint_is_neutral_grey_not_yellow():
     """R19 FWCI-scale midpoint decision: the diverging FWCI colour scale's midpoint
     (FWCI = 1, the France reference) must be the app's own neutral-reference grey
-    (controls.DEFERRED_GREY, #8C9196) -- never a hue, per the dataviz skill's own
-    diverging-scale rule ('two hues + a neutral gray midpoint... never a hue at the
-    diverging midpoint'). The old yellow (#F4D570) must be gone from the ACTUAL
-    colour-scale list (a code comment may still name it historically, e.g. the
-    RA-B02 backstory, without that counting as a live colour stop)."""
+    (#8C9196 == lib.helpers.NEUTRAL_GREY == controls.DEFERRED_GREY) -- never a hue,
+    per the dataviz skill's own diverging-scale rule. The old yellow (#F4D570) must be
+    gone from the ACTUAL colour-scale list. Pass 7b (B6, zero hex literal in any page
+    file): the scale now lives in Streamlit/lib/helpers.py::FWCI_DIVERGING_SCALE and the
+    page references the token -- so this pin reads the helpers SOURCE for the stops and
+    the page SOURCE for the reference (same regex-not-import discipline as
+    tests/ui/_colorscale.py, F-SYSMOD)."""
     src = (PAGES_DIR / PAGE4).read_text(encoding="utf-8")
-    # Bounded on the RIGHT by the range_color=[0, 2] line that immediately follows
-    # the outer list's closing bracket in this exact chart -- not a naive split on
-    # the first "]", which would stop at the FIRST inner [value, colour] pair.
-    scale_block = src.split("color_continuous_scale=[", 1)[1].split("range_color=[0, 2]", 1)[0]
+    assert "color_continuous_scale=FWCI_DIVERGING_SCALE" in src
+    helpers_src = (PAGES_DIR.parent / "lib" / "helpers.py").read_text(encoding="utf-8")
+    scale_block = helpers_src.split("FWCI_DIVERGING_SCALE = [", 1)[1].split("\n", 1)[0]
     assert "F4D570" not in scale_block
-    assert "controls.DEFERRED_GREY" in scale_block
+    assert '[0.5, "#8C9196"]' in scale_block
     # Endpoints are the pre-existing house colours, deliberately UNCHANGED.
     assert '"#EC8773"' in scale_block
     assert '"#60CCAA"' in scale_block
@@ -223,9 +224,17 @@ def test_page6_source_has_no_stray_english_section_headers():
 def test_page6_overlay_bars_used_for_contribution_charts():
     """R1/OVERLAY_MATRIX EXTEND row: the two Contribution Analysis bar charts (new
     department_breakdown_isite / top_labs_isite same-row twins) render through the
-    ONE shared lib.overlay grammar, never a page-rolled stacking of its own."""
+    ONE shared lib.overlay grammar, never a page-rolled stacking of its own.
+
+    UPDATED pass 7b (P6, BUILD_PLAN B2 -- logged per _PAGE_RECIPE_7b.md step 2's
+    "edit ONLY the conflicting pin"): both charts now call `charts.bars_with_gutter(
+    ..., isite_col=..., isite_on=...)`, which delegates to `lib.overlay.overlay_bars`
+    INTERNALLY (Streamlit/lib/charts.py L471-475) -- still the one shared grammar,
+    one layer further from the page. The page source itself no longer spells
+    `overlay_bars(` (that call now lives in lib/charts.py, not re-implemented here).
+    """
     src = (PAGES_DIR / PAGE6).read_text(encoding="utf-8")
-    assert src.count("overlay_bars(") >= 2
+    assert src.count("charts.bars_with_gutter(") >= 2
     assert "department_breakdown_isite" in src
     assert "top_labs_isite" in src
 

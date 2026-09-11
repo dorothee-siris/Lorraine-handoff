@@ -36,27 +36,34 @@ PAGE3 = _find_page3()
 
 def read_declared_scale() -> Tuple[List[Tuple[float, str]], Tuple[float, float]]:
     """
-    Parse the `color_continuous_scale=[...]` / `range_color=[...]` block feeding
-    the treemap's `fwci_median` colouring. Returns (stops, (lo, hi)).
+    Parse the declared FWCI colour scale feeding the treemap's `fwci_median` colouring.
+    Since pass 7b the stops live in `Streamlit/lib/helpers.py::FWCI_DIVERGING_SCALE`
+    (zero hex literal in any page file, BUILD_PLAN 7b B6) and the page keeps only
+    `range_color=[lo, hi]`. Both are read as SOURCE TEXT by regex -- never imported --
+    so the root `lib` package stays bound in tests/test_app_numbers.py (F-SYSMOD).
+    Returns (stops, (lo, hi)).
     """
-    src = PAGE3.read_text(encoding="utf-8")
-    block_m = re.search(
-        r'color_continuous_scale\s*=\s*\[(.*?)\]\s*,\s*\n\s*range_color\s*=\s*\[([^\]]+)\]',
-        src, flags=re.S,
-    )
-    if not block_m:
+    helpers_src = (PAGE3.parent.parent / "lib" / "helpers.py").read_text(encoding="utf-8")
+    scale_m = re.search(r'FWCI_DIVERGING_SCALE\s*=\s*\[(.*?)\]\s*(?:#[^\n]*)?\n', helpers_src, flags=re.S)
+    if not scale_m:
         raise AssertionError(
-            "could not find the declared color_continuous_scale/range_color block "
-            "in pages/4_*.py -- has the FWCI treemap colouring been refactored?"
+            "could not find FWCI_DIVERGING_SCALE in Streamlit/lib/helpers.py -- has the FWCI "
+            "treemap colouring been refactored?"
         )
-    stops_text, range_text = block_m.groups()
     stops = [
         (float(pos), color)
-        for pos, color in re.findall(r'\[\s*([\d.]+)\s*,\s*"(#[0-9A-Fa-f]{6})"\s*\]', stops_text)
+        for pos, color in re.findall(r'\[\s*([\d.]+)\s*,\s*"(#[0-9A-Fa-f]{6})"\s*\]', scale_m.group(1))
     ]
-    lo, hi = (float(x.strip()) for x in range_text.split(","))
+    src = PAGE3.read_text(encoding="utf-8")
+    range_m = re.search(r'color_continuous_scale\s*=\s*FWCI_DIVERGING_SCALE\s*,[^\n]*\n\s*range_color\s*=\s*\[([^\]]+)\]', src)
+    if not range_m:
+        raise AssertionError(
+            "could not find the color_continuous_scale=FWCI_DIVERGING_SCALE / range_color block "
+            "in pages/4_*.py -- has the FWCI treemap colouring been refactored?"
+        )
+    lo, hi = (float(x.strip()) for x in range_m.group(1).split(","))
     if len(stops) < 2:
-        raise AssertionError(f"parsed fewer than 2 colour stops from pages/4_*.py: {stops}")
+        raise AssertionError(f"parsed fewer than 2 colour stops from lib/helpers.py: {stops}")
     return stops, (lo, hi)
 
 

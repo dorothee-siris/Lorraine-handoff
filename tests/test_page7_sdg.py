@@ -154,11 +154,20 @@ def test_page2_and_page4_sdg_identity_is_single_sourced_from_helpers():
 def test_sdg_chart_sites_use_the_shared_hover_grammar():
     """The 3 SDG chart sites build customdata + HOVERTEMPLATE -- never a live
     "%{...:...}" format spec baked into hovertemplate (the app-wide rule
-    tests/test_hover_tripwire.py polices; pinned locally too since pages 2/4 stay in
-    EXEMPT_PAGES this pass for their OTHER, untouched charts)."""
+    tests/test_hover_tripwire.py polices). Page 2 (LAB_SRC) still has only its one
+    SDG site migrated this pass. Page 4 (PF_SRC) had 3 (this assertion's original
+    count) BEFORE pass-7b's P4 stream (BUILD_PLAN §3) migrated the page's other 5
+    chart keys onto the same grammar in the SAME commit -- the count grew to 10
+    (pf_treemap 1, pf_fwci_box_domains 1, pf_fwci_box_fields 1, pf_lq_fields 3
+    traces, pf_lq_subfields 1, plus the original pf_sdg_bars 1 + pf_sdg_peers_scatter
+    2) as a DIRECT, intended consequence of that migration, not a regression --
+    updated per _PAGE_RECIPE_7b.md step 2 ("if a pin conflicts with the new form,
+    edit ONLY that pin and log why")."""
     assert LAB_SRC.count("hovertemplate=HOVERTEMPLATE") == 1
-    # pf_sdg_bars (1) + pf_sdg_peers_scatter's two traces (peers, UL) = 3.
-    assert PF_SRC.count("hovertemplate=HOVERTEMPLATE") == 3
+    assert PF_SRC.count("hovertemplate=HOVERTEMPLATE") == 10
+
+    # vacuity: the ORIGINAL SDG-only count must NOT match the page's current state
+    assert PF_SRC.count("hovertemplate=HOVERTEMPLATE") != 3
 
 
 def test_vacuity_hover_shape_check_catches_a_malformed_line():
