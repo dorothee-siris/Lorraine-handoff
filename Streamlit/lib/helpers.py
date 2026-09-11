@@ -1343,6 +1343,8 @@ def momentum_display(row: Any, facts: Any) -> tuple[str, str, str | None]:
 # ============================================================================
 
 # ---- pass 7b: chrome tokens (BUILD_PLAN 7b B6 -- zero hex literal in any page file) ----
+CARD_BORDER = "#E3E6EA"      # 1 px border of the HTML identity cards / KPI tiles (chrome)
+TEXT_HEADLINE = "#3A3F44"    # == lib.overlay.GROUPED_LEGEND_INK : headline ink of the HTML cards
 TEXT_PRIMARY = "#333333"     # VIZ_SPEC SS1.6 primary text ink (median/guide lines drawn as text-ink chrome)
 TEXT_SECONDARY = "#5A5F66"   # VIZ_SPEC SS1.6 secondary text ink (captions, small HTML notes)
 MAP_CHROME = {               # scattergeo basemap chrome (page 10) -- chrome, never an identity slot

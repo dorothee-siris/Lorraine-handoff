@@ -214,16 +214,18 @@ def test_identifiants_no_new_isite_column_per_overlay_matrix():
 
 
 def test_lab_page_wires_the_shared_overlay_grammar_not_a_homegrown_one():
-    """Pass 6: the page now also wires `overlay_grouped_bars` (VIZ_SPEC_pass6 §1.5,
-    the Studio A/B GROUPED WINS verdict) for the #26/#30/#31 annual pair, on top
-    of the unchanged `overlay_bars` one-bar-per-entity case (field distribution,
-    FWCI-pair left panel). Both must ultimately read the ONE global sidebar
-    toggle, never a page-local one -- traced through the page's own `plot_*`
-    wrapper functions (`isite_on`/`isite_overlay_on` parameter names), since the
-    wrappers no longer pass the global variable to `overlay_bars()` by its own
-    literal name at every call site."""
-    assert "from lib.overlay import overlay_bars, overlay_grouped_bars" in LAB_SRC
-    assert "overlay_bars(" in LAB_SRC
+    """Pass 6: the page wires `overlay_grouped_bars` (VIZ_SPEC_pass6 §1.5, the
+    Studio A/B GROUPED WINS verdict) for the #26/#30/#31 annual pair. Pass 7b
+    (BUILD_PLAN B2): the one-bar-per-entity case (field distribution, FWCI-pair
+    left panel) migrates from the page's own `overlay_bars` call to the shared
+    `charts.bars_with_gutter` (family `champ`) -- `overlay_bars` itself is no
+    longer imported here (it stays live inside `bars_with_gutter`'s own I-SITE
+    branch, lib/charts.py, never re-imported at the page level). Both paths
+    must ultimately read the ONE global sidebar toggle, never a page-local
+    one -- traced through the page's own `plot_*` wrapper functions
+    (`isite_on`/`isite_overlay_on` parameter names)."""
+    assert "from lib.overlay import overlay_grouped_bars" in LAB_SRC
+    assert "bars_with_gutter(" in LAB_SRC
     assert "overlay_grouped_bars(" in LAB_SRC
     # The retired ad-hoc two-trace pattern (page-1-era, pre-pass-5) must be gone --
     # NOT a bare 'barmode="overlay"' search, which the (unrelated) FWCI-whisker

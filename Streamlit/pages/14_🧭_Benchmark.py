@@ -42,9 +42,14 @@ import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
 
-from lib import controls, exports, links, ranked
+from lib import controls, copy_fr, exports, links, ranked
+from lib import charts as C
+from lib import helpers as H
+from lib import hover as hv
 from lib.data_cache import DATA_DIR, get_corpus_facts_df
+from lib.fig_cache import cached_figure
 from lib.helpers import UL_OPENALEX_ID, fr_int, fr_pct, log_linear_toggle, window_label
+from lib.reading import reading_line
 
 # =============================================================================
 # Page config
@@ -79,10 +84,6 @@ RUNG_LABELS_FR = {
 # Default rung shown in the drill-down entity picker (R13 item 2: "fewer default visible
 # peers, e.g. the selected rung only") -- was all 4 rungs / 9 peers pre-redesign.
 DEFAULT_DRILLDOWN_RUNGS = ["FR-ISITE"]
-
-FOCAL_BLUE = "#0072B2"    # VIZ_SPEC 1.1 focal
-PEER_GREY = "#8C9196"     # VIZ_SPEC 1.1 comparison/reference grey -- ALL peers share this ONE tone
-FRANCE_REF_LINE = "#8C9196"
 
 S9_BANNER_FR = (
     "Les chiffres de cette page situent l'Université de Lorraine face à des pairs choisis par "
@@ -345,8 +346,54 @@ def _fwci_median_mean_bridge(sig_df: pd.DataFrame, ul_id: str) -> str:
     )
 
 
+# Per-signal hover-value formatter (tooltip_spec.yaml `valeur_signal`: the value in its
+# own unit -- count/part/rapport -- via hv.fmt_*, same convention as every other chart).
+_HOVER_FMT = {
+    "works": hv.fmt_int,
+    "coverage_pct": lambda v: hv.fmt_pct(v, 1),
+    "fwci_fr_mean": lambda v: hv.fmt_dec(v, 2),
+    "fwci_fr_median": lambda v: hv.fmt_dec(v, 2),
+    "pptop10_pct": lambda v: hv.fmt_pct(v, 1),
+    "top3_share_pct": lambda v: hv.fmt_pct(v, 1),
+    "lq_std": lambda v: hv.fmt_dec(v, 2),
+}
+
+
+def _forest_hover(mode: str, is_ul: bool, s: dict, rung: str, vals: list[float],
+                   val: float | None) -> str:
+    """
+    One pre-formatted hover string (bench_rung_forest, tooltip_spec.yaml): the UL point and
+    the peer aggregate (band + median traces, which SHARE this same string -- same
+    convention as the app's other two-trace charts, generalised here to three) both carry
+    the row's full context: which signal, this mark's own value, the comparison group, and
+    the peer band/median/count, so hovering EITHER mark shows the whole picture, never a
+    rank (bench_rung_forest's yaml note: no rank line, this chart refuses classement).
+    """
+    labels = copy_fr.HOVER_LABELS["bench_rung_forest"][mode]
+    fmt = _HOVER_FMT[s["key"]]
+    n = len(vals)
+    entity_txt = "Université de Lorraine" if is_ul else "pairs du groupe"
+    value_txt = fmt(val) if val is not None and pd.notna(val) else None
+    range_txt = f"{fmt(min(vals))} - {fmt(max(vals))}" if n >= 2 else None
+    median_txt = fmt(float(pd.Series(vals).median())) if n >= 1 else None
+    single_txt = (
+        "un seul pair dans ce groupe, la marque est ce pair et non une étendue"
+        if n == 1 else None
+    )
+    return hv.hover_lines([
+        (labels[0], entity_txt),
+        (labels[1], s["label"]),
+        (labels[2], value_txt),
+        (labels[3], RUNG_LABELS_FR.get(rung, rung)),
+        (labels[4], range_txt),
+        (labels[5], median_txt),
+        (labels[6], hv.fmt_int(n)),
+        (labels[7], single_txt),
+    ])
+
+
 def _rung_forest_figure(sig_df: pd.DataFrame, rung: str, ul_id: str, signals: list[dict],
-                         x_ranges: dict[str, tuple[float, float]]) -> go.Figure:
+                         x_ranges: dict[str, tuple[float, float]], mode: str) -> go.Figure:
     """
     One small multiple per rung (R13): 6 stacked rows, one per signal, each its own x-axis
     (units differ -- count/%/ratio) but SHARED across the 4 rungs via `x_ranges`. Exactly 3 mark
@@ -354,7 +401,8 @@ def _rung_forest_figure(sig_df: pd.DataFrame, rung: str, ul_id: str, signals: li
     [grey diamond] -- collapsing to a single point when a rung has only 1 peer (FR-IDEX, XBORDER),
     never a fabricated band -- and (3) the UL point [blue dot]. NO rank, no league table: peers
     are never shown individually here, only the aggregate band/median (a peer-level breakdown is
-    the drill-down's job).
+    the drill-down's job). `mode` (fwci_mean_on/off) only selects the hover-copy variant --
+    identical to the caller's own `show_fwci_mean` toggle, never a second source of truth.
     """
     peers = sig_df[sig_df["rung"] == rung]
     n_peers = len(peers)
@@ -364,55 +412,59 @@ def _rung_forest_figure(sig_df: pd.DataFrame, rung: str, ul_id: str, signals: li
     peer_legend_name = "Pairs (min-max, médiane ◆)" if n_peers >= 2 else "Seul pair du groupe (◆)"
 
     for i, s in enumerate(signals, start=1):
-        key, fmt, unit = s["key"], s["fmt"], s["unit"]
+        key = s["key"]
         vals = peers[key].dropna().tolist()
         ul_val = sig_df.loc[ul_id, key] if ul_id in sig_df.index else None
 
         if len(vals) >= 2:
             vmin, vmax, vmed = min(vals), max(vals), float(pd.Series(vals).median())
+            peer_hover = _forest_hover(mode, False, s, rung, vals, vmed)
             fig.add_trace(go.Scatter(
                 x=[vmin, vmax], y=[0, 0], mode="lines",
-                line=dict(color=PEER_GREY, width=7),
-                hovertext=f"Étendue pairs (n={len(vals)}) : {fmt(vmin)}{unit} à {fmt(vmax)}{unit}",
-                hoverinfo="text", showlegend=False, name="",
+                line=dict(color=H.NEUTRAL_GREY, width=7),
+                customdata=[peer_hover, peer_hover], hovertemplate=hv.HOVERTEMPLATE,
+                showlegend=False, name="",
             ), row=i, col=1)
             fig.add_trace(go.Scatter(
                 x=[vmed], y=[0], mode="markers",
-                marker=dict(symbol="diamond", size=10, color=PEER_GREY,
+                marker=dict(symbol="diamond", size=10, color=H.NEUTRAL_GREY,
                             line=dict(width=1, color="white")),
-                hovertext=f"Médiane pairs (n={len(vals)}) : {fmt(vmed)}{unit}",
-                hoverinfo="text", showlegend=(i == 1), name=peer_legend_name,
+                customdata=[peer_hover], hovertemplate=hv.HOVERTEMPLATE,
+                showlegend=(i == 1), name=peer_legend_name,
             ), row=i, col=1)
         elif len(vals) == 1:
+            peer_hover = _forest_hover(mode, False, s, rung, vals, vals[0])
             fig.add_trace(go.Scatter(
                 x=[vals[0]], y=[0], mode="markers",
-                marker=dict(symbol="diamond", size=10, color=PEER_GREY,
+                marker=dict(symbol="diamond", size=10, color=H.NEUTRAL_GREY,
                             line=dict(width=1, color="white")),
-                hovertext=f"Seul pair du groupe : {fmt(vals[0])}{unit}",
-                hoverinfo="text", showlegend=(i == 1), name=peer_legend_name,
+                customdata=[peer_hover], hovertemplate=hv.HOVERTEMPLATE,
+                showlegend=(i == 1), name=peer_legend_name,
             ), row=i, col=1)
         else:
             fig.add_annotation(text="n/a", x=0, y=0, xref=f"x{i}", yref=f"y{i}", showarrow=False,
-                                font=dict(size=10, color=PEER_GREY))
+                                font=dict(size=10, color=H.NEUTRAL_GREY))
 
         if ul_val is not None and pd.notna(ul_val):
+            ul_hover = _forest_hover(mode, True, s, rung, vals, ul_val)
             fig.add_trace(go.Scatter(
                 x=[ul_val], y=[0], mode="markers",
-                marker=dict(symbol="circle", size=13, color=FOCAL_BLUE,
+                marker=dict(symbol="circle", size=13, color=H.UL_COLOR,
                              line=dict(width=1.2, color="white")),
-                hovertext=f"UL : {fmt(ul_val)}{unit}",
-                hoverinfo="text", showlegend=(i == 1), name="UL",
+                customdata=[ul_hover], hovertemplate=hv.HOVERTEMPLATE,
+                showlegend=(i == 1), name="UL",
             ), row=i, col=1)
 
         xr = x_ranges.get(key)
         fig.update_xaxes(range=list(xr) if xr else None, row=i, col=1,
-                          tickfont=dict(size=9), showgrid=True, gridcolor="#EEEEEE")
-        fig.update_yaxes(range=[-1, 1], tickvals=[0], ticktext=[s["short"]],
+                          tickfont=dict(size=9), showgrid=True, gridcolor=C.GRID_COLOR)
+        fig.update_yaxes(range=[-1, 1], tickvals=[0],
+                          ticktext=[C.wrap_label_px(s["short"], "partenaire")],
                           tickfont=dict(size=10), showgrid=False, zeroline=False, row=i, col=1)
 
     fig.update_layout(
         height=n_rows * 48 + 60,
-        margin=dict(t=28, l=118, r=16, b=10),
+        margin=dict(t=28, l=C.margin_left("partenaire"), r=16, b=10),
         template="plotly_white",
         legend=dict(orientation="h", yanchor="bottom", y=1.0, x=0, font=dict(size=10)),
         showlegend=True,
@@ -423,15 +475,47 @@ def _rung_forest_figure(sig_df: pd.DataFrame, rung: str, ul_id: str, signals: li
 # =============================================================================
 # Drill-down chart builder -- the dot-ratio grammar (VIZ_SPEC 2.8 T4b row, unchanged form)
 # =============================================================================
+_DOT_RATIO_VALUE = {
+    "lq_champ_log": ("lq_vs_france", lambda v: hv.fmt_dec(v, 2)),
+    "lq_champ_lineaire": ("lq_vs_france", lambda v: hv.fmt_dec(v, 2)),
+    "lq_sous_champ_log": ("lq_vs_france", lambda v: hv.fmt_dec(v, 2)),
+    "lq_sous_champ_lineaire": ("lq_vs_france", lambda v: hv.fmt_dec(v, 2)),
+    "pptop_champ": ("pptop10_pct", lambda v: hv.fmt_pct(v, 1)),
+}
+
+
+def _dot_ratio_hover_col(df: pd.DataFrame, mode: str) -> pd.Series:
+    """
+    One pre-formatted hover string per (entity, node) row (bench_dot_ratio,
+    tooltip_spec.yaml): node -> établissement -> the panel's own value -> travaux -> the
+    thirty-works reliability-floor flag (the app's own "n<30" convention, e.g. page 5's
+    `floor_flag_spec`), computed at render since bench_peers carries no precomputed flag.
+    """
+    labels = copy_fr.HOVER_LABELS["bench_dot_ratio"][mode]
+    value_col, fmt = _DOT_RATIO_VALUE[mode]
+
+    def _row(r):
+        return hv.hover_lines([
+            (labels[0], r["node_name"]),
+            (labels[1], r["entity_name"]),
+            (labels[2], fmt(r[value_col])),
+            (labels[3], hv.fmt_int(r["works"])),
+            (labels[4], "sous le plancher de trente travaux" if r["works"] < 30 else None),
+        ])
+    return df.apply(_row, axis=1)
+
+
 def dot_ratio_chart(df: pd.DataFrame, entity_ids: list[str], value_col: str, node_names: list[str],
                      node_ids: list[str], x_title: str, log_x: bool, ref_x: float | None,
-                     ref_label: str, hover_suffix: str, fmt: str) -> go.Figure:
+                     ref_label: str, hover_col: str, family: str) -> go.Figure:
     """
     One row per node (field or subfield), one trace per entity -- UL in focal blue at the row
     centre, every peer in the SAME grey tone at a small fixed vertical offset (stable across
     filter changes: offsets are assigned from the FULL peer roster, not the currently-visible
     subset, so a peer's row position never jumps when another peer is toggled off). Direct label
-    on every dot (VIZ_SPEC T4b: "direct labels ... never a new identity colour").
+    on every dot (VIZ_SPEC T4b: "direct labels ... never a new identity colour"). `hover_col`
+    names the pre-built hv.hover_lines string per row (df[hover_col], set by the caller via
+    `_dot_ratio_hover_col`) -- never a format spec assembled here.
     """
     n = len(node_ids)
     row_of = {nid: i for i, nid in enumerate(node_ids)}
@@ -455,36 +539,36 @@ def dot_ratio_chart(df: pd.DataFrame, entity_ids: list[str], value_col: str, nod
             xs.append(float(val))
             ys.append(row_of[nid] + offsets.get(entity_id, 0.0))
             texts.append(SHORT_LABEL.get(entity_id, entity_id))
-            works = sub.loc[nid, "works"]
-            hover.append(f"{sub.loc[nid, 'entity_name']}<br>{value_col}: {val:{fmt}}{hover_suffix}"
-                          f"<br>Travaux: {int(works):,}")
+            hover.append(sub.loc[nid, hover_col])
         if not xs:
             continue
         is_ul = entity_id == UL_ENTITY_ID
         fig.add_trace(go.Scatter(
             x=xs, y=ys, mode="markers+text", text=texts,
             textposition="middle right" if not is_ul else "middle left",
-            textfont=dict(size=10, color=FOCAL_BLUE if is_ul else "#5A5F66"),
+            textfont=dict(size=10, color=H.UL_COLOR if is_ul else H.TEXT_SECONDARY),
             marker=dict(
                 size=13 if is_ul else 8,
-                color=FOCAL_BLUE if is_ul else PEER_GREY,
+                color=H.UL_COLOR if is_ul else H.NEUTRAL_GREY,
                 line=dict(width=1.2 if is_ul else 0.5, color="white"),
             ),
-            hovertext=hover, hoverinfo="text", showlegend=False, name="",
+            customdata=hover, hovertemplate=hv.HOVERTEMPLATE, showlegend=False, name="",
         ))
 
     if ref_x is not None:
-        fig.add_vline(x=ref_x, line_dash="dash", line_color=FRANCE_REF_LINE,
+        fig.add_vline(x=ref_x, line_dash=C.REFERENCE_DASH, line_color=H.REFERENCE_RED,
+                       line_width=C.REFERENCE_WIDTH_PX,
                        annotation_text=ref_label, annotation_position="top")
 
     fig.update_layout(
         xaxis=dict(type="log" if log_x else "linear", title=x_title),
         yaxis=dict(
-            tickmode="array", tickvals=list(range(n)), ticktext=node_names,
+            tickmode="array", tickvals=list(range(n)),
+            ticktext=[C.wrap_label_px(nm, family) for nm in node_names],
             range=[-0.6, n - 0.4],
         ),
         height=max(420, n * 34 + 120),
-        margin=dict(t=30, l=10, r=90, b=40),
+        margin=dict(t=30, l=C.margin_left(family), r=90, b=40),
         template="plotly_white",
     )
     return fig
@@ -584,16 +668,11 @@ st.markdown(f"> {CONCEPT_CAPTION_FR}")
 # Rung synthesis (R13 item 1) -- the first screen: UL vs rung median + min-max band, 6 signals
 # =============================================================================
 st.markdown("## L'UL face à la médiane et à l'étendue de chaque groupe")
-st.markdown(
-    "**Comment lire.** Un panneau par groupe de comparaison. Sur chaque ligne, la barre grise "
-    "couvre l'étendue des pairs du groupe, le losange leur médiane, et le point bleu situe "
-    "l'Université de Lorraine. Aucun score global, aucun rang : six signaux lus séparément, sur "
-    "une échelle commune d'un groupe à l'autre."
-)
 show_fwci_mean = st.toggle(
     "Afficher la moyenne FWCI (optionnel, sensible aux valeurs extrêmes)",
     value=False, key="bench_fwci_mean_toggle",
 )
+_FOREST_MODE = "fwci_mean_on" if show_fwci_mean else "fwci_mean_off"
 _n_fields = int(
     bench.loc[(bench["node_level"] == "field") & (bench["conf_state"] == CONF_STATE), "node_id"]
     .nunique()
@@ -602,12 +681,20 @@ SIGNALS = _signals(show_fwci_mean, _n_fields)
 sig_df = _build_signal_table(bench, CONF_STATE)
 X_RANGES = _global_signal_ranges(sig_df, SIGNALS)
 
+reading_line("bench_rung_forest", mode=_FOREST_MODE)
+
 _grid = [st.columns(2), st.columns(2)]
 for (r, c), rung in zip([(0, 0), (0, 1), (1, 0), (1, 1)], RUNGS):
     n_peers = int((sig_df["rung"] == rung).sum())
     with _grid[r][c]:
         st.markdown(f"**{RUNG_LABELS_FR[rung]}** · {n_peers} pair(s) de référence")
-        fig = _rung_forest_figure(sig_df, rung, UL_ENTITY_ID, SIGNALS, X_RANGES)
+        fig = cached_figure(
+            name="bench_rung_forest",
+            key=(rung, _FOREST_MODE, CONF_STATE),
+            build=lambda rung=rung: _rung_forest_figure(
+                sig_df, rung, UL_ENTITY_ID, SIGNALS, X_RANGES, _FOREST_MODE,
+            ),
+        )
         st.plotly_chart(fig, use_container_width=True)
         # I2-11 fix (partial absorb): a band drawn from 1-2 peers is not a distribution --
         # say so explicitly next to the panel it qualifies, instead of letting the shared
@@ -744,14 +831,8 @@ with st.expander("Vérifier une spécialisation précise, champ par champ"):
     # -------------------------------------------------------------------------
     st.markdown("---")
     st.markdown("#### Spécialisation par champ vs France")
-    st.markdown("""
-**Comment lire ce graphique** -- une ligne par champ. x = *Location Quotient* (LQ) vs la
-population française de référence (ligne pointillée = France = 1 : à droite, sur-représenté à
-l'entité par rapport à la France ; à gauche, sous-représenté). Point bleu = UL (repère focal) ;
-points gris = pairs sélectionnés, un label direct par point, jamais une nouvelle couleur
-d'identité par pair. Les champs les plus distinctifs pour l'UL (les plus loin de France = 1)
-s'affichent par défaut ; « afficher plus » déploie la liste complète.
-""")
+    _mode_a = f"lq_champ_{'log' if _lq_log_x else 'lineaire'}"
+    reading_line("bench_dot_ratio", mode=_mode_a)
 
     df_field = bench[(bench["node_level"] == "field") & (bench["conf_state"] == CONF_STATE)
                      & (bench["entity_id"].isin(active_entity_ids))].copy()
@@ -767,10 +848,11 @@ s'affichent par défaut ; « afficher plus » déploie la liste complète.
         node_ids_field = _display_field["node_id"].tolist()
         node_names_field = _display_field["node_name"].tolist()
 
+        df_field["hover"] = _dot_ratio_hover_col(df_field, _mode_a)
         fig_a = dot_ratio_chart(
             df_field, active_entity_ids, "lq_vs_france", node_names_field, node_ids_field,
             x_title="LQ vs France", log_x=_lq_log_x, ref_x=1.0, ref_label="France = 1",
-            hover_suffix="", fmt=".2f",
+            hover_col="hover", family="champ",
         )
         st.plotly_chart(fig_a, use_container_width=True)
         exports.attach_download(
@@ -783,6 +865,8 @@ s'affichent par défaut ; « afficher plus » déploie la liste complète.
     # Panel B -- subfield drill (scoped, §6.6) for one selected field
     # -------------------------------------------------------------------------
     st.markdown("#### Zoom sous-champs")
+    _mode_b = f"lq_sous_champ_{'log' if _lq_log_x else 'lineaire'}"
+    reading_line("bench_dot_ratio", mode=_mode_b)
     if not _field_order_full.empty:
         field_options = _field_order_full.sort_values("node_name")["node_name"].tolist()
         picked_field_name = st.selectbox("Champ :", field_options, key="bench_field_drill")
@@ -809,10 +893,11 @@ s'affichent par défaut ; « afficher plus » déploie la liste complète.
             node_ids_sub = _display_sub["node_id"].tolist()
             node_names_sub = _display_sub["node_name"].tolist()
 
+            df_subfield["hover"] = _dot_ratio_hover_col(df_subfield, _mode_b)
             fig_b = dot_ratio_chart(
                 df_subfield, active_entity_ids, "lq_vs_france", node_names_sub, node_ids_sub,
                 x_title="LQ vs France", log_x=_lq_log_x, ref_x=1.0, ref_label="France = 1",
-                hover_suffix="", fmt=".2f",
+                hover_col="hover", family="sous_champ",
             )
             st.plotly_chart(fig_b, use_container_width=True)
             exports.attach_download(
@@ -826,15 +911,8 @@ s'affichent par défaut ; « afficher plus » déploie la liste complète.
     # -------------------------------------------------------------------------
     st.markdown("---")
     st.markdown("#### Part de travaux Top 10 % (référentiel France) par champ")
-    st.markdown("""
-**Comment lire ce graphique** -- même grammaire que ci-dessus : une ligne par champ, x = part de
-travaux atteignant le seuil Top 10 % du référentiel français (seuil défini par rang de centile).
-Ligne pointillée : repère France, autour de 10 % par construction de la population de référence,
-ce qui n'en fait pas une valeur attendue pour une entité donnée. Les cellules sous le seuil de
-fiabilité (moins de 30 travaux avec indicateur) sont absentes du graphique, jamais affichées à
-zéro. Les champs les plus distinctifs pour l'UL s'affichent par défaut ; « afficher plus »
-déploie la liste complète.
-""")
+    _mode_c = "pptop_champ"
+    reading_line("bench_dot_ratio", mode=_mode_c)
 
     df_field_pp = bench[(bench["node_level"] == "field") & (bench["conf_state"] == CONF_STATE)
                          & (bench["entity_id"].isin(active_entity_ids))].copy()
@@ -851,10 +929,11 @@ déploie la liste complète.
         node_ids_pp = _display_pp["node_id"].tolist()
         node_names_pp = _display_pp["node_name"].tolist()
 
+        df_field_pp["hover"] = _dot_ratio_hover_col(df_field_pp, _mode_c)
         fig_c = dot_ratio_chart(
             df_field_pp, active_entity_ids, "pptop10_pct", node_names_pp, node_ids_pp,
             x_title="Part Top 10 % (référentiel France, %)", log_x=False, ref_x=10.0,
-            ref_label="France ≈ 10%", hover_suffix="%", fmt=".1f",
+            ref_label="France ≈ 10%", hover_col="hover", family="champ",
         )
         st.plotly_chart(fig_c, use_container_width=True)
         exports.attach_download(

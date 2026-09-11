@@ -30,18 +30,23 @@ from lib.data_cache import get_structures_df, get_topics_df, get_pubs_slim, get_
 from lib.app_config import get_app_config
 from lib.thematic import excluded_counts_from_facts
 from lib import controls, exports
-from lib.overlay import overlay_bars, overlay_grouped_bars, GROUPED_BARS_HOWTOREAD_FR, GROUPED_LEGEND_INK
+from lib.overlay import overlay_grouped_bars, GROUPED_BARS_HOWTOREAD_FR, GROUPED_LEGEND_INK
 from lib.ranked import ranked_table
 from lib.hover import hover_lines, HOVERTEMPLATE
+from lib import hover as hv
+from lib import charts as C
+from lib.reading import reading_line
 from lib import copy_fr
 from lib.lazy import read_keyed
 from lib.links import openalex_url, link_icon_html
 from lib.countries_fr import country_label
 from lib.helpers import (
+    CARD_BORDER, TEXT_HEADLINE, TEXT_SECONDARY,
     # Constants
     YEARS, DOMAIN_ORDER_DISPLAY, DOMAIN_EMOJI,
     UNCLASSIFIED_DOMAIN_ID,
     DOCTYPE_COLORS, DOCTYPE_ORDER_FR, DOCTYPE_LABEL_FR, NEUTRAL_GREY, NA_MARK,
+    REFERENCE_RED,
     conference_blob_caveat, render_excluded_disclosure,
     window_label,
     # Taxonomy
@@ -532,12 +537,13 @@ def render_lab_wordcloud_png(lab_key: str, level: str, width: int, height: int, 
 # PLOTLY CHART BUILDERS
 # ============================================================================
 
-def plot_global_breakdown_h(categories, totals, isite, colors, isite_on: bool) -> go.Figure:
+def plot_global_breakdown_h(categories, totals, isite, colors, isite_on: bool, *,
+                             mode: str, denom: int) -> go.Figure:
     """
     LEFT panel of the #26/#30 pair: one horizontal bar per category, sorted by
-    volume desc, direct end labels, NO legend (the y-axis labels name the
-    categories) — VIZ_SPEC_pass6 §3.1. Uses the UNCHANGED `overlay_bars()`
-    (one bar = one entity, §1.6).
+    volume desc, gutter count in the margin, NO legend (the y-axis labels name
+    the categories) — pass 7b: `charts.bars_with_gutter` (family `champ`),
+    hover grammar (`lab_breakdown_bars`, `docs/tooltip_spec.yaml`).
     """
     order = sorted(range(len(categories)), key=lambda i: totals[i], reverse=True)
     cats = [categories[i] for i in order]
@@ -545,39 +551,55 @@ def plot_global_breakdown_h(categories, totals, isite, colors, isite_on: bool) -
     ist = [isite[i] for i in order]
     cols = [colors[i] for i in order]
 
-    fig = overlay_bars(
-        categories=cats, totals=tot, isite=ist, colors=cols,
-        isite_on=isite_on, orientation="h", value_mode="counts",
+    denom = max(1, denom)
+    hl = copy_fr.HOVER_LABELS["lab_breakdown_bars"][mode]
+    hovers = [
+        hv.hover_lines([
+            (hl[0], cat),
+            (hl[1], hv.fmt_int(t)),
+            (hl[2], hv.fmt_pct(t / denom * 100)),
+            (hl[3], hv.fmt_int(i) if isite_on else None),
+        ])
+        for cat, t, i in zip(cats, tot, ist)
+    ]
+    df = pd.DataFrame({"label": cats, "value": tot, "isite": ist, "hover": hovers})
+    return C.bars_with_gutter(
+        df, family="champ", label_col="label", value_col="value", color=cols,
+        hover_col="hover", isite_col="isite", isite_on=isite_on,
     )
-    for cat, t in zip(cats, tot):
-        fig.add_annotation(
-            x=t, y=cat, text=fr_int(t), showarrow=False,
-            xanchor="left", xshift=8, yanchor="middle",
-            font=dict(size=12, color="#3A3F44"),
-        )
-    max_t = max(tot) if tot else 1
-    fig.update_layout(
-        showlegend=False,
-        xaxis=dict(title="", showgrid=True, gridcolor="#D9DDE2", range=[0, max_t * 1.18]),
-        yaxis=dict(autorange="reversed", title=""),
-        plot_bgcolor="#FFFFFF", paper_bgcolor="#FFFFFF",
-        margin=dict(t=34, l=10, r=70, b=44), bargap=0.35,
-        height=max(260, 46 * len(cats)),
-    )
-    return fig
 
 
-def plot_annual_breakdown_grouped(groups, series, labels, colors, totals, isite, isite_on: bool) -> go.Figure:
+def plot_annual_breakdown_grouped(groups, series, labels, colors, totals, isite, isite_on: bool, *,
+                                   mode: str) -> go.Figure:
     """RIGHT panel of the #26/#30 pair: the grouped grammar (VIZ_SPEC_pass6 §1.5),
     with its OWN Plotly legend hidden — the shared HTML chip strip is the ONE
-    legend for the pair."""
+    legend for the pair. Pass 7b: per-trace hover grammar (`lab_breakdown_annual`)
+    replaces `overlay_grouped_bars`'s own tooltip, one string per (série, année),
+    reused on both stacked segments of a série when the I-SITE overlay is on."""
     fig = overlay_grouped_bars(
         groups=groups, series=series, labels=labels, colors=colors,
         totals=totals, isite=isite, isite_on=isite_on,
     )
+    hl = copy_fr.HOVER_LABELS["lab_breakdown_annual"][mode]
+    idx = 0
+    n_traces_per_series = 2 if isite_on else 1
+    for key in series:
+        hover_list = [
+            hv.hover_lines([
+                (hl[0], labels[key]),
+                (hl[1], str(y)),
+                (hl[2], hv.fmt_int(totals[key][i])),
+                (hl[3], hv.fmt_int(isite[key][i]) if isite_on else None),
+            ])
+            for i, y in enumerate(groups)
+        ]
+        for _ in range(n_traces_per_series):
+            fig.data[idx].customdata = hover_list
+            fig.data[idx].hovertemplate = hv.HOVERTEMPLATE
+            idx += 1
     fig.update_layout(
         showlegend=False, height=380, margin=dict(t=30, l=10, r=10, b=40),
-        plot_bgcolor="#FFFFFF", paper_bgcolor="#FFFFFF",
+        plot_bgcolor=C.SURFACE, paper_bgcolor=C.SURFACE,
         yaxis=dict(title="Publications (nombre)"),
     )
     return fig
@@ -590,7 +612,7 @@ def render_chip_legend(items: list[tuple[str, str]]) -> None:
         f'<span style="display:inline-flex;align-items:center;margin-right:14px;">'
         f'<span style="width:12px;height:12px;background:{hexcol};border-radius:3px;'
         f'margin-right:6px;"></span>'
-        f'<span style="font-size:12px;color:#3A3F44;">{label}</span></span>'
+        f'<span style="font-size:12px;color:{GROUPED_LEGEND_INK};">{label}</span></span>'
         for label, hexcol in items
     )
     st.markdown(
@@ -614,6 +636,8 @@ def render_breakdown_pair(row: pd.Series, selected_structure: str, source_key: s
         default="Types de document", required=True, key="lab_breakdown_dim",
     )
     is_doctype = breakdown_pick == "Types de document"
+    mode_id = "types_document" if is_doctype else "domaines"
+    denom = safe_int(row.get("Pubs total", 0))
 
     joined = structure_year_breakdown(source_key, selected_structure, include_conference)
     years_str = [str(y) for y in YEARS]
@@ -641,12 +665,14 @@ def render_breakdown_pair(row: pd.Series, selected_structure: str, source_key: s
         with col_left:
             st.markdown("**Répartition globale**")
             fig_left = plot_global_breakdown_h(global_labels, global_totals, global_isite,
-                                                global_colors, isite_overlay_on)
+                                                global_colors, isite_overlay_on,
+                                                mode=mode_id, denom=denom)
             st.plotly_chart(fig_left, use_container_width=True)
         with col_right:
             st.markdown("**Répartition annuelle**")
             fig_right = plot_annual_breakdown_grouped(years_str, keys, labels, colors,
-                                                        totals, isite, isite_overlay_on)
+                                                        totals, isite, isite_overlay_on,
+                                                        mode=mode_id)
             st.plotly_chart(fig_right, use_container_width=True)
 
         render_chip_legend(list(zip(global_labels, global_colors)))
@@ -683,7 +709,8 @@ def render_breakdown_pair(row: pd.Series, selected_structure: str, source_key: s
         cols = [DOCTYPE_COLORS.get(lbl, NEUTRAL_GREY) for lbl, _ in pairs]
         with col_left:
             st.markdown("**Répartition globale**")
-            fig_left = plot_global_breakdown_h(cats, tots, [0] * len(tots), cols, False)
+            fig_left = plot_global_breakdown_h(cats, tots, [0] * len(tots), cols, False,
+                                                mode=mode_id, denom=denom)
             st.plotly_chart(fig_left, use_container_width=True)
         with col_right:
             st.info("Répartition annuelle par type indisponible pour cette structure.", icon="ℹ️")
@@ -701,7 +728,7 @@ def render_breakdown_pair(row: pd.Series, selected_structure: str, source_key: s
                 st.markdown("**Répartition globale**")
                 fig_left = plot_global_breakdown_h(
                     cats, dom_rollup["count"].tolist(), dom_rollup["isite_count"].tolist(),
-                    cols, isite_overlay_on,
+                    cols, isite_overlay_on, mode=mode_id, denom=denom,
                 )
                 st.plotly_chart(fig_left, use_container_width=True)
             render_chip_legend(list(zip(cats, cols)))
@@ -722,7 +749,8 @@ def render_breakdown_pair(row: pd.Series, selected_structure: str, source_key: s
                         totals[k].append(int(sub["count"].sum()) if not sub.empty else 0)
                 isite_zero = {k: [0] * len(YEARS) for k in keys}
                 fig_right = plot_annual_breakdown_grouped(years_str, keys, labels, colors,
-                                                            totals, isite_zero, False)
+                                                            totals, isite_zero, False,
+                                                            mode=mode_id)
                 st.plotly_chart(fig_right, use_container_width=True)
 
 
@@ -732,60 +760,62 @@ def _fr_float(v) -> str:
     return f"{float(v):.2f}".replace(".", ",")
 
 
-_FWCI_PAIR_MARGIN_LEFT = dict(t=34, l=10, r=70, b=56)
-_FWCI_PAIR_MARGIN_RIGHT = dict(t=34, l=10, r=20, b=56)
-
-
 def plot_field_share_pair_left(df_fields: pd.DataFrame, isite_on: bool) -> go.Figure:
     """LEFT half of the #33 FWCI pair: 'Part de la production de la structure'.
-    Same geometry as plot_fwci_whiskers's right half (PF-4 alignment); the
-    gutter count is fixed to sit right next to the bar start, not at the far
-    edge of the gutter (#33 'gutter volume too far from the bar start')."""
-    n = len(df_fields)
-    if n == 0:
+    Pass 7b: `charts.bars_with_gutter` (family `champ`, `value_fmt=fmt_pct` —
+    the bar length AND the gutter both show the structure share; the raw
+    publication count moves to the hover, per `lab_field_share`'s yaml). The
+    x-axis keeps `bars_with_gutter`'s own ticks (nice numbers on the share's
+    0-100 scale) and only re-labels them in FR percent (B5) — never
+    `tickformat`. `plot_fwci_whiskers` mirrors this figure's height and
+    margins so the two panels' rows line up (PF-4 alignment)."""
+    if df_fields.empty:
         fig = go.Figure()
         fig.add_annotation(text="Aucune donnée", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
         return fig
 
-    field_names = df_fields["field_name"].tolist()
-    max_share = float(df_fields["share"].max() or 0.0) or 0.01
-    gutter = max_share * 0.16
-
-    fig = overlay_bars(
-        categories=field_names, totals=df_fields["share"].tolist(),
-        isite=df_fields["isite_share"].tolist(), colors=df_fields["color"].tolist(),
-        isite_on=isite_on, orientation="h", value_mode="shares",
+    d = df_fields.copy()
+    d["share_pct"] = d["share"] * 100
+    d["isite_share_pct"] = d["isite_share"] * 100
+    hl = copy_fr.HOVER_LABELS["lab_field_share"]["default"]
+    d["hover"] = [
+        hv.hover_lines([
+            (hl[0], name),
+            (hl[1], hv.fmt_pct(share)),
+            (hl[2], hv.fmt_int(count)),
+            (hl[3], hv.fmt_pct(isite_share) if isite_on else None),
+        ])
+        for name, share, count, isite_share in
+        zip(d["field_name"], d["share_pct"], d["count"], d["isite_share_pct"])
+    ]
+    fig = C.bars_with_gutter(
+        d, family="champ", label_col="field_name", value_col="share_pct",
+        color=d["color"].tolist(), hover_col="hover",
+        isite_col="isite_share_pct", isite_on=isite_on, value_fmt=hv.fmt_pct,
     )
-    for field_name, cnt in zip(field_names, df_fields["count"]):
-        fig.add_annotation(
-            x=-gutter * 0.10, y=field_name, text=fr_int(cnt), showarrow=False,
-            xanchor="right", yanchor="middle",
-            font=dict(size=11, color="#3A3F44" if cnt else "#8C9196"),
-        )
-
-    fig.update_layout(
-        title="Part de la production de la structure",
-        xaxis=dict(title="% des publications de la structure", tickformat=".0%",
-                    range=[-gutter, max_share * 1.10], showgrid=True, gridcolor="#D9DDE2",
-                    automargin=False),
-        yaxis=dict(title="", tickfont=dict(size=12),
-                    categoryorder="array", categoryarray=field_names,
-                    range=[n - 0.5, -0.5]),
-        showlegend=False, plot_bgcolor="#FFFFFF", paper_bgcolor="#FFFFFF",
-        margin=_FWCI_PAIR_MARGIN_LEFT, height=max(460, 22 * n + 130),
-    )
+    fig.update_xaxes(ticktext=[fr_pct(v, 0) for v in fig.layout.xaxis.tickvals])
+    fig.update_layout(title="Part de la production de la structure", margin=dict(t=36))
     return fig
 
 
-def plot_fwci_whiskers(df_fwci: pd.DataFrame) -> go.Figure:
+def plot_fwci_whiskers(df_fwci: pd.DataFrame, *, layout_ref: go.Figure) -> go.Figure:
     """
     RIGHT half of the #33 FWCI pair: box+whisker per field, SAME field order as
-    the left panel, y tick labels hidden (drawn once, on the left). Whisker =
-    interdecile p10–p90 (#33: a single outlier field flattens all rows on a
-    p0–p100 whisker); p0/p100 stay in the tooltip. Root-cause gate for #33's
-    "fields with 0 pubs display bug": drawn iff p50 is a real value — a field
-    with zero COMPUTED-indicator works has p50 == NaN (pipeline fix, S-DAT),
-    never a fabricated flat "0.00" box.
+    the left panel, y tick labels hidden (drawn once, on the left, by
+    `plot_field_share_pair_left`). Whisker = interdecile p10–p90 (#33: a single
+    outlier field flattens all rows on a p0–p100 whisker); p0/p100 stay in the
+    tooltip. Root-cause gate for #33's "fields with 0 pubs display bug": drawn
+    iff p50 is a real value — a field with zero COMPUTED-indicator works has
+    p50 == NaN (pipeline fix, S-DAT), never a fabricated flat "0.00" box.
+
+    Pass 7b: hover grammar (`lab_fwci_whiskers`, one string per field, reused
+    on every mark of that field's row — interdecile line, IQR box, median
+    tick); the reference at FWCI = 1 becomes red dashed (B6: one red, one
+    meaning — replaces the grey dotted line); `height`/`margin` are copied
+    from `layout_ref` (the `bars_with_gutter` figure beside it) so the rows
+    line up pixel for pixel, `margin.l` further pinned to
+    `charts.margin_left("champ")` and the (hidden) y ticks carry the same
+    wrapped text as the left panel's.
     """
     field_names = df_fwci["field_name"].tolist()
     n = len(field_names)
@@ -794,12 +824,29 @@ def plot_fwci_whiskers(df_fwci: pd.DataFrame) -> go.Figure:
         fig.add_annotation(text="Aucune donnée", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
         return fig
 
+    hl = copy_fr.HOVER_LABELS["lab_fwci_whiskers"]["default"]
+
+    def _row_hover(r: pd.Series) -> str:
+        has_median = pd.notna(r["p50"])
+        has_iqr = has_median and pd.notna(r["p25"]) and pd.notna(r["p75"])
+        has_dec = has_median and pd.notna(r["p10"]) and pd.notna(r["p90"])
+        under_floor = pd.notna(r["count"]) and r["count"] < 10
+        return hv.hover_lines([
+            (hl[0], r["field_name"]),
+            (hl[1], hv.fmt_score(r["p50"]) if has_median else None),
+            (hl[2], f'{hv.fmt_score(r["p25"])} – {hv.fmt_score(r["p75"])}' if has_iqr else None),
+            (hl[3], f'{hv.fmt_score(r["p10"])} – {hv.fmt_score(r["p90"])}' if has_dec else None),
+            (hl[4], hv.fmt_int(r["count"])),
+            (hl[5], "indicateur non calculé sur ce champ" if not has_median else None),
+            (hl[6], "sous le plancher de dix travaux" if under_floor else None),
+        ])
+
     valid_p90 = df_fwci.loc[df_fwci["p50"].notna(), "p90"].dropna()
     xmax = float(valid_p90.max()) if not valid_p90.empty and valid_p90.max() > 0 else 5.0
 
     fig = go.Figure()
     # PF-3 anchor trace: every field enters the y axis regardless of whether it
-    # has a computed indicator (VIZ_SPEC_pass6 §3.3, mechanic 1).
+    # has a computed indicator (VIZ_SPEC_pass6 §3.3, mechanic 1) -- no hover.
     fig.add_trace(go.Bar(
         x=[0] * n, y=field_names, orientation="h",
         marker_color="rgba(0,0,0,0)", showlegend=False, hoverinfo="skip", width=0.8,
@@ -808,51 +855,52 @@ def plot_fwci_whiskers(df_fwci: pd.DataFrame) -> go.Figure:
     for _, row in df_fwci.iterrows():
         y = row["field_name"]
         color = row["color"]
+        hover_str = _row_hover(row)
         if pd.isna(row["p50"]):
             text = f"n = {fr_int(row['count'])} — indicateur non calculé"
             fig.add_annotation(
                 x=0, y=y, text=text, showarrow=False, xanchor="left", xshift=6,
-                yanchor="middle", font=dict(size=10, color="#8C9196"),
+                yanchor="middle", font=dict(size=10, color=NEUTRAL_GREY),
             )
+            fig.add_trace(go.Scatter(
+                x=[0], y=[y], mode="markers", marker=dict(color="rgba(0,0,0,0)", size=1),
+                showlegend=False, customdata=[hover_str], hovertemplate=hv.HOVERTEMPLATE,
+            ))
             continue
 
-        tooltip = (
-            f"<b>{y}</b><br>n = {fr_int(row['count'])}<br>"
-            f"Médiane : {_fr_float(row['p50'])}<br>"
-            f"Q1–Q3 : {_fr_float(row['p25'])} – {_fr_float(row['p75'])}<br>"
-            f"Interdécile p10–p90 : {_fr_float(row['p10'])} – {_fr_float(row['p90'])}<br>"
-            f"Extrêmes (p0–p100) : {_fr_float(row['p0'])} – {_fr_float(row['p100'])}"
-            "<extra></extra>"
-        )
         if pd.notna(row["p10"]) and pd.notna(row["p90"]):
             fig.add_trace(go.Scatter(
                 x=[row["p10"], row["p90"]], y=[y, y], mode="lines",
                 line=dict(color=color, width=2), showlegend=False,
-                hovertemplate=tooltip,
+                customdata=[hover_str, hover_str], hovertemplate=hv.HOVERTEMPLATE,
             ))
         if pd.notna(row["p25"]) and pd.notna(row["p75"]) and row["p75"] >= row["p25"]:
             fig.add_trace(go.Bar(
                 x=[row["p75"] - row["p25"]], y=[y], base=row["p25"], orientation="h",
                 marker=dict(color=color, opacity=0.3), width=0.6, showlegend=False,
-                hovertemplate=tooltip,
+                customdata=[hover_str], hovertemplate=hv.HOVERTEMPLATE,
             ))
         fig.add_trace(go.Scatter(
             x=[row["p50"]], y=[y], mode="markers",
             marker=dict(color=color, size=10, symbol="line-ns", line=dict(width=3, color=color)),
-            showlegend=False, hovertemplate=tooltip,
+            showlegend=False, customdata=[hover_str], hovertemplate=hv.HOVERTEMPLATE,
         ))
 
-    fig.add_vline(x=1, line_dash="dot", line_color="#B0B6BC")
+    fig.add_vline(x=1, line_dash=C.REFERENCE_DASH, line_color=REFERENCE_RED, line_width=C.REFERENCE_WIDTH_PX)
+    ref_margin = layout_ref.layout.margin
     fig.update_layout(
         title="Distribution du FWCI (réf. France = 1)",
         xaxis=dict(title="FWCI (réf. France), interdécile p10–p90",
-                    range=[0, xmax * 1.08], showgrid=True, gridcolor="#D9DDE2",
+                    range=[0, xmax * 1.08], showgrid=True, gridcolor=C.GRID_COLOR,
                     automargin=False),
         yaxis=dict(title="", showticklabels=False,
+                    tickmode="array", tickvals=field_names,
+                    ticktext=[C.wrap_label_px(v, "champ") for v in field_names],
                     categoryorder="array", categoryarray=field_names,
                     range=[n - 0.5, -0.5]),
-        showlegend=False, plot_bgcolor="#FFFFFF", paper_bgcolor="#FFFFFF",
-        margin=_FWCI_PAIR_MARGIN_RIGHT, height=max(460, 22 * n + 130),
+        showlegend=False, plot_bgcolor=C.SURFACE, paper_bgcolor=C.SURFACE,
+        margin=dict(t=ref_margin.t, l=C.margin_left("champ"), r=ref_margin.r, b=ref_margin.b),
+        height=layout_ref.layout.height,
         barmode="overlay",
     )
     return fig
@@ -1096,13 +1144,13 @@ with col_identity:
 
     type_fr = _STRUCTURE_TYPE_FR.get(row.get("Structure type"), _field(row.get("Structure type")))
     st.markdown(
-        f"""<div style="border:1px solid #E3E6EA;border-radius:8px;padding:12px 14px;">
-        <div style="font-size:20px;font-weight:700;color:#3A3F44;">{selected_structure}</div>
-        <div style="font-size:15px;color:#3A3F44;margin:2px 0 6px 0;">{_field(row.get('nom_complet'))}</div>
-        <div style="font-size:14px;color:#5A5F66;">Pôle scientifique : {_field(row.get('Pole'))}
+        f"""<div style="border:1px solid {CARD_BORDER};border-radius:8px;padding:12px 14px;">
+        <div style="font-size:20px;font-weight:700;color:{TEXT_HEADLINE};">{selected_structure}</div>
+        <div style="font-size:15px;color:{TEXT_HEADLINE};margin:2px 0 6px 0;">{_field(row.get('nom_complet'))}</div>
+        <div style="font-size:14px;color:{TEXT_SECONDARY};">Pôle scientifique : {_field(row.get('Pole'))}
         &nbsp;&middot;&nbsp; Type : {type_fr}</div>
-        <div style="font-size:14px;color:#5A5F66;margin-top:6px;">{ror_html}</div>
-        <div style="font-size:14px;color:#5A5F66;margin-top:2px;">{oa_html}</div>
+        <div style="font-size:14px;color:{TEXT_SECONDARY};margin-top:6px;">{ror_html}</div>
+        <div style="font-size:14px;color:{TEXT_SECONDARY};margin-top:2px;">{oa_html}</div>
         </div>""",
         unsafe_allow_html=True,
     )
@@ -1143,9 +1191,9 @@ with col_metrics:
         with col:
             with st.container(border=True):
                 st.markdown(
-                    f"<div style='font-size:22px;font-weight:700;color:#3A3F44;'>{value}</div>"
-                    f"<div style='font-size:12px;color:#5A5F66;'>{label}</div>"
-                    f"<div style='font-size:12px;color:#5A5F66;'>{subline}</div>",
+                    f"<div style='font-size:22px;font-weight:700;color:{TEXT_HEADLINE};'>{value}</div>"
+                    f"<div style='font-size:12px;color:{TEXT_SECONDARY};'>{label}</div>"
+                    f"<div style='font-size:12px;color:{TEXT_SECONDARY};'>{subline}</div>",
                     unsafe_allow_html=True,
                 )
                 if dl_bytes is not None:
@@ -1238,10 +1286,10 @@ if pubs_total <= 0:
 
 # --- Zone 2 : répartition globale + annuelle (#26/#30/#31) ------------------
 render_breakdown_pair(row, selected_structure, source_key, include_conference, isite_overlay_on)
+_bd_mode = "types_document" if st.session_state.get("lab_breakdown_dim") == "Types de document" else "domaines"
+reading_line("lab_breakdown_bars", _bd_mode)
+reading_line("lab_breakdown_annual", _bd_mode)
 st.caption(
-    "**Comment lire.** Une barre par année. Le bouton bascule la décomposition entre "
-    "type de document et domaine scientifique ; la légende suit la bascule. Teinte plus "
-    "sombre : la part relevant du périmètre I-SITE.  \n"
     "**Pourquoi cet indicateur.** Une inflexion de volume se lit rarement seule : la "
     "même courbe peut venir d'un changement de pratique de publication, d'un "
     "recrutement ou de la fin d'un programme. La décomposition sépare ces lectures "
@@ -1265,15 +1313,12 @@ with _pair_left:
     fig_share = plot_field_share_pair_left(df_fields, isite_overlay_on)
     st.plotly_chart(fig_share, use_container_width=True)
 with _pair_right:
-    fig_fwci = plot_fwci_whiskers(df_fwci)
+    fig_fwci = plot_fwci_whiskers(df_fwci, layout_ref=fig_share)
     st.plotly_chart(fig_fwci, use_container_width=True)
 
+reading_line("lab_field_share")
+reading_line("lab_fwci_whiskers")
 st.caption(
-    "**Comment lire.** Une boîte par champ : la barre centrale est la médiane, la "
-    "boîte couvre les quartiles, les moustaches l'interdécile. Un travail est comparé "
-    "aux travaux français du même sous-champ, de la même année et du même type. Un "
-    "champ sans effectif suffisant n'affiche pas de boîte : l'indicateur n'est pas "
-    "calculé, il n'est pas nul.  \n"
     "**Pourquoi cet indicateur.** Une moyenne de citations ne dit rien hors de sa "
     "discipline. La distribution montre à la fois le niveau habituel et la dispersion, "
     "c'est-à-dire la différence entre un profil régulier et un profil porté par "
@@ -1392,9 +1437,9 @@ else:
         ))
         fig_sdg.update_layout(
             height=max(320, len(_valid) * 28 + 80), margin=dict(t=10, l=10, r=60, b=10),
-            xaxis=dict(title="Part du corpus de la structure (%)", showgrid=True, gridcolor="#D9DDE2"),
+            xaxis=dict(title="Part du corpus de la structure (%)", showgrid=True, gridcolor=C.GRID_COLOR),
             yaxis=dict(autorange="reversed", title=""),
-            plot_bgcolor="#FFFFFF", paper_bgcolor="#FFFFFF", showlegend=False,
+            plot_bgcolor=C.SURFACE, paper_bgcolor=C.SURFACE, showlegend=False,
         )
         st.plotly_chart(fig_sdg, use_container_width=True)
         _n_floor = int(_sdg_row[_share_col].isna().sum())

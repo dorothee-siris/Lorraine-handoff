@@ -427,7 +427,8 @@ def bars_with_gutter(df: pd.DataFrame, *, family: str, label_col: str, value_col
                      color: str | Sequence[str], hover_col: str = "hover",
                      isite_col: str | None = None, isite_on: bool = False,
                      reference: float | None = None, caution_col: str | None = None,
-                     value_fmt: Callable = hv.fmt_int, gutter: bool = True) -> go.Figure:
+                     value_fmt: Callable = hv.fmt_int, gutter: bool = True,
+                     narrow: bool = False) -> go.Figure:
     """Barres horizontales dans l'ORDRE DE LA TRAME (la page trie), colonne
     de libelle + gutter de valeur, reference rouge pointillee optionnelle.
 
@@ -443,6 +444,12 @@ def bars_with_gutter(df: pd.DataFrame, *, family: str, label_col: str, value_col
     de largeur de trace, que Streamlit ne peut pas lire cote serveur -- c'est
     donc l'APPELANT qui decide). La valeur survit dans le survol et dans
     l'export dans les deux cas.
+
+    `narrow=True` : panneau etroit (une cellule de `st.columns`, ~200 px de trace) --
+    trois graduations au lieu de cinq sur l'axe des valeurs, jamais de rotation
+    (plotly bascule sinon les etiquettes a -90 degres des qu'elles se chevauchent ;
+    constate au rendu de la page 1, passe 7b). Le serveur ne connait pas la
+    largeur : c'est l'APPELANT qui decide, comme pour `gutter`.
 
     `reference` accepte un scalaire (une `add_vline` pleine hauteur) ou une
     valeur par ligne (un tick par bande) -- le contrat n'en type que le cas
@@ -490,10 +497,10 @@ def bars_with_gutter(df: pd.DataFrame, *, family: str, label_col: str, value_col
 
     _add_reference(fig, reference, n)
 
-    ticks = [t for t in _nice_ticks(xmax) if t >= 0]
+    ticks = [t for t in _nice_ticks(xmax, target=3 if narrow else 5) if t >= 0]
     fig.update_xaxes(
         range=[x_floor, xmax * GUTTER_HEADROOM if xmax > 0 else 1.0],
-        tickmode="array", tickvals=ticks, ticktext=[H.fr_int(t) for t in ticks],
+        tickmode="array", tickvals=ticks, ticktext=[H.fr_int(t) for t in ticks], tickangle=0,
         gridcolor=GRID_COLOR, zerolinecolor=ZERO_LINE_COLOR,
         tickfont=dict(size=FONT_PX, color=INK_SECONDARY), title_text=None,
     )

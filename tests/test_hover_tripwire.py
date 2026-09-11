@@ -187,7 +187,6 @@ def _path_for(relkey: str) -> Path:
 # zero-fill tables, specialisation view) are untouched this pass -- 7b's job.
 EXEMPT_PAGES: set[str] = {
     "pages/4_🔬_Portefeuille_thématique.py",
-    "pages/5_📍_Positionnement.py",
     "pages/6_🔎_Exploration_thématique.py",
     "pages/7_🎯_I-SITE.py",
 }

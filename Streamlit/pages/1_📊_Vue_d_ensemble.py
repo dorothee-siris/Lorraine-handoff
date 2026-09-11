@@ -39,11 +39,13 @@ for -- this page used to render it in corpus-type order).
 """
 from __future__ import annotations
 
+import math
+
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from lib import controls, exports
+from lib import charts as C, controls, copy_fr, exports, hover as hv, reading
 from lib.data_cache import DATA_DIR, get_pubs_slim
 from lib.helpers import (
     DOCTYPE_COLORS,
@@ -51,6 +53,8 @@ from lib.helpers import (
     DOCTYPE_ORDER_FR,
     DOMAIN_COLORS,
     DOMAIN_NAMES_ORDERED_DISPLAY,
+    NEUTRAL_GREY,
+    UL_COLOR,
     UL_OPENALEX_ID,
     UNCLASSIFIED_DOMAIN_ID,
     YEARS,
@@ -59,7 +63,7 @@ from lib.helpers import (
     window_label,
 )
 from lib.links import CORPUS_TYPES, LINK_TOOLTIP_FR, NOT_EXPRESSIBLE, link_icon_html, openalex_url
-from lib.overlay import GROUPED_BARS_HOWTOREAD_FR, overlay_bars, overlay_grouped_bars
+from lib.overlay import GROUPED_BARS_HOWTOREAD_FR, GROUPED_LEGEND_INK, overlay_grouped_bars
 
 # ============================================================================
 # Page config
@@ -177,31 +181,36 @@ def _chip_legend(items: list[tuple[str, str]]) -> None:
     )
     st.markdown(
         f'<div style="display:flex;flex-wrap:wrap;gap:14px;font-size:12px;'
-        f'color:#3A3F44;margin:6px 0 4px 0;">{chips}</div>',
+        f'color:{GROUPED_LEGEND_INK};margin:6px 0 4px 0;">{chips}</div>',
         unsafe_allow_html=True,
     )
 
 
 def _breakdown_block(
-    *, title: str, comment_lire: str, pourquoi: str,
+    *, title: str, chart_mode: str, pourquoi: str,
     categories: list[str], colors: dict[str, str], totals: dict[str, list[int]],
     isite: dict[str, list[int]], export_indicator: str,
 ) -> None:
     """
     One self-contained VIZ_SPEC_pass6 section-3.2 block: horizontal global (left,
-    sorted by volume desc) + annual grouped (right), one shared chip legend, the
-    grouped-bars I-SITE caption when the toggle is on, one export. Called twice
-    below (doc type, then domain) -- NO toggle on this page (#35: deliberate
-    asymmetry with page 2's shared toggle, both explicit in the grill record).
+    sorted by volume desc, `charts.bars_with_gutter`) + annual grouped (right,
+    `overlay_grouped_bars`, hover re-grammared per pass-7b B3), one shared chip
+    legend, the grouped-bars I-SITE caption when the toggle is on, one export.
+    Called twice below (doc type, then domain) -- NO toggle on this page (#35:
+    deliberate asymmetry with page 2's shared toggle, both explicit in the grill
+    record). `chart_mode` ("doc_types" / "domaines") selects the copy_fr/
+    tooltip_spec mode shared by BOTH chart keys this block draws
+    (`ov_breakdown_bars`, `ov_breakdown_annual` -- BUILD_PLAN.md pass-7b S2).
 
     `categories` is the FIXED semantic order (corpus order for doc types,
     DOMAIN_NAMES_ORDERED + Unclassified for domains) -- VIZ_SPEC_pass6 section 1.5
     "Ordering": the annual grouped chart and its legend/chip strip NEVER sort by
     value. Only the horizontal "global" chart re-sorts to volume-descending
-    locally (section 3.2: "The horizontal bar is sorted volume desc").
+    locally (section 3.2: "The horizontal bar is sorted volume desc" --
+    `bars_with_gutter` draws row 0 at the top, VIZ_SPEC_pass7 §1.4, so descending
+    order IS "largest first" visually).
     """
     st.markdown(f"## {title}")
-    st.caption(comment_lire)
 
     year_totals = {k: sum(v) for k, v in totals.items()}
     order_desc = sorted(categories, key=lambda k: year_totals.get(k, 0), reverse=True)
@@ -213,21 +222,25 @@ def _breakdown_block(
         _totals_desc = [year_totals[k] for k in order_desc]
         _isite_desc = [sum(isite[k]) for k in order_desc]
         _hex_desc = [colors[k][0] for k in order_desc]
-        fig_h = overlay_bars(
-            categories=_labels, totals=_totals_desc, isite=_isite_desc, colors=_hex_desc,
-            isite_on=isite_overlay, orientation="h",
-        )
-        for _label, _total in zip(_labels, _totals_desc):
-            fig_h.add_annotation(
-                x=_total, y=_label, text=fr_int(_total), showarrow=False,
-                xanchor="left", xshift=8, font=dict(size=12, color="#3A3F44"),
+        _hl_bars = copy_fr.HOVER_LABELS["ov_breakdown_bars"][chart_mode]
+        _hover_h = []
+        for _label, _total, _isv in zip(_labels, _totals_desc, _isite_desc):
+            _share = (_total / KEPT_WORKS) if KEPT_WORKS else None
+            _vals_h = (
+                _label,
+                hv.fmt_int(_total),
+                hv.fmt_pct(_share * 100) if _share is not None else None,
+                hv.fmt_int(_isv) if isite_overlay else None,
             )
-        fig_h.update_traces(marker_line_color="white", marker_line_width=1)
-        fig_h.update_xaxes(title="Travaux")
-        fig_h.update_yaxes(title="", categoryorder="array", categoryarray=list(reversed(_labels)))
-        fig_h.update_layout(
-            height=max(260, 46 * len(order_desc)), margin=dict(t=10, l=10, r=60, b=40),
-            showlegend=False,
+            _hover_h.append(hv.hover_lines(list(zip(_hl_bars, _vals_h))))
+        _frame_h = pd.DataFrame({
+            "label": _labels, "total": _totals_desc, "isite": _isite_desc, "hover": _hover_h,
+        })
+        reading.reading_line("ov_breakdown_bars", mode=chart_mode, window=window_label())
+        fig_h = C.bars_with_gutter(
+            _frame_h, family="champ", label_col="label", value_col="total",
+            color=_hex_desc, hover_col="hover", isite_col="isite", isite_on=isite_overlay,
+            narrow=True,   # cellule gauche de st.columns : 3 graduations, pas de rotation (passe 7b)
         )
         st.plotly_chart(fig_h, use_container_width=True, key=f"{export_indicator}-global")
 
@@ -239,9 +252,29 @@ def _breakdown_block(
             colors={k: colors[k][0] for k in categories},
             totals=totals, isite=isite, isite_on=isite_overlay,
         )
+        # Pass-7b B3 (P-ZOOM `zoom_yearly` precedent): the builder's own tooltips are
+        # REPLACED, never juxtaposed -- one hover string per (category, year), the
+        # same string on both traces of a series when the I-SITE segment is drawn.
+        _hl_annual = copy_fr.HOVER_LABELS["ov_breakdown_annual"][chart_mode]
+        _traces_per_series = 2 if isite_overlay else 1
+        _idx = 0
+        for k in categories:
+            _label = colors[k][1]
+            _hover_g = []
+            for _i, _y in enumerate(year_labels):
+                _vals_g = (
+                    _label, _y, hv.fmt_int(totals[k][_i]),
+                    hv.fmt_int(isite[k][_i]) if isite_overlay else None,
+                )
+                _hover_g.append(hv.hover_lines(list(zip(_hl_annual, _vals_g))))
+            for _ in range(_traces_per_series):
+                fig_g.data[_idx].customdata = _hover_g
+                fig_g.data[_idx].hovertemplate = hv.HOVERTEMPLATE
+                _idx += 1
         fig_g.update_xaxes(title="Année", type="category")
         fig_g.update_yaxes(title="Travaux")
         fig_g.update_layout(height=380, margin=dict(t=10, l=10, r=10, b=40), showlegend=False)
+        reading.reading_line("ov_breakdown_annual", mode=chart_mode)
         st.plotly_chart(fig_g, use_container_width=True, key=f"{export_indicator}-annuel")
 
     _chip_legend([(colors[k][1], colors[k][0]) for k in categories])
@@ -334,13 +367,7 @@ _type_isite = {t: [int(_yt_type_isite.get((y, t), 0)) for y in YEARS] for t in _
 
 _breakdown_block(
     title="Comment se répartit le corpus par type de document",
-    comment_lire=(
-        "**Comment lire :** à gauche, une barre par type de publication, triée par volume "
-        "décroissant, longueur = nombre de travaux ; à droite, la même décomposition année "
-        "par année, une barre par type et par année, chacune partant de zéro. Bouton "
-        "I-SITE actif : le segment plus sombre au pied de chaque barre est la part I-SITE "
-        "de cette catégorie."
-    ),
+    chart_mode="doc_types",
     pourquoi=(
         "La composition par type conditionne la lecture des citations : les actes de "
         "conférence sont peu cités par construction, les ouvrages le sont autrement que "
@@ -372,11 +399,7 @@ _dom_isite = {d: [int(_yt_dom_isite.get((y, d), 0)) for y in YEARS] for d in _do
 
 _breakdown_block(
     title="Comment se répartit le corpus par domaine",
-    comment_lire=(
-        "**Comment lire :** même grammaire que ci-dessus, cette fois par domaine "
-        "scientifique de la taxonomie OpenAlex. Les couleurs de domaine sont les mêmes "
-        "dans toute l'application."
-    ),
+    chart_mode="domaines",
     pourquoi=(
         "La décomposition par type de document dit sous quelle forme le corpus est publié ; "
         "celle par domaine dit sur quoi il porte. Les deux se lisent en séquence, jamais "
@@ -392,8 +415,8 @@ _breakdown_block(
 # ============================================================================
 st.markdown("## Le poids relatif de l'I-SITE")
 st.caption(
-    "**Comment lire.** La part indiquée rapporte les travaux de la liste I-SITE au corpus "
-    "entier affiché, dans l'état courant des boutons de la barre latérale."
+    "La part indiquée rapporte les travaux de la liste I-SITE au corpus entier affiché, "
+    "dans l'état courant des boutons de la barre latérale."
 )
 
 _isite_share = (ISITE_WORKS / CORPUS_TOTAL) if pd.notna(ISITE_WORKS) and pd.notna(CORPUS_TOTAL) and CORPUS_TOTAL else None
@@ -423,9 +446,6 @@ st.markdown(
     "des sept partenaires ci-dessous, qui co-signent une partie seulement du corpus."
 )
 
-NEUTRAL_GREY = "#8C9196"  # comparison/reference grey, VIZ_SPEC 1.1 -- reused verbatim from page 7
-FOCAL_BLUE = "#0072B2"    # focal series colour -- reused verbatim from page 7
-
 cw_all = _load_consortium_weights()
 cw = cw_all[cw_all["conf_state"] == CONF_STATE]
 _site_cw = cw[cw["scope"] == "all"].set_index("member")
@@ -439,32 +459,39 @@ members_df["site_share"] = _site_cw.loc[_members, "share_of_scope"]
 members_df["site_co_works"] = _site_cw.loc[_members, "co_works_distinct"]
 members_df = members_df.sort_values("site_share", ascending=True)
 
-# VIZ_SPEC_pass6 section 0.1: hover numbers pre-formatted (fr_int/fr_pct) into customdata,
-# referenced bare -- Plotly's own `:,.0f`/`.2%` format specs are locale-blind (English
-# separators on a French UI).
-_site_share_fr = [fr_pct(v * 100) for v in members_df["site_share"]]
-_site_cowork_fr = [fr_int(v) for v in members_df["site_co_works"]]
+# Pass-7b (B3/addendum 5): the grey bar and the blue dot are the SAME member, so
+# both traces carry the SAME hover string -- otherwise the dot trace would lose
+# the entity line and hover-conformance would fail on a chart that still looks
+# right. `_isite_present` stays empty when the toggle is off (no dot trace then).
+_isite_present = [m for m in _members if isite_overlay and m in _isite_cw.index]
+_isite_share_by_member = (
+    _isite_cw.loc[_isite_present, "share_of_scope"].to_dict() if _isite_present else {}
+)
+_hl_cons = copy_fr.HOVER_LABELS["ov_consortium_share"]["default"]
+_cons_hover = {}
+for _m in members_df.index:
+    _isite_v = _isite_share_by_member.get(_m)
+    _vals_cons = (
+        _m,
+        hv.fmt_pct(float(members_df.loc[_m, "site_share"]) * 100),
+        hv.fmt_pct(_isite_v * 100) if _isite_v is not None else None,
+        hv.fmt_int(members_df.loc[_m, "site_co_works"]),
+    )
+    _cons_hover[_m] = hv.hover_lines(list(zip(_hl_cons, _vals_cons)))
 
 fig_cons = go.Figure()
 fig_cons.add_trace(go.Bar(
     x=members_df["site_share"], y=members_df.index, orientation="h",
     marker_color=NEUTRAL_GREY, name="Part du corpus complet",
-    text=_site_share_fr, textposition="outside",
-    customdata=list(zip(_site_share_fr, _site_cowork_fr)),
-    hovertemplate="<b>%{y}</b><br>Part du corpus complet : %{customdata[0]}<br>"
-                  "Travaux co-signés : %{customdata[1]}<extra></extra>",
+    text=[fr_pct(v * 100) for v in members_df["site_share"]], textposition="outside",
+    customdata=[_cons_hover[m] for m in members_df.index], hovertemplate=hv.HOVERTEMPLATE,
 ))
 
-if isite_overlay:
-    _isite_present = [m for m in _members if m in _isite_cw.index]
-    _isite_share_fr = [fr_pct(v * 100) for v in _isite_cw.loc[_isite_present, "share_of_scope"]]
-    _isite_cowork_fr = [fr_int(v) for v in _isite_cw.loc[_isite_present, "co_works_distinct"]]
+if _isite_present:
     fig_cons.add_trace(go.Scatter(
         x=_isite_cw.loc[_isite_present, "share_of_scope"], y=_isite_present, mode="markers",
-        marker=dict(size=13, color=FOCAL_BLUE), name="Part du périmètre I-SITE",
-        customdata=list(zip(_isite_share_fr, _isite_cowork_fr)),
-        hovertemplate="<b>%{y}</b><br>Part du périmètre I-SITE : %{customdata[0]}<br>"
-                      "Travaux co-signés : %{customdata[1]}<extra></extra>",
+        marker=dict(size=13, color=UL_COLOR), name="Part du périmètre I-SITE",
+        customdata=[_cons_hover[m] for m in _isite_present], hovertemplate=hv.HOVERTEMPLATE,
     ))
     st.caption(
         "Bouton I-SITE actif : le point bleu ajoute la part de chaque membre dans le seul "
@@ -472,12 +499,32 @@ if isite_overlay:
         "déduite de l'autre."
     )
 
-fig_cons.update_xaxes(title="Part du corpus", tickformat=".0%")
-fig_cons.update_yaxes(title="")
+# B5: no `tickformat` percent literal -- nice 0..max ticks on the 0-1 share scale,
+# FR ticktext (fr_pct), covering both traces' own max when the overlay is on.
+_pct_vmax = max([float(members_df["site_share"].max() or 0.0), *_isite_share_by_member.values(), 0.0])
+if _pct_vmax <= 0:
+    _pct_vals = [0.0]
+else:
+    _pct_raw = _pct_vmax / 5
+    _pct_mag = 10 ** math.floor(math.log10(_pct_raw))
+    _pct_step = _pct_mag
+    for _mult in (1, 2, 2.5, 5, 10):
+        _pct_step = _mult * _pct_mag
+        if _pct_raw <= _pct_step:
+            break
+    _pct_vals = [round(i * _pct_step, 10) for i in range(int(_pct_vmax // _pct_step) + 2)]
+fig_cons.update_xaxes(
+    title="Part du corpus", tickvals=_pct_vals, ticktext=[fr_pct(v * 100, 0) for v in _pct_vals],
+)
+fig_cons.update_yaxes(
+    title="", tickvals=list(members_df.index),
+    ticktext=[C.wrap_label_px(m, "partenaire") for m in members_df.index],
+)
 fig_cons.update_layout(
-    height=max(300, len(members_df) * 55), margin=dict(t=10, l=10, r=60, b=40),
+    height=max(300, len(members_df) * 55), margin=dict(t=10, l=C.margin_left("partenaire"), r=60, b=40),
     legend=dict(orientation="h", y=-0.18),
 )
+reading.reading_line("ov_consortium_share")
 st.plotly_chart(fig_cons, use_container_width=True)
 
 if artifact_on:

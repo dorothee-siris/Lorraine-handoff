@@ -332,20 +332,35 @@ def test_forward_xref_points_at_the_current_panel5_title_with_computed_peer_coun
 
 
 def test_how_to_read_block_computes_peer_count_not_a_static_word():
-    """S-LENS D2: 'les points gris les neuf pairs' in the how-to-read block, three
-    lines below a caption that already computes the count -- must now compute it too."""
+    """S-LENS D2: peer count near the peer scatter must be computed from data, never a
+    hardcoded word like "neuf pairs".
+
+    EDITED pin (pass-7b P5, B2/recipe step 2, 'edit ONLY that pin and log why'): the
+    scatter's own static "Comment lire ce graphique" markdown (which used to carry
+    'le point bleu situe l'universite de Lorraine ... les {n} pairs') is REMOVED and
+    replaced by `reading_line("pos_peer_frontier")` -- a generic, non-numeric template
+    from copy_fr.READING (house rule P6-R2: no data value in static prose, so the
+    reading-line template never embeds a computed number). The peer count invariant
+    (computed from bench_peers.parquet, never a hardcoded word) still holds -- it now
+    lives one caption up, the panel's own intro line ('X etablissements comparables'),
+    untouched by this pass. The S-LENS D2 invariant is preserved; only its rendering
+    location moved, so only this pin's assertion target moves with it."""
     at = _fresh()
-    markdowns = [m.value for m in at.markdown]
-    # Several panels on this page share the "Comment lire ce graphique" opener --
-    # target the ONE about the peer scatter specifically ("le point bleu situe
-    # l'universite de Lorraine"), not panel 3's LQ-vs-France scatter.
-    how_to_read = next((m for m in markdowns if "le point bleu situe" in m), None)
-    assert how_to_read is not None
-    assert "neuf pairs" not in how_to_read
+    captions = [c.value for c in at.caption]
+    intro = next((c for c in captions if "établissements comparables" in c), None)
+    assert intro is not None
+    assert "neuf établissements" not in intro and "neuf pairs" not in intro
 
     peers = pd.read_parquet(DATA_DIR / "bench_peers.parquet", columns=["entity_id", "rung"])
     n_peers = int(peers.loc[peers["rung"] != "FOCAL", "entity_id"].nunique())
-    assert f"les {n_peers} pairs" in how_to_read
+    from lib.helpers import fr_int
+    assert f"{fr_int(n_peers)} établissements comparables" in intro
+
+    # reading_line("pos_peer_frontier") itself must still be present and, per house rule
+    # P6-R2, must NOT try to restate the count as a literal number of its own.
+    reading = next((c for c in captions if "le point bleu situe" in c), None)
+    assert reading is not None, "reading_line('pos_peer_frontier') caption not rendered"
+    assert not any(ch.isdigit() for ch in reading)
 
 
 # ============================================================================

@@ -37,13 +37,22 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from lib import controls, exports, links
+from lib import controls, copy_fr, exports, links
+from lib import charts as C
+from lib import hover as hv
 from lib import overlay as ov
 from lib.controls import ARTIFACT_TOGGLE_KEY, DAGGER, ISITE_OVERLAY_KEY
 from lib.data_cache import DATA_DIR, get_corpus_facts_df
 from lib.helpers import (
     DOMAIN_COLORS,
     DOMAIN_ORDER,
+    MOMENTUM_DOWN_COLOR,
+    MOMENTUM_STABLE_COLOR,
+    MOMENTUM_UP_COLOR,
+    NEUTRAL_GREY,
+    REFERENCE_RED,
+    TEXT_SECONDARY,
+    UL_COLOR,
     UL_OPENALEX_ID,
     artifact_topics_count,
     fr_int,
@@ -57,6 +66,7 @@ from lib.helpers import (
     window_label,
 )
 from lib.ranked import ranked_table
+from lib.reading import reading_line
 
 # =============================================================================
 # Page config
@@ -118,8 +128,6 @@ domain_id2name = get_domain_id_to_name()
 field_id2name = get_field_id_to_name()
 field_id2domain = get_field_id_to_domain_id()
 field_order = get_field_order_by_domain()
-
-FOCAL_BLUE = "#0072B2"
 
 # =============================================================================
 # Panel 1 -- Strategic cross (T9): frontier positioning x specialisation, by field
@@ -192,71 +200,83 @@ _cross_isite["domain_name"] = _cross_isite["field_id_int"].map(field_id2domain).
 _cross_isite["field_name"] = _cross_isite["field_id_int"].map(field_id2name)
 
 _t9_axis_type = log_linear_toggle("t9_axis_linear", label="échelle linéaire (LQ)")
-
-st.markdown(
-    "**Comment lire ce graphique** : chaque point est un champ ; l'axe horizontal donne la "
-    "spécialisation (LQ vs France, point neutre = 1) et l'axe vertical, la part frontière "
-    "standardisée par champ (point neutre = attendu mondial). La taille du point suit le "
-    "nombre de travaux lorrains ; les points creux sont sous le seuil de fiabilité (moins de "
-    "30 travaux)."
-)
+_t9_hover_mode = "log" if _t9_axis_type == "log" else "lineaire"
+_t9_labels = copy_fr.HOVER_LABELS["pos_lq_frontier"][_t9_hover_mode]
 
 fig_t9 = go.Figure()
-_normal = _cross[~_cross["floor_flag_spec"]]
-_floor = _cross[_cross["floor_flag_spec"]]
+_normal = _cross[~_cross["floor_flag_spec"]].copy()
+_floor = _cross[_cross["floor_flag_spec"]].copy()
+_isite_lq_by_field = _cross_isite.set_index("field_id_int")["lq_i"].to_dict() if not _cross_isite.empty else {}
 
 if not _normal.empty:
+    _normal["hover"] = [
+        hv.hover_lines(list(zip(_t9_labels, (
+            r["field_name"], hv.fmt_score(r["lq"]), hv.fmt_dec(r[_std_col], 1),
+            hv.fmt_dec(r[_raw_col], 1), hv.fmt_int(r["works"]),
+            (hv.fmt_score(_isite_lq_by_field[int(r["field_id_int"])])
+             if _ISITE_ON and int(r["field_id_int"]) in _isite_lq_by_field else None),
+            None,
+        ))))
+        for _, r in _normal.iterrows()
+    ]
     fig_t9.add_trace(go.Scatter(
         x=_normal["lq"], y=_normal[_std_col], mode="markers", name="Corpus entier",
         marker=dict(
             size=(_normal["works"].clip(lower=1) ** 0.5) * 1.4,
-            color=[DOMAIN_COLORS.get(d, "#7f7f7f") for d in _normal["domain_name"]],
+            color=[DOMAIN_COLORS.get(d, NEUTRAL_GREY) for d in _normal["domain_name"]],
             line=dict(width=0.5, color="white"),
         ),
-        text=_normal["field_name"],
-        customdata=np.stack([_normal[_raw_col].astype(float), _normal["works"]], axis=-1),
-        hovertemplate=(
-            "<b>%{text}</b><br>LQ : %{x:.2f}<br>Frontière standardisée : %{y:.1f}<br>"
-            "Frontière brute (info) : %{customdata[0]:.1f}<br>Travaux UL : "
-            "%{customdata[1]:,.0f}<extra></extra>"
-        ),
+        customdata=_normal["hover"], hovertemplate=hv.HOVERTEMPLATE,
     ))
 if not _floor.empty:
+    _floor["hover"] = [
+        hv.hover_lines(list(zip(_t9_labels, (
+            r["field_name"], hv.fmt_score(r["lq"]), hv.fmt_dec(r[_std_col], 1),
+            hv.fmt_dec(r[_raw_col], 1), hv.fmt_int(r["works"]), None,
+            "sous le plancher de trente travaux",
+        ))))
+        for _, r in _floor.iterrows()
+    ]
     fig_t9.add_trace(go.Scatter(
         x=_floor["lq"], y=_floor[_std_col], mode="markers", name="Sous le seuil (n<30)",
         marker=dict(
             size=(_floor["works"].clip(lower=1) ** 0.5) * 1.4,
             color="rgba(255,255,255,0)", line=dict(width=2, color=controls.DEFERRED_GREY),
         ),
-        text=_floor["field_name"],
-        hovertemplate="<b>%{text}</b> (n<30)<br>LQ : %{x:.2f}<br>Frontière standardisée : %{y:.1f}<extra></extra>",
+        customdata=_floor["hover"], hovertemplate=hv.HOVERTEMPLATE,
     ))
 if _ISITE_ON and not _cross_isite.empty:
+    _cross_isite = _cross_isite.copy()
+    _cross_isite["hover"] = [
+        hv.hover_lines(list(zip(_t9_labels, (
+            f'{r["field_name"]} (I-SITE)', hv.fmt_score(r["lq_i"]), hv.fmt_dec(r[_std_col_i], 1),
+            None, hv.fmt_int(r["works_i"]), None, None,
+        ))))
+        for _, r in _cross_isite.iterrows()
+    ]
     fig_t9.add_trace(go.Scatter(
         x=_cross_isite["lq_i"], y=_cross_isite[_std_col_i], mode="markers",
         name="dont I-SITE (n≥30)",
         marker=dict(
             size=(_cross_isite["works_i"].astype(float).clip(lower=1) ** 0.5) * 1.4,
             symbol="diamond",
-            color=[ov.darken(DOMAIN_COLORS.get(d, "#7f7f7f")) for d in _cross_isite["domain_name"]],
+            color=[ov.darken(DOMAIN_COLORS.get(d, NEUTRAL_GREY)) for d in _cross_isite["domain_name"]],
             line=dict(width=1, color="white"),
         ),
-        text=_cross_isite["field_name"],
-        hovertemplate=(
-            "<b>%{text}</b> (I-SITE)<br>LQ I-SITE : %{x:.2f}<br>"
-            "Frontière standardisée I-SITE : %{y:.1f}<extra></extra>"
-        ),
+        customdata=_cross_isite["hover"], hovertemplate=hv.HOVERTEMPLATE,
     ))
 
-fig_t9.add_vline(x=1.0, line_dash="dash", line_color="#8C9196",
+fig_t9.add_vline(x=1.0, line_dash=C.REFERENCE_DASH, line_color=REFERENCE_RED,
+                  line_width=C.REFERENCE_WIDTH_PX,
                   annotation_text="France = 1", annotation_position="top")
-fig_t9.add_hline(y=_neutral_point, line_dash="dash", line_color="#8C9196",
+fig_t9.add_hline(y=_neutral_point, line_dash=C.REFERENCE_DASH, line_color=REFERENCE_RED,
+                  line_width=C.REFERENCE_WIDTH_PX,
                   annotation_text=f"Point neutre ({_neutral_point:.0f})", annotation_position="right")
 for _xa_, _ya_, _txt_ in [(0.98, 0.98, "Forces établies"), (0.02, 0.98, "Paris"),
                           (0.98, 0.02, "Bases solides"), (0.02, 0.02, "Périphérie")]:
     fig_t9.add_annotation(
         x=_xa_, y=_ya_, xref="paper", yref="paper", text=_txt_, showarrow=False,
-        font=dict(size=11, color="#5A5F66"),
+        font=dict(size=11, color=TEXT_SECONDARY),
         xanchor="right" if _xa_ > 0.5 else "left", yanchor="top" if _ya_ > 0.5 else "bottom",
     )
 fig_t9.update_layout(
@@ -264,6 +284,7 @@ fig_t9.update_layout(
     yaxis=dict(title="Frontière standardisée par champ (0-100)"),
     height=560, template="plotly_white", margin=dict(t=30, l=10, r=10, b=10),
 )
+reading_line("pos_lq_frontier", mode=_t9_hover_mode)
 st.plotly_chart(fig_t9, width="stretch")
 
 if _ISITE_ON:
@@ -413,32 +434,28 @@ _labs["_isite_frontier_n"] = _labs[_ifwn_c]
 _ranked_labs = _labs.dropna(subset=["Standardised share (%)"]).sort_values(
     "Standardised share (%)", ascending=False,
 )
-_top15 = _ranked_labs.head(15).sort_values("Standardised share (%)")
+_top15 = _ranked_labs.head(15).sort_values("Standardised share (%)").copy()
 
-st.markdown(
-    f"**Comment lire ce graphique** : les {len(_top15)} laboratoires à la part frontière la "
-    "plus élevée une fois ramenée au même mélange disciplinaire que le corpus entier (barre "
-    "= travaux « frontière », teinte foncée = ceux relevant du périmètre I-SITE)."
-)
 st.caption(
     "Une cellule laboratoire × champ portant moins de trois travaux est exclue du calcul "
     "pour ce laboratoire : sans ce plancher, un travail isolé dans un champ lourdement "
     "pondéré suffirait à multiplier la part standardisée d'une structure."
 )
 
-fig_labs = ov.overlay_bars(
-    categories=_top15["lab"].tolist(),
-    totals=_top15["Frontier works"].tolist(),
-    isite=_top15["_isite_frontier_n"].tolist(),
-    colors=FOCAL_BLUE,
-    isite_on=_ISITE_ON,
-    orientation="h",
+_labs_hover_labels = copy_fr.HOVER_LABELS["pos_frontier_labs"]["default"]
+_top15["hover"] = [
+    hv.hover_lines(list(zip(_labs_hover_labels, (
+        r["lab"], hv.fmt_int(r["Frontier works"]), hv.fmt_pct(r["Frontier share (%)"]),
+        hv.fmt_int(r["Works"]),
+        (hv.fmt_int(r["_isite_frontier_n"]) if _ISITE_ON else None),
+    ))))
+    for _, r in _top15.iterrows()
+]
+fig_labs = C.bars_with_gutter(
+    _top15, family="labo", label_col="lab", value_col="Frontier works",
+    color=UL_COLOR, isite_col="_isite_frontier_n", isite_on=_ISITE_ON, value_fmt=hv.fmt_int,
 )
-fig_labs.update_layout(
-    height=max(420, len(_top15) * 32 + 100),
-    xaxis=dict(title="Travaux « frontière »"), yaxis=dict(title=""),
-    template="plotly_white", margin=dict(t=20, l=10, r=10, b=10),
-)
+reading_line("pos_frontier_labs")
 st.plotly_chart(fig_labs, width="stretch")
 
 _labs_display = _ranked_labs[
@@ -496,13 +513,9 @@ st.markdown("---")
 st.markdown("## Diversité disciplinaire du portefeuille")
 st.caption(
     "Indice calculé au grain sous-champ : une mesure de forme du portefeuille, jamais un "
-    "classement."
-)
-st.markdown(
-    "**Comment lire.** Trois composantes et leur synthèse : la variété compte les "
-    "sous-champs présents, l'équilibre mesure la répartition entre eux, la disparité la "
-    "distance intellectuelle entre les sous-champs mobilisés. L'indice de synthèse combine "
-    "les trois."
+    "classement. Trois composantes et leur synthèse : la variété compte les sous-champs "
+    "présents, l'équilibre mesure la répartition entre eux, la disparité la distance "
+    "intellectuelle entre les sous-champs mobilisés. L'indice de synthèse combine les trois."
 )
 
 df_div = _load_table("thm_diversity")
@@ -545,14 +558,26 @@ else:
         st.markdown("**Évolution annuelle (Rao-Stirling / DIV)**")
         _spark = _div_all.copy()
         _spark["rs_display"] = np.where(_spark["floor_flag"], np.nan, _spark[_rs_c])
+        _spark_labels = copy_fr.HOVER_LABELS["pos_div_spark"]["default"]
+        _spark["hover"] = [
+            hv.hover_lines(list(zip(_spark_labels, (
+                str(int(r["year"])),
+                (None if bool(r["floor_flag"]) else hv.fmt_score(r[_rs_c])),
+                hv.fmt_int(r[_nw_c]),
+                ("sous le plancher de trente travaux, point non dessiné" if bool(r["floor_flag"]) else None),
+            ))))
+            for _, r in _spark.iterrows()
+        ]
         fig_spark = go.Figure(go.Scatter(
             x=_spark["year"], y=_spark["rs_display"], mode="lines+markers",
-            line=dict(color=FOCAL_BLUE), marker=dict(size=7), connectgaps=False,
+            line=dict(color=UL_COLOR), marker=dict(size=7), connectgaps=False,
+            customdata=_spark["hover"], hovertemplate=hv.HOVERTEMPLATE,
         ))
         fig_spark.update_layout(
             height=220, margin=dict(t=10, l=10, r=10, b=10),
             xaxis=dict(dtick=1, title=""), yaxis=dict(title="DIV"), template="plotly_white",
         )
+        reading_line("pos_div_spark")
         st.plotly_chart(fig_spark, width="stretch")
         _n_floor_years = int(_spark["floor_flag"].sum())
         if _n_floor_years:
@@ -564,8 +589,8 @@ else:
         st.markdown("**Évolution de la diversité**")
         st.caption(f":grey[Comparaison de deux fenêtres : {_mom_w1_label} et {_mom_w2_label}.]")
         _delta_class = _latest["delta_class"]
-        _delta_map = {"up": ("en hausse", "#009E73"), "down": ("en retrait", "#D55E00"),
-                      "stable": ("stable", "#5A5F66")}
+        _delta_map = {"up": ("en hausse", MOMENTUM_UP_COLOR), "down": ("en retrait", MOMENTUM_DOWN_COLOR),
+                      "stable": ("stable", MOMENTUM_STABLE_COLOR)}
         if _ARTIFACT_ON:
             st.markdown(
                 f"<span style='color:{controls.DEFERRED_GREY};font-weight:600;'>Δ figé {DAGGER}</span>",
@@ -581,7 +606,7 @@ else:
             _label, _color = _delta_map[_delta_class]
             st.markdown(f"<span style='color:{_color};font-weight:700;'>● {_label}</span>", unsafe_allow_html=True)
         else:
-            st.markdown("<span style='color:#B9B9B9;'>— non significatif</span>", unsafe_allow_html=True)
+            st.markdown(f"<span style='color:{NEUTRAL_GREY};'>— non significatif</span>", unsafe_allow_html=True)
 
     if _ISITE_ON:
         st.markdown("**Le même indice, calculé sur le seul périmètre I-SITE**")
@@ -657,36 +682,43 @@ st.caption(
     "pour l'un des deux côtés."
 )
 
-st.markdown(
-    "**Comment lire ce graphique** : chaque ligne est un champ OpenAlex ; le point bleu situe "
-    f"l'université de Lorraine, les points gris les {fr_int(_n_peers)} pairs (les pairs n'ont pas de "
-    "périmètre I-SITE, la comparaison porte sur le corpus entier des deux côtés)."
-)
-
 _field_order_names = [field_id2name[f] for f in field_order if f in field_id2name]
+
+_peer_hover_labels = copy_fr.HOVER_LABELS["pos_peer_frontier"]["default"]
+_pos["hover"] = [
+    hv.hover_lines(list(zip(_peer_hover_labels, (
+        r["entity_name"], r["field_name"], hv.fmt_dec(r["field_standardised_share"], 1), r["rung"],
+    ))))
+    for _, r in _pos.iterrows()
+]
 
 fig_peer = go.Figure()
 _peer_rows = _pos[~_pos["is_ul"]]
 fig_peer.add_trace(go.Scatter(
     x=_peer_rows["field_standardised_share"], y=_peer_rows["field_name"], mode="markers",
-    name=f"{fr_int(_n_peers)} pairs", marker=dict(size=7, color=controls.DEFERRED_GREY, opacity=0.75),
-    customdata=_peer_rows[["entity_name", "rung"]],
-    hovertemplate="<b>%{customdata[0]}</b> (%{customdata[1]})<br>%{y}<br>Part standardisée : %{x:.1f}<extra></extra>",
+    name=f"{fr_int(_n_peers)} pairs", marker=dict(size=7, color=NEUTRAL_GREY, opacity=0.75),
+    customdata=_peer_rows["hover"], hovertemplate=hv.HOVERTEMPLATE,
 ))
 _ul_rows = _pos[_pos["is_ul"]]
 fig_peer.add_trace(go.Scatter(
     x=_ul_rows["field_standardised_share"], y=_ul_rows["field_name"], mode="markers",
     name="Université de Lorraine",
-    marker=dict(size=11, color=FOCAL_BLUE, line=dict(width=1, color="white")),
-    hovertemplate="<b>Université de Lorraine</b><br>%{y}<br>Part standardisée : %{x:.1f}<extra></extra>",
+    marker=dict(size=11, color=UL_COLOR, line=dict(width=1, color="white")),
+    customdata=_ul_rows["hover"], hovertemplate=hv.HOVERTEMPLATE,
 ))
-fig_peer.add_vline(x=_neutral_peer, line_dash="dash", line_color="#8C9196",
+fig_peer.add_vline(x=_neutral_peer, line_dash=C.REFERENCE_DASH, line_color=REFERENCE_RED,
+                    line_width=C.REFERENCE_WIDTH_PX,
                     annotation_text=f"Point neutre ({_neutral_peer:.0f})", annotation_position="top")
 fig_peer.update_layout(
     xaxis=dict(title="Frontière standardisée par champ (0-100)"),
     yaxis=dict(title="", categoryarray=_field_order_names, categoryorder="array"),
-    height=760, template="plotly_white", margin=dict(t=30, l=10, r=10, b=10),
+    height=760, template="plotly_white", margin=dict(t=30, l=C.margin_left("champ"), r=10, b=10),
 )
+fig_peer.update_yaxes(
+    tickmode="array", tickvals=_field_order_names,
+    ticktext=[C.wrap_label_px(v, "champ") for v in _field_order_names],
+)
+reading_line("pos_peer_frontier")
 st.plotly_chart(fig_peer, width="stretch")
 st.caption(
     "**Pourquoi cet indicateur.** Le même écart se lit différemment selon le groupe de "
@@ -830,11 +862,6 @@ st.caption(
 exports.attach_download(st, _visible_pairs, "positionnement", "codiscipline-paires", _state(_cd_perimeter))
 
 st.markdown("**Structure par domaine (vue d'ensemble)**")
-st.markdown(
-    "**Comment lire cette carte.** Chaque cellule agrège toutes les paires de champs des "
-    "deux domaines croisés ; la diagonale compte les travaux qui restent dans un seul "
-    "domaine."
-)
 
 _dom_names_order = [domain_id2name[d] for d in DOMAIN_ORDER if d in domain_id2name]
 _cd["domain_a_name"] = _cd["domain_a"].map(domain_id2name)
@@ -847,9 +874,22 @@ _dom_matrix = _dom_pivot.reindex(index=_dom_names_order, columns=_dom_names_orde
 
 _z = _dom_matrix.values
 _z_max = float(np.nanmax(_z)) if _z.size else 1.0
+_z_total = float(_z.sum()) if _z.size else 0.0
+_dom_hover_labels = copy_fr.HOVER_LABELS["pos_domain_heatmap"]["default"]
+_dom_customdata = [
+    [
+        hv.hover_lines(list(zip(_dom_hover_labels, (
+            f"{_dom_names_order[i]} × {_dom_names_order[j]}",
+            hv.fmt_int(_z[i, j]),
+            (hv.fmt_pct(_z[i, j] / _z_total * 100) if _z_total > 0 else None),
+        ))))
+        for j in range(len(_dom_names_order))
+    ]
+    for i in range(len(_dom_names_order))
+]
 fig_dom = go.Figure(go.Heatmap(
     z=_z, x=_dom_names_order, y=_dom_names_order, colorscale="Viridis",
-    hovertemplate="%{y} × %{x}<br>Co-publications : %{z:,.0f}<extra></extra>",
+    customdata=_dom_customdata, hovertemplate=hv.HOVERTEMPLATE,
     colorbar=dict(title="Co-works"),
 ))
 _dom_annotations = [
@@ -864,6 +904,7 @@ fig_dom.update_layout(
     xaxis=dict(tickfont=dict(size=12)), yaxis=dict(tickfont=dict(size=12), autorange="reversed"),
     margin=dict(t=20, l=10, r=10, b=40),
 )
+reading_line("pos_domain_heatmap")
 st.plotly_chart(fig_dom, width="stretch")
 _dom_export = _dom_matrix.copy()
 _dom_export.index.name = "Domain"
