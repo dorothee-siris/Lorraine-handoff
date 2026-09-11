@@ -204,6 +204,44 @@ def _assert_single_red_dashed_vline(shapes: list[dict], expected_x: float) -> No
     assert shape["x0"] == shape["x1"] == expected_x
 
 
+def _assert_only_ul_trace_carries_text(traces: list[dict]) -> None:
+    """
+    FOLLOW-UP 1 (manager, post-render review): the per-point direct labels collided at
+    1280px on every dot-ratio panel -- removed everywhere except the UL trace (one
+    "UL" per row, `mode="markers+text"`); every peer trace is now `mode="markers"`
+    with no `text` at all (the hover's own "établissement" line + the legend already
+    carry the peer identity).
+    """
+    text_traces = [t for t in traces if t.get("mode") == "markers+text"]
+    assert len(text_traces) == 1, f"expected exactly one text-bearing trace (UL), got {len(text_traces)}"
+    ul_trace = text_traces[0]
+    assert all(t == "UL" for t in ul_trace.get("text") or []), ul_trace.get("text")
+    for t in traces:
+        if t is ul_trace:
+            continue
+        assert t.get("mode") == "markers", f"peer trace must be mode=markers, got {t.get('mode')!r}"
+        assert not t.get("text"), f"peer trace must carry no text label, got {t.get('text')!r}"
+
+
+@pytest.mark.parametrize("chart_index", [4, 5, 6])
+def test_dot_ratio_panels_show_ul_label_only_no_peer_text_collisions(chart_index):
+    at = _fresh_app()
+    spec = _chart_spec(at, chart_index)
+    _assert_only_ul_trace_carries_text(spec["data"])
+
+    # vacuity: a fabricated peer trace carrying text (the pre-fix behaviour) must be CAUGHT
+    bad_traces = [dict(t) for t in spec["data"]]
+    for t in bad_traces:
+        if t.get("mode") != "markers+text":
+            t["mode"] = "markers+text"
+            t["text"] = ["Nantes"] * len(t.get("x") or [])
+    with pytest.raises(AssertionError):
+        _assert_only_ul_trace_carries_text(bad_traces)
+    # vacuity: zero text-bearing traces (UL label silently dropped too) must be CAUGHT
+    with pytest.raises(AssertionError):
+        _assert_only_ul_trace_carries_text([{**t, "mode": "markers", "text": []} for t in spec["data"]])
+
+
 @pytest.mark.parametrize("chart_index,expected_x", [(4, 1.0), (5, 1.0), (6, 10.0)])
 def test_dot_ratio_panels_have_one_red_dashed_reference_vline(chart_index, expected_x):
     at = _fresh_app()

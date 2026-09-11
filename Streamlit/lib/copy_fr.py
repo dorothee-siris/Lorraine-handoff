@@ -625,7 +625,7 @@ READING: dict[str, dict[str, str]] = {
     "bench_dot_ratio": {
         "lq_champ_log": (
             "Une ligne par champ : le point bleu situe l'Université de Lorraine, les points gris "
-            "les pairs, chacun étiqueté, et le trait rouge tireté la parité avec la France. "
+            "les pairs, nommés au survol, et le trait rouge tireté la parité avec la France. "
             "L'échelle logarithmique met sur-représentation et sous-représentation à distance "
             "égale de ce trait."
         ),

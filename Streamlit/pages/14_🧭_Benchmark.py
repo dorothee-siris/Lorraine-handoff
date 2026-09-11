@@ -529,7 +529,7 @@ def dot_ratio_chart(df: pd.DataFrame, entity_ids: list[str], value_col: str, nod
     fig = go.Figure()
     for entity_id in entity_ids:
         sub = df[df["entity_id"] == entity_id].set_index("node_id")
-        xs, ys, texts, hover = [], [], [], []
+        xs, ys, hover = [], [], []
         for nid in node_ids:
             if nid not in sub.index:
                 continue
@@ -538,22 +538,29 @@ def dot_ratio_chart(df: pd.DataFrame, entity_ids: list[str], value_col: str, nod
                 continue
             xs.append(float(val))
             ys.append(row_of[nid] + offsets.get(entity_id, 0.0))
-            texts.append(SHORT_LABEL.get(entity_id, entity_id))
             hover.append(sub.loc[nid, hover_col])
         if not xs:
             continue
         is_ul = entity_id == UL_ENTITY_ID
-        fig.add_trace(go.Scatter(
-            x=xs, y=ys, mode="markers+text", text=texts,
-            textposition="middle right" if not is_ul else "middle left",
-            textfont=dict(size=10, color=H.UL_COLOR if is_ul else H.TEXT_SECONDARY),
-            marker=dict(
-                size=13 if is_ul else 8,
-                color=H.UL_COLOR if is_ul else H.NEUTRAL_GREY,
-                line=dict(width=1.2 if is_ul else 0.5, color="white"),
-            ),
-            customdata=hover, hovertemplate=hv.HOVERTEMPLATE, showlegend=False, name="",
-        ))
+        # FOLLOW-UP 1 (manager, post-render review): per-point direct labels collided
+        # with each other and with the marks on most rows at 1280px, unreadable --
+        # removed everywhere except the UL trace (one "UL" per row, legend + hover
+        # already carry the peer identity, VIZ_SPEC's "direct label per dot" is now
+        # served by the hover's own "établissement" line instead of on-mark text).
+        if is_ul:
+            fig.add_trace(go.Scatter(
+                x=xs, y=ys, mode="markers+text", text=["UL"] * len(xs),
+                textposition="middle right",
+                textfont=dict(size=10, color=H.UL_COLOR),
+                marker=dict(size=13, color=H.UL_COLOR, line=dict(width=1.2, color="white")),
+                customdata=hover, hovertemplate=hv.HOVERTEMPLATE, showlegend=False, name="",
+            ))
+        else:
+            fig.add_trace(go.Scatter(
+                x=xs, y=ys, mode="markers",
+                marker=dict(size=8, color=H.NEUTRAL_GREY, line=dict(width=0.5, color="white")),
+                customdata=hover, hovertemplate=hv.HOVERTEMPLATE, showlegend=False, name="",
+            ))
 
     if ref_x is not None:
         fig.add_vline(x=ref_x, line_dash=C.REFERENCE_DASH, line_color=H.REFERENCE_RED,
