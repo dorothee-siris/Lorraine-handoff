@@ -253,5 +253,84 @@ def test_id_orcid_fields_fr_percent_axis_overrides_ticktext_only():
     assert not all("%" in fr_int(v) for v in raw_tickvals)
 
 
+# ============================================================================
+# FIX-1 (hostile lens, docs/LENS_ABSORPTION_pass7b.md l.406-407)
+# ============================================================================
+
+_COVERAGE_PARQUET = STREAMLIT_DIR / "data" / "aut_coverage.parquet"
+
+
+def test_d7_id_orcid_yearly_plots_the_work_level_share_not_the_person_level_one():
+    """D7 (HIGH): the label/reading text is WORK-level ("part des travaux..."), so
+    the plotted/hover'd share must be `pct_works_orcid` (n_works_orcid_author /
+    n_works), never the PERSON-level `pct_orcid` the pre-fix page plotted -- the
+    real aut_coverage rows show these genuinely differ (2019: 68,1 % vs 67,1 %),
+    so this reconciles against the ACTUAL deployed data, not a synthetic stand-in."""
+    assert 'hv.fmt_pct(row["pct_works_orcid"] * 100)' in IDENT_SRC
+    assert '_year_pct_vals = (years_df["pct_works_orcid"] * 100).round(1)' in IDENT_SRC
+    assert 'row["pct_orcid"] * 100' not in IDENT_SRC
+    assert '(years_df["pct_orcid"] * 100)' not in IDENT_SRC
+
+    df = pd.read_parquet(_COVERAGE_PARQUET)
+    years = df[(df["unit_kind"] == "year") & (df["conf_state"] == "all")]
+    assert len(years) >= 2, "need real year rows to reconcile against"
+    for _, row in years.iterrows():
+        displayed_pct = round(float(row["pct_works_orcid"]) * 100, 1)
+        reconciled_from_counts = round(100 * float(row["n_works_orcid_author"]) / float(row["n_works"]), 1)
+        assert displayed_pct == reconciled_from_counts, (
+            row["unit_id"], displayed_pct, reconciled_from_counts,
+        )
+        # vacuity: the RETIRED person-level column must NOT reconcile the same way
+        # (proves the pin is discriminating, not vacuously true for either column)
+        person_level_pct = round(float(row["pct_orcid"]) * 100, 1)
+        assert person_level_pct != reconciled_from_counts, (
+            "pct_orcid coincidentally matches the work-level reconciliation for "
+            f"{row['unit_id']} -- pin would not have caught the D7 bug this year"
+        )
+
+
+def test_d8_id_orcid_fields_sorted_by_coverage_share_descending_unknown_last():
+    """D8 (MED): "le mieux couvert en haut" -- gutter values must be non-increasing
+    top to bottom, EXCEPT the final "Inconnu" row, which is always last regardless
+    of its own share. Reproduces the page's OWN transform on the REAL deployed
+    aut_coverage rows (same idiom as tests/test_page7b_p2.py's cache-key
+    reproduction: the SAME real builder, a frame built the same way the page
+    builds it)."""
+    assert 'known = known.sort_values("pct_pct", ascending=False)' in IDENT_SRC
+    assert "get_field_order_by_domain" not in IDENT_SRC
+
+    df = pd.read_parquet(_COVERAGE_PARQUET)
+    fields_df = df[(df["unit_kind"] == "field") & (df["conf_state"] == "all")].copy()
+    known = fields_df[fields_df["unit_id"] != "UNKNOWN"].copy()
+    known["field_id"] = known["unit_id"].astype(int)
+    known["pct_pct"] = known["pct_works_orcid"].apply(lambda v: round(v * 100, 1) if pd.notna(v) else 0.0)
+    known_sorted = known.sort_values("pct_pct", ascending=False)
+    unknown_row = fields_df[fields_df["unit_id"] == "UNKNOWN"]
+
+    ordered_pct = list(known_sorted["pct_pct"])
+    if not unknown_row.empty:
+        u = unknown_row.iloc[0]
+        ordered_pct.append(round(float(u["pct_works_orcid"]) * 100, 1) if pd.notna(u["pct_works_orcid"]) else 0.0)
+
+    known_part = ordered_pct[:-1] if not unknown_row.empty else ordered_pct
+    assert all(a >= b for a, b in zip(known_part, known_part[1:])), (
+        "known-field rows are not sorted coverage-descending", known_part,
+    )
+    assert len(ordered_pct) > len(known_part), "expected an Inconnu row appended after the known fields"
+
+    # vacuity: the OLD domain-order sort (get_field_order_by_domain, the exact
+    # pre-fix code path) must NOT satisfy the same monotonicity check on this real
+    # data -- proves the pin actually discriminates the D8 bug, not vacuously true.
+    from lib.helpers import get_field_order_by_domain
+    old_order = get_field_order_by_domain()
+    known_old = known.copy()
+    known_old["sort_order"] = known_old["field_id"].map({fid: i for i, fid in enumerate(old_order)})
+    domain_order_pct = list(known_old.sort_values("sort_order")["pct_pct"])
+    assert not all(a >= b for a, b in zip(domain_order_pct, domain_order_pct[1:])), (
+        "domain order happened to already be coverage-descending on this data -- "
+        "pin would not have caught the D8 bug"
+    )
+
+
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))

@@ -39,7 +39,7 @@ from lib import helpers as H
 from lib import hover as hv
 from lib.reading import reading_line
 from lib.helpers import (
-    get_field_order_by_domain, get_field_id_to_domain_id, get_domain_color, fr_int, fr_pct,
+    get_field_id_to_domain_id, get_domain_color, fr_int, fr_pct,
     snapshot_date_label,
 )
 
@@ -167,25 +167,31 @@ years_df = cov_c[cov_c["unit_kind"] == "year"].copy()
 years_df["year_int"] = years_df["unit_id"].astype(int)
 years_df = years_df.sort_values("year_int")
 
+# FIX-1 D7 (hostile lens, docs/LENS_ABSORPTION_pass7b.md l.406-407): the label/reading
+# text is WORK-level ("part des travaux..."), so the plotted/hover'd share must be
+# `pct_works_orcid` (n_works_orcid_author / n_works), NOT the PERSON-level `pct_orcid`
+# -- the pre-fix mismatch was visible in the tooltip's own two counts (5772/8480 =
+# 68,1 % vs the 67,1 % the person-level column displayed). One-column swap; no
+# tests/test_page_pg.py pin names either quantity (checked), so no "label route" needed.
 _n_year_rows = len(years_df)
 _year_break_flags = [False] * _n_year_rows
 if _n_year_rows >= 2:
-    _prev_pct = float(years_df["pct_orcid"].iloc[-2])
-    _last_pct = float(years_df["pct_orcid"].iloc[-1])
+    _prev_pct = float(years_df["pct_works_orcid"].iloc[-2])
+    _last_pct = float(years_df["pct_works_orcid"].iloc[-1])
     _year_break_flags[-1] = _last_pct < _prev_pct
 
 _hl_year = copy_fr.HOVER_LABELS["id_orcid_yearly"]["default"]
 _year_hover = [
     hv.hover_lines([
         (_hl_year[0], str(int(row["year_int"]))),
-        (_hl_year[1], hv.fmt_pct(row["pct_orcid"] * 100)),
+        (_hl_year[1], hv.fmt_pct(row["pct_works_orcid"] * 100)),
         (_hl_year[2], hv.fmt_int(row["n_works_orcid_author"])),
         (_hl_year[3], hv.fmt_int(row["n_works"])),
         (_hl_year[4], COVERAGE_BREAK_FLAG_FR if flagged else None),
     ])
     for (_, row), flagged in zip(years_df.iterrows(), _year_break_flags)
 ]
-_year_pct_vals = (years_df["pct_orcid"] * 100).round(1)
+_year_pct_vals = (years_df["pct_works_orcid"] * 100).round(1)
 _year_text = [
     f"{hv.fmt_pct(v)} {DAGGER}" if flagged else hv.fmt_pct(v)
     for v, flagged in zip(_year_pct_vals, _year_break_flags)
@@ -222,12 +228,14 @@ st.markdown("### Couverture par champ")
 fields_df = cov_c[cov_c["unit_kind"] == "field"].copy()
 known = fields_df[fields_df["unit_id"] != "UNKNOWN"].copy()
 known["field_id"] = known["unit_id"].astype(int)
-order = get_field_order_by_domain()
-known["sort_order"] = known["field_id"].map({fid: i for i, fid in enumerate(order)})
-known = known.sort_values("sort_order")
+known["pct_pct"] = known["pct_works_orcid"].apply(lambda v: round(v * 100, 1) if pd.notna(v) else 0.0)
+# FIX-1 D8 (hostile lens): the reading line says "le mieux couvert en haut" -- sort by
+# coverage share DESCENDING (the domain-order sort this replaces put it in domain order
+# instead, contradicting the reading text). "Inconnu" is appended after, unconditionally
+# last, regardless of where its own share would otherwise rank.
+known = known.sort_values("pct_pct", ascending=False)
 unknown_row = fields_df[fields_df["unit_id"] == "UNKNOWN"]
 
-known["pct_pct"] = known["pct_works_orcid"].apply(lambda v: round(v * 100, 1) if pd.notna(v) else 0.0)
 known["color"] = known["field_id"].map(lambda fid: get_domain_color(get_field_id_to_domain_id().get(fid, 0)))
 field_rows = known[["unit_label", "pct_pct", "n_works", "color"]].rename(columns={"unit_label": "label"})
 field_rows["is_unknown"] = False
