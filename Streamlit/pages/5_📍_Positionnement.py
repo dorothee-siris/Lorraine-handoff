@@ -712,7 +712,8 @@ fig_peer.add_vline(x=_neutral_peer, line_dash=C.REFERENCE_DASH, line_color=REFER
 fig_peer.update_layout(
     xaxis=dict(title="Frontière standardisée par champ (0-100)"),
     yaxis=dict(title="", categoryarray=_field_order_names, categoryorder="array"),
-    height=760, template="plotly_white", margin=dict(t=30, l=C.margin_left("champ"), r=10, b=10),
+    height=C.row_height_single(len(_field_order_names)),
+    template="plotly_white", margin=dict(t=30, l=C.margin_left("champ"), r=10, b=10),
 )
 fig_peer.update_yaxes(
     tickmode="array", tickvals=_field_order_names,
