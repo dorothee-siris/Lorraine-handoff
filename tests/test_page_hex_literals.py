@@ -106,8 +106,6 @@ def _path_for(relkey: str) -> Path:
 EXEMPT_PAGES: set[str] = {
     "pages/6_🔎_Exploration_thématique.py",
     "pages/7_🎯_I-SITE.py",
-    "pages/12_👤_Profil_auteur.py",
-    "pages/13_🪪_Identifiants_et_couverture.py",
 }
 
 ACTIVE = [p for p in _scanned_files() if _relkey(p) not in EXEMPT_PAGES]

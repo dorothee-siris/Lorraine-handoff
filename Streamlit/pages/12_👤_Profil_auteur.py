@@ -43,6 +43,10 @@ from lib.controls import (
 from lib.exports import attach_download, ExportState
 from lib.lazy import read_keyed
 from lib.data_cache import DATA_DIR, get_pubs_slim
+from lib import copy_fr
+from lib import helpers as H
+from lib import hover as hv
+from lib.reading import reading_line
 from lib.helpers import (
     YEARS, get_field_id_to_name, get_field_id_to_domain_id, get_subfield_id_to_name,
     get_subfield_id_to_domain_id, get_domain_id_to_name, DOMAIN_EMOJI,
@@ -243,11 +247,27 @@ if artifact_on:
 
 st.markdown("### Production annuelle")
 counts = w.groupby("year").size()
+year_counts = [int(counts.get(y, 0)) for y in YEARS]
+_hl_author = copy_fr.HOVER_LABELS["author_yearly_bars"]["default"]
+year_hover = [
+    hv.hover_lines([(_hl_author[0], str(y)), (_hl_author[1], hv.fmt_int(c))])
+    for y, c in zip(YEARS, year_counts)
+]
 fig = go.Figure(go.Bar(
-    x=[str(y) for y in YEARS], y=[int(counts.get(y, 0)) for y in YEARS],
-    marker_color="#0072B2",
+    x=[str(y) for y in YEARS], y=year_counts,
+    marker_color=H.UL_COLOR,
+    customdata=year_hover, hovertemplate=hv.HOVERTEMPLATE,
 ))
 fig.update_layout(height=260, margin=dict(t=20, l=40, r=20, b=30), yaxis_title="Publications", xaxis_title="")
+# B5 (counts axis FR): explicit round-number ticks, fr_int ticktext -- never a
+# locale-dependent tickformat. The step table stays local (page-authored, small
+# per-person volumes) rather than importing charts._nice_ticks, a private helper
+# scoped to bars_with_gutter's own horizontal value axis.
+_y_max = max(year_counts) if year_counts else 0
+_y_step = next(step for cap, step in ((5, 1), (10, 2), (25, 5), (50, 10), (100, 20), (10**9, 50)) if _y_max <= cap)
+_y_ticks = list(range(0, _y_max + _y_step, _y_step)) if _y_max else [0]
+fig.update_yaxes(tickmode="array", tickvals=_y_ticks, ticktext=[H.fr_int(t) for t in _y_ticks])
+reading_line("author_yearly_bars")
 st.plotly_chart(fig, width="stretch")
 active_bits = []
 if not include_conference:

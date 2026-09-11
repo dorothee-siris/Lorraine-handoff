@@ -30,9 +30,14 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from lib.controls import sidebar as controls_sidebar, filtered_by_strip, ARTIFACT_TOGGLE_KEY
+from lib.controls import sidebar as controls_sidebar, filtered_by_strip, ARTIFACT_TOGGLE_KEY, DAGGER
 from lib.exports import attach_download, ExportState
 from lib.data_cache import DATA_DIR
+from lib import charts as C
+from lib import copy_fr
+from lib import helpers as H
+from lib import hover as hv
+from lib.reading import reading_line
 from lib.helpers import (
     get_field_order_by_domain, get_field_id_to_domain_id, get_domain_color, fr_int, fr_pct,
     snapshot_date_label,
@@ -42,8 +47,6 @@ from lib.helpers import (
 # Page config
 # =============================================================================
 st.set_page_config(page_title="Identifiers & Coverage | UL Bibliometrics", page_icon="🪪", layout="wide")
-
-UNKNOWN_GREY = "#8C9196"
 
 # ----------------------------------------------------------------------------
 # FR-ready label dictionary + binding VERBATIM strings (VIZ_SPEC 1.6: new pages build
@@ -71,6 +74,14 @@ def unknown_field_note_fr(n_unknown: int) -> str:
 
 
 NO_LAB_NOTE_FR = "absence définie (aucun laboratoire porteur)"
+# id_orcid_yearly / id_orcid_fields drapeau phrases -- docs/tooltip_spec.yaml notes, verbatim
+# (pass 7b B2): fixed sentences, no data value or year, so a page-authored FR constant is the
+# same idiom as S10_BANNER_FR/COLLECTIVE_CAPTION_FR above, not a P6-R2 violation.
+COVERAGE_BREAK_FLAG_FR = (
+    "la liaison des identifiants est plus tardive que les travaux, ce recul tient au retard "
+    "de liaison et non à une baisse de pratique"
+)
+UNKNOWN_BUCKET_FLAG_FR = "seau des travaux sans champ renseigné, ce n'est pas un champ"
 ARTIFACT_EXEMPT_PAGE_CAPTION_FR = (
     ":grey[Le filtre « hors référentiel » ne s'applique pas à cette page : la couverture "
     "d'identifiants porte sur les personnes, pas sur les topics -- valeurs inchangées.]"
@@ -156,23 +167,42 @@ years_df = cov_c[cov_c["unit_kind"] == "year"].copy()
 years_df["year_int"] = years_df["unit_id"].astype(int)
 years_df = years_df.sort_values("year_int")
 
+_n_year_rows = len(years_df)
+_year_break_flags = [False] * _n_year_rows
+if _n_year_rows >= 2:
+    _prev_pct = float(years_df["pct_orcid"].iloc[-2])
+    _last_pct = float(years_df["pct_orcid"].iloc[-1])
+    _year_break_flags[-1] = _last_pct < _prev_pct
+
+_hl_year = copy_fr.HOVER_LABELS["id_orcid_yearly"]["default"]
+_year_hover = [
+    hv.hover_lines([
+        (_hl_year[0], str(int(row["year_int"]))),
+        (_hl_year[1], hv.fmt_pct(row["pct_orcid"] * 100)),
+        (_hl_year[2], hv.fmt_int(row["n_works_orcid_author"])),
+        (_hl_year[3], hv.fmt_int(row["n_works"])),
+        (_hl_year[4], COVERAGE_BREAK_FLAG_FR if flagged else None),
+    ])
+    for (_, row), flagged in zip(years_df.iterrows(), _year_break_flags)
+]
+_year_pct_vals = (years_df["pct_orcid"] * 100).round(1)
+_year_text = [
+    f"{hv.fmt_pct(v)} {DAGGER}" if flagged else hv.fmt_pct(v)
+    for v, flagged in zip(_year_pct_vals, _year_break_flags)
+]
+_year_text_ink = [H.REFERENCE_RED if flagged else H.TEXT_PRIMARY for flagged in _year_break_flags]
+
 fig_year = go.Figure(go.Bar(
     x=years_df["year_int"].astype(str),
-    y=(years_df["pct_orcid"] * 100).round(1),
-    marker_color="#0072B2",
-    text=[fr_pct(v * 100) for v in years_df["pct_orcid"]],
-    textposition="outside",
+    y=_year_pct_vals,
+    marker_color=H.UL_COLOR,
+    text=_year_text, textposition="outside", textfont=dict(color=_year_text_ink),
+    customdata=_year_hover, hovertemplate=hv.HOVERTEMPLATE,
 ))
-if len(years_df) >= 2:
-    prev_row, last_row = years_df.iloc[-2], years_df.iloc[-1]
-    if last_row["pct_orcid"] < prev_row["pct_orcid"]:
-        drop_pt = (prev_row["pct_orcid"] - last_row["pct_orcid"]) * 100
-        drop_pt_fr = f"{drop_pt:.1f}".replace(".", ",")
-        fig_year.add_annotation(
-            x=str(int(last_row["year_int"])), y=last_row["pct_orcid"] * 100,
-            text=f"{int(last_row['year_int'])} : -{drop_pt_fr} pt vs {int(prev_row['year_int'])}",
-            showarrow=True, arrowhead=2, ay=-45, font=dict(color="#D55E00"),
-        )
+_year_pct_ticks = [0, 20, 40, 60, 80, 100]
+fig_year.update_yaxes(tickmode="array", tickvals=_year_pct_ticks,
+                       ticktext=[fr_pct(v, 0) for v in _year_pct_ticks])
+reading_line("id_orcid_yearly")
 st.plotly_chart(fig_year, width="stretch")
 st.caption(
     "Rattachements d'auteurs UL comportant un ORCID, par année : valeurs brutes, jamais "
@@ -197,20 +227,36 @@ known["sort_order"] = known["field_id"].map({fid: i for i, fid in enumerate(orde
 known = known.sort_values("sort_order")
 unknown_row = fields_df[fields_df["unit_id"] == "UNKNOWN"]
 
-bar_x = list(known["unit_label"])
-bar_y = [round(v * 100, 1) if pd.notna(v) else 0 for v in known["pct_works_orcid"]]
-bar_colors = [get_domain_color(get_field_id_to_domain_id().get(fid, 0)) for fid in known["field_id"]]
+known["pct_pct"] = known["pct_works_orcid"].apply(lambda v: round(v * 100, 1) if pd.notna(v) else 0.0)
+known["color"] = known["field_id"].map(lambda fid: get_domain_color(get_field_id_to_domain_id().get(fid, 0)))
+field_rows = known[["unit_label", "pct_pct", "n_works", "color"]].rename(columns={"unit_label": "label"})
+field_rows["is_unknown"] = False
+
 if not unknown_row.empty:
     u = unknown_row.iloc[0]
-    bar_x.append("Inconnu")
-    bar_y.append(round(float(u["pct_works_orcid"]) * 100, 1) if pd.notna(u["pct_works_orcid"]) else 0)
-    bar_colors.append(UNKNOWN_GREY)
+    _unknown_pct = round(float(u["pct_works_orcid"]) * 100, 1) if pd.notna(u["pct_works_orcid"]) else 0.0
+    field_rows = pd.concat([field_rows, pd.DataFrame([{
+        "label": "Inconnu", "pct_pct": _unknown_pct, "n_works": u["n_works"],
+        "color": H.NEUTRAL_GREY, "is_unknown": True,
+    }])], ignore_index=True)
 
-fig_field = go.Figure(go.Bar(x=bar_x, y=bar_y, marker_color=bar_colors))
-fig_field.update_layout(
-    height=450, margin=dict(t=20, l=40, r=20, b=140), showlegend=False,
-    yaxis_title="% de travaux avec un auteur UL lié ORCID", xaxis_tickangle=-45,
+_hl_field = copy_fr.HOVER_LABELS["id_orcid_fields"]["default"]
+field_rows["hover"] = [
+    hv.hover_lines([
+        (_hl_field[0], r["label"]),
+        (_hl_field[1], hv.fmt_pct(r["pct_pct"])),
+        (_hl_field[2], hv.fmt_int(r["n_works"]) if pd.notna(r["n_works"]) else hv.fmt_int(0)),
+        (_hl_field[3], UNKNOWN_BUCKET_FLAG_FR if r["is_unknown"] else None),
+    ])
+    for _, r in field_rows.iterrows()
+]
+
+fig_field = C.bars_with_gutter(
+    field_rows, family="champ", label_col="label", value_col="pct_pct",
+    color=field_rows["color"].tolist(), hover_col="hover", value_fmt=hv.fmt_pct,
 )
+fig_field.update_xaxes(ticktext=[fr_pct(v, 0) for v in fig_field.layout.xaxis.tickvals])
+reading_line("id_orcid_fields")
 st.plotly_chart(fig_field, width="stretch")
 n_unknown = int(unknown_row.iloc[0]["n_works"]) if not unknown_row.empty and pd.notna(unknown_row.iloc[0]["n_works"]) else 0
 st.caption(unknown_field_note_fr(n_unknown))
