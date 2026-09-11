@@ -40,7 +40,6 @@ from lib.data_cache import (
 )
 from lib.thematic import excluded_counts_from_facts, get_overview, get_sublevels
 from lib import controls, exports
-from lib.overlay import overlay_bars
 from lib.ranked import (
     ranked_table, fr_int, fr_pct, mask_members, CONSORTIUM_IDS, HIDE_MEMBERS_LABEL, link_column,
 )
@@ -53,6 +52,11 @@ from lib import hover as hv
 from lib import links
 from lib import reading
 from lib.charts import site_reciprocity_scatter
+
+# Pass 7b (P6, BUILD_PLAN B2/B6, non-partner sections): bars_with_gutter + colour
+# tokens for the time-series and structure charts.
+from lib import charts
+from lib import helpers as H
 
 # =============================================================================
 # Page config
@@ -146,12 +150,6 @@ CHILD_LEVEL_LABELS = {
     "domain": "Field",
     "field": "Subfield",
     "subfield": "Topic",
-}
-
-STRUCTURE_TYPE_COLORS = {
-    "lab": "#4e79a7",
-    "experimental": "#f28e2b",
-    "other": "#76b7b2",
 }
 
 # =============================================================================
@@ -324,17 +322,6 @@ def get_author_data(level, element_id):
     if rows.empty:
         return None
     return rows.iloc[0]
-
-def render_structure_type_legend():
-    """Render legend for structure types."""
-    items = ""
-    for stype, color in STRUCTURE_TYPE_COLORS.items():
-        items += (
-            f'<span style="display:inline-flex;align-items:center;margin-right:16px;">'
-            f'<span style="width:14px;height:14px;background:{color};border-radius:3px;margin-right:6px;"></span>'
-            f'{stype.title()}</span>'
-        )
-    st.markdown(f'<div style="margin:8px 0 16px 0;">{items}</div>', unsafe_allow_html=True)
 
 # =============================================================================
 # Section 1: Selector
@@ -600,12 +587,23 @@ if level in ["domain", "field", "subfield"]:
             df_time_plot = pd.concat([df_time_top, df_time_other], ignore_index=True)
 
             # Colour follows the entity in a FIXED order, so filtering or a change
-            # of level never repaints the survivors.
-            all_names = top_names + ["Autres"]
-            color_palette = px.colors.qualitative.Plotly + px.colors.qualitative.Set2
-            color_map = {name: color_palette[i % len(color_palette)] for i, name in enumerate(all_names)}
+            # of level never repaints the survivors. Pass 7b (B6/addendum #9): a
+            # stable token-based palette -- list(H.DOMAIN_COLORS.values()) cycled --
+            # never px.colors.*; "Autres" is always H.NEUTRAL_GREY, off the cycle.
+            _domain_palette = list(H.DOMAIN_COLORS.values())
+            color_map = {name: _domain_palette[i % len(_domain_palette)] for i, name in enumerate(top_names)}
+            color_map["Autres"] = H.NEUTRAL_GREY
 
             st.markdown("**Valeurs absolues**")
+            _hl_abs = copy_fr.HOVER_LABELS["ex_time_abs"]["default"]
+            _hover_abs = {
+                (r["Name"], int(r["Year"])): hv.hover_lines([
+                    (_hl_abs[0], r["Name"]),
+                    (_hl_abs[1], str(int(r["Year"]))),
+                    (_hl_abs[2], hv.fmt_int(r["Count"])),
+                ])
+                for _, r in df_time_plot.iterrows()
+            }
             fig_abs = px.line(
                 df_time_plot,
                 x="Year",
@@ -614,6 +612,9 @@ if level in ["domain", "field", "subfield"]:
                 color_discrete_map=color_map,
                 markers=True,
             )
+            for _trace in fig_abs.data:
+                _trace.customdata = [_hover_abs[(_trace.name, int(x))] for x in _trace.x]
+                _trace.hovertemplate = hv.HOVERTEMPLATE
             fig_abs.update_layout(
                 height=400,
                 margin=dict(t=30, l=50, r=30, b=50),
@@ -626,6 +627,7 @@ if level in ["domain", "field", "subfield"]:
                 yaxis_title="Publications",
                 legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5),
             )
+            reading.reading_line("ex_time_abs")
             st.plotly_chart(fig_abs, use_container_width=True)
 
             st.markdown("**Part relative (empilement 100 %)**")
@@ -633,6 +635,16 @@ if level in ["domain", "field", "subfield"]:
             year_totals = df_time_pct.groupby("Year")["Count"].transform("sum")
             df_time_pct["Share"] = (df_time_pct["Count"] / year_totals * 100).fillna(0)
 
+            _hl_share = copy_fr.HOVER_LABELS["ex_time_share"]["default"]
+            _hover_share = {
+                (r["Name"], int(r["Year"])): hv.hover_lines([
+                    (_hl_share[0], r["Name"]),
+                    (_hl_share[1], str(int(r["Year"]))),
+                    (_hl_share[2], hv.fmt_pct(r["Share"])),
+                    (_hl_share[3], hv.fmt_int(r["Count"])),
+                ])
+                for _, r in df_time_pct.iterrows()
+            }
             fig_stack = px.area(
                 df_time_pct,
                 x="Year",
@@ -641,9 +653,9 @@ if level in ["domain", "field", "subfield"]:
                 color_discrete_map=color_map,
                 groupnorm="percent",
             )
-            fig_stack.update_traces(
-                hovertemplate="Année = %{x}<br>Part = %{y:.2f}%<extra>%{fullData.name}</extra>"
-            )
+            for _trace in fig_stack.data:
+                _trace.customdata = [_hover_share[(_trace.name, int(x))] for x in _trace.x]
+                _trace.hovertemplate = hv.HOVERTEMPLATE
             fig_stack.update_layout(
                 height=400,
                 margin=dict(t=30, l=50, r=30, b=50),
@@ -656,6 +668,12 @@ if level in ["domain", "field", "subfield"]:
                 yaxis=dict(title="Part (%)", range=[0, 100]),
                 legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5),
             )
+            _share_ticks = [0, 20, 40, 60, 80, 100]
+            fig_stack.update_yaxes(
+                tickmode="array", tickvals=_share_ticks,
+                ticktext=[H.fr_pct(v, 0) for v in _share_ticks],
+            )
+            reading.reading_line("ex_time_share")
             st.plotly_chart(fig_stack, use_container_width=True)
 
 # =============================================================================
@@ -692,22 +710,29 @@ else:
         dept_df["count"] = dept_df["count"].apply(safe_int)
         dept_df["pct"] = dept_df["pct"].apply(safe_float)
         dept_df["isite_count"] = dept_df["dept"].map(_dept_isite_map).fillna(0)
-        dept_df = dept_df.sort_values("count", ascending=True)
+        # Pass 7b (B2/render-check catch): bars_with_gutter's fixed y-axis convention
+        # (Streamlit/lib/charts.py::_bar_layout, range=[n-0.5, -0.5]) puts FRAME ROW 0
+        # at the TOP -- the opposite of the old overlay_bars() call this replaced, which
+        # wanted ascending order for that same visual result. Descending here is what
+        # makes "la plus fournie en haut" (this chart's own reading line) true.
+        dept_df = dept_df.sort_values("count", ascending=False)
 
-        fig_dept = overlay_bars(
-            categories=dept_df["dept"].tolist(),
-            totals=dept_df["count"].tolist(),
-            isite=dept_df["isite_count"].tolist(),
-            colors="#59a14f",
-            isite_on=_ISITE_OVERLAY_ON,
-            orientation="h",
+        _hl_dept = copy_fr.HOVER_LABELS["ex_dept_bars"]["default"]
+        dept_df["hover"] = [
+            hv.hover_lines([
+                (_hl_dept[0], r["dept"]),
+                (_hl_dept[1], hv.fmt_int(r["count"])),
+                (_hl_dept[2], hv.fmt_int(r["isite_count"]) if _ISITE_OVERLAY_ON else None),
+            ])
+            for _, r in dept_df.iterrows()
+        ]
+        fig_dept = charts.bars_with_gutter(
+            dept_df, family="labo", label_col="dept", value_col="count",
+            color=H.UL_COLOR, hover_col="hover",
+            isite_col="isite_count", isite_on=_ISITE_OVERLAY_ON,
+            value_fmt=hv.fmt_int,
         )
-        fig_dept.update_layout(
-            height=max(200, len(dept_df) * 40),
-            margin=dict(t=10, l=10, r=10, b=10),
-            xaxis_title="Publications",
-            yaxis_title="",
-        )
+        reading.reading_line("ex_dept_bars")
         st.plotly_chart(fig_dept, use_container_width=True)
         if _ISITE_OVERLAY_ON:
             st.caption(":grey[Segment plus sombre = part I-SITE du département (même ligne, aucun recalcul).]")
@@ -719,7 +744,6 @@ else:
         st.info("Aucune donnée de département.")
 
     st.markdown("**Top 10 laboratoires / structures internes contributeurs**")
-    render_structure_type_legend()
 
     lab_col = find_column(contrib_data, "top_labs")
     lab_items = []
@@ -747,26 +771,27 @@ else:
         lab_df["pct"] = lab_df["pct"].apply(safe_float)
         lab_df["isite_count"] = lab_df["ror"].map(_lab_isite_map).fillna(0)
 
-        lab_df["color"] = lab_df["type"].apply(
-            lambda x: STRUCTURE_TYPE_COLORS.get(x, STRUCTURE_TYPE_COLORS["other"])
-        )
+        # Same bars_with_gutter axis convention as ex_dept_bars above: row 0 -> top,
+        # so the top-10 must be selected AND ordered descending in one pass.
+        lab_df = lab_df.sort_values("count", ascending=False).head(10)
 
-        lab_df = lab_df.sort_values("count", ascending=True).tail(10)
-
-        fig_lab = overlay_bars(
-            categories=lab_df["name"].tolist(),
-            totals=lab_df["count"].tolist(),
-            isite=lab_df["isite_count"].tolist(),
-            colors=lab_df["color"].tolist(),
-            isite_on=_ISITE_OVERLAY_ON,
-            orientation="h",
+        _hl_lab = copy_fr.HOVER_LABELS["ex_lab_bars"]["default"]
+        lab_df["hover"] = [
+            hv.hover_lines([
+                (_hl_lab[0], r["name"]),
+                (_hl_lab[1], hv.fmt_int(r["count"])),
+                (_hl_lab[2], r["type"]),
+                (_hl_lab[3], hv.fmt_int(r["isite_count"]) if _ISITE_OVERLAY_ON else None),
+            ])
+            for _, r in lab_df.iterrows()
+        ]
+        fig_lab = charts.bars_with_gutter(
+            lab_df, family="labo", label_col="name", value_col="count",
+            color=H.UL_COLOR, hover_col="hover",
+            isite_col="isite_count", isite_on=_ISITE_OVERLAY_ON,
+            value_fmt=hv.fmt_int,
         )
-        fig_lab.update_layout(
-            height=350,
-            margin=dict(t=10, l=10, r=10, b=10),
-            xaxis_title="Publications",
-            yaxis_title="",
-        )
+        reading.reading_line("ex_lab_bars")
         st.plotly_chart(fig_lab, use_container_width=True)
         if _ISITE_OVERLAY_ON:
             st.caption(":grey[Segment plus sombre = part I-SITE du laboratoire (même ligne, aucun recalcul).]")

@@ -103,9 +103,7 @@ def _path_for(relkey: str) -> Path:
 # retirer : pages/8 (5) -- `MOM_COLORS` L187 (quatre encres de momentum -> `MOMENTUM_*`)
 # et la mediane pointillee L926 (-> `NEUTRAL_GREY` ou `REFERENCE_RED`). Vider ce cliquet
 # a la cloture demande donc une decision du manager sur ces cinq litteraux.
-EXEMPT_PAGES: set[str] = {
-    "pages/6_🔎_Exploration_thématique.py",
-}
+EXEMPT_PAGES: set[str] = set()   # EMPTIED by pass 7b (2026-09-11): every page carries the contract
 
 ACTIVE = [p for p in _scanned_files() if _relkey(p) not in EXEMPT_PAGES]
 

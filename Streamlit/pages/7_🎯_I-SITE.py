@@ -527,8 +527,12 @@ fig_ratio.update_yaxes(
     title="",
 )
 fig_ratio.update_layout(
-    height=max(560, len(_plot_df) * 24), margin=dict(t=30, l=C.margin_left("champ"), r=20, b=40),
-    legend=dict(orientation="h", y=-0.06),
+    # FOLLOW-UP 1 (manager): height from the lib pitch, never a hardcoded number -- the
+    # SAME constant bars_with_gutter itself uses, so 26 two-line-wrapped labels get one
+    # un-collided row each. Bottom margin grown + legend pushed further below the x-axis
+    # title (was overlapping it at the old b=40/y=-0.06).
+    height=C.row_height_single(len(_plot_df)), margin=dict(t=30, l=C.margin_left("champ"), r=20, b=70),
+    legend=dict(orientation="h", y=-0.16),
 )
 
 _dot_event = st.plotly_chart(
@@ -643,16 +647,21 @@ with col_dumbbell:
         ))
 
     fig_dumb.add_trace(go.Scatter(
-        x=members["site_share"], y=members.index, mode="markers+text",
+        x=members["site_share"], y=members.index, mode="markers",
         marker=dict(size=15, color=H.NEUTRAL_GREY),
-        text=[fr_pct(v * 100, decimals=1) for v in members["site_share"]], textposition="top center",
         name="Part du corpus du site entier",
         customdata=_dumb_hover, hovertemplate=hv.HOVERTEMPLATE,
     ))
+    # FOLLOW-UP 1 (manager): ONE on-mark text per row (VIZ_SPEC §1.6 -- one precision per
+    # measure), on the I-SITE dot only -- the site-share value stays in the hover and on the
+    # axis, never duplicated as a second on-mark text that collided with this one.
     fig_dumb.add_trace(go.Scatter(
         x=members["isite_share"], y=members.index, mode="markers+text",
         marker=dict(size=15, color=H.UL_COLOR),
-        text=[fr_pct(v * 100, decimals=2) for v in members["isite_share"]], textposition="bottom center",
+        text=[hv.fmt_pct(v * 100, 1) for v in members["isite_share"]], textposition="middle right",
+        cliponaxis=False,  # same idiom as lib/charts.py's own gutter text (L374/618): a
+                           # "middle right" text near the axis max would otherwise be
+                           # clipped by plotly's own axis clip-rect (found live, CNRS row).
         name="Part du corpus I-SITE",
         customdata=_dumb_hover, hovertemplate=hv.HOVERTEMPLATE,
     ))
@@ -662,7 +671,7 @@ with col_dumbbell:
     if _dumb_pct_vmax <= 0:
         _dumb_pct_vals = [0.0]
     else:
-        _dumb_pct_raw = _dumb_pct_vmax / 5
+        _dumb_pct_raw = _dumb_pct_vmax / 3   # colonne etroite : 3 graduations, jamais de rotation (passe 7b, cf. charts.narrow)
         _dumb_pct_mag = 10 ** math.floor(math.log10(_dumb_pct_raw))
         _dumb_pct_step = _dumb_pct_mag
         for _mult in (1, 2, 2.5, 5, 10):
@@ -672,13 +681,17 @@ with col_dumbbell:
         _dumb_pct_vals = [round(i * _dumb_pct_step, 10) for i in range(int(_dumb_pct_vmax // _dumb_pct_step) + 2)]
     fig_dumb.update_xaxes(
         title="Part du corpus", tickvals=_dumb_pct_vals, ticktext=[fr_pct(v * 100, 0) for v in _dumb_pct_vals],
+        tickangle=0,
     )
     fig_dumb.update_yaxes(
         title="", tickmode="array", tickvals=list(members.index),
         ticktext=[C.wrap_label_px(m, "partenaire") for m in members.index],
     )
     fig_dumb.update_layout(
-        height=max(340, len(members) * 62), margin=dict(t=20, l=C.margin_left("partenaire"), r=30, b=40),
+        # r grown 30 -> 70: the surviving on-mark text sits at "middle right" of the
+        # I-SITE dot, which for the top row (highest isite_share, nearest the axis max)
+        # was clipped by the old margin (found in the FOLLOW-UP 1 re-render crop).
+        height=max(340, len(members) * 62), margin=dict(t=20, l=C.margin_left("partenaire"), r=70, b=40),
         legend=dict(orientation="h", y=-0.18),
     )
     reading_line("isite_consortium_dumbbell")

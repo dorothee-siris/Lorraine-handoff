@@ -185,9 +185,7 @@ def _path_for(relkey: str) -> Path:
 # itself confirms zero remaining offenders on this page. pages/4 STAYS: the SDG bar +
 # peers-scatter sites are fixed, but the page's many OTHER charts (treemap, boxplots,
 # zero-fill tables, specialisation view) are untouched this pass -- 7b's job.
-EXEMPT_PAGES: set[str] = {
-    "pages/6_🔎_Exploration_thématique.py",
-}
+EXEMPT_PAGES: set[str] = set()   # EMPTIED by pass 7b (2026-09-11): every page carries the contract
 
 ACTIVE = [p for p in _all_streamlit_py_files() if _relkey(p) not in EXEMPT_PAGES]
 
