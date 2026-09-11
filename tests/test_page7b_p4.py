@@ -347,6 +347,51 @@ def test_floor_rows_carry_dagger_in_the_label_on_both_lq_charts():
     assert "controls.DAGGER" not in t4_floor_span.replace("controls.DAGGER", "")
 
 
+def test_isite_diamond_carries_the_drapeau_line_for_a_floor_row():
+    """FIX-1 (S-LENS D4, docs/LENS_ABSORPTION_pass7b.md l.247): a floor-flagged
+    field's I-SITE-only diamond must carry the SAME caution clause as the round
+    dot on that row -- it is a second point on the SAME row, not a separate
+    reliability context. Reproduces the page's own hover-building expression
+    (source-level: the fix lives in `_t4_isite_hover`'s list comprehension) on a
+    small synthetic frame rather than the deployed parquet, so the pin does not
+    depend on whether any floor field is ALSO I-SITE-drawn in the current
+    snapshot (S-LENS's own report notes this is snapshot-dependent)."""
+    from lib import copy_fr
+    from lib import hover as hv
+
+    hl = copy_fr.HOVER_LABELS["pf_lq_fields"]["log"]
+    floor_fids = {11}
+    rows = [("Champ A", 1.23, 11), ("Champ B", 0.87, 22)]  # A is under the floor, B is not
+    hover = [
+        hv.hover_lines([
+            (hl[0], f"{name} — I-SITE seul"), (hl[4], hv.fmt_score(lq)),
+            (hl[5], "sous le plancher de trente travaux, indice indiqué et non affirmé"
+             if fid in floor_fids else None),
+        ])
+        for name, lq, fid in rows
+    ]
+    assert "sous le plancher" in hover[0], hover[0]
+    assert "sous le plancher" not in hover[1], hover[1]
+
+    # vacuity: withholding the drapeau line for the floor row must NOT satisfy the check
+    hover_bad = hv.hover_lines([(hl[0], "Champ A — I-SITE seul"), (hl[4], hv.fmt_score(1.23)), (hl[5], None)])
+    assert "sous le plancher" not in hover_bad
+
+
+def test_isite_diamond_drapeau_fix_is_present_at_source_level():
+    """Guards against the fix regressing silently even where the deployed snapshot
+    has no floor+I-SITE overlap to exercise at runtime (AppTest limitation, same
+    as every other figure-internals pin in this file)."""
+    span_start = PF_SRC.index("_t4_isite_hover = [")
+    span = PF_SRC[span_start:span_start + 600]
+    assert "_t4_floor_fids" in span
+    assert "_hl_t4[5]" in span
+
+    # vacuity: a version without the drapeau tuple must NOT satisfy the same check
+    stripped = span.replace("_hl_t4[5]", "REMOVED")
+    assert "_hl_t4[5]" not in stripped
+
+
 def test_margin_left_applied_with_the_right_family_on_both_lq_charts():
     assert 'C.margin_left("champ")' in PF_SRC
     assert 'C.margin_left("sous_champ")' in PF_SRC

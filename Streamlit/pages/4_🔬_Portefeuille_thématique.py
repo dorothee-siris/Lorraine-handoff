@@ -1489,9 +1489,18 @@ else:
             {**dict(zip(_t4_normal["field_id_int"], _t4_normal_y)),
              **dict(zip(_t4_floor["field_id_int"], _t4_floor_y))}
         )
+        # FIX-1 (S-LENS D4, docs/LENS_ABSORPTION_pass7b.md l.247): a floor-flagged
+        # field's I-SITE-only diamond must carry the SAME caution clause the round
+        # dot on that row already carries -- the diamond is a second point on the
+        # SAME row, not a separate reliability context.
+        _t4_floor_fids = set(_t4_floor["field_id_int"]) if not _t4_floor.empty else set()
         _t4_isite_hover = [
-            hover_lines([(_hl_t4[0], f"{name} — I-SITE seul"), (_hl_t4[4], fr_fwci(lq))])
-            for name, lq in zip(df_t4_isite["field_name"], df_t4_isite[_lq_col])
+            hover_lines([
+                (_hl_t4[0], f"{name} — I-SITE seul"), (_hl_t4[4], fr_fwci(lq)),
+                (_hl_t4[5], "sous le plancher de trente travaux, indice indiqué et non affirmé"
+                 if fid in _t4_floor_fids else None),
+            ])
+            for name, lq, fid in zip(df_t4_isite["field_name"], df_t4_isite[_lq_col], df_t4_isite["field_id_int"])
         ]
         fig_t4.add_trace(go.Scatter(
             x=df_t4_isite[_lq_col], y=df_t4_isite["_y_label"], mode="markers",
