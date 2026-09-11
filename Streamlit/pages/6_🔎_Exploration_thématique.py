@@ -586,13 +586,20 @@ if level in ["domain", "field", "subfield"]:
 
             df_time_plot = pd.concat([df_time_top, df_time_other], ignore_index=True)
 
-            # Colour follows the entity in a FIXED order, so filtering or a change
-            # of level never repaints the survivors. Pass 7b (B6/addendum #9): a
-            # stable token-based palette -- list(H.DOMAIN_COLORS.values()) cycled --
-            # never px.colors.*; "Autres" is always H.NEUTRAL_GREY, off the cycle.
-            _domain_palette = list(H.DOMAIN_COLORS.values())
-            color_map = {name: _domain_palette[i % len(_domain_palette)] for i, name in enumerate(top_names)}
+            # Colour follows the entity in a FIXED order, so filtering or a change of
+            # level never repaints the survivors. FOLLOW-UP 1 (manager, post-render):
+            # VIZ_SPEC S1.1 -- the DOMAIN set is never cycled onto an unrelated series
+            # axis (these entities are labs/subfields, not domains); H.DOMAIN_COLORS'
+            # dual id/name keying also silently repeated every 5 slots. H.SERIES_COLORS
+            # (7 Okabe-Ito hues) is the correct token for a ranked, arbitrary-length
+            # series axis -- past 7 entries the line is DASHED so no two series ever
+            # share hue+dash; never px.colors.*; "Autres" stays H.NEUTRAL_GREY, off
+            # the cycle and always solid.
+            _series_colors = H.SERIES_COLORS
+            color_map = {name: _series_colors[i % len(_series_colors)] for i, name in enumerate(top_names)}
             color_map["Autres"] = H.NEUTRAL_GREY
+            _dash_map = {name: ("dash" if i >= len(_series_colors) else "solid") for i, name in enumerate(top_names)}
+            _dash_map["Autres"] = "solid"
 
             st.markdown("**Valeurs absolues**")
             _hl_abs = copy_fr.HOVER_LABELS["ex_time_abs"]["default"]
@@ -615,6 +622,7 @@ if level in ["domain", "field", "subfield"]:
             for _trace in fig_abs.data:
                 _trace.customdata = [_hover_abs[(_trace.name, int(x))] for x in _trace.x]
                 _trace.hovertemplate = hv.HOVERTEMPLATE
+                _trace.line.dash = _dash_map.get(_trace.name, "solid")
             fig_abs.update_layout(
                 height=400,
                 margin=dict(t=30, l=50, r=30, b=50),
@@ -624,8 +632,10 @@ if level in ["domain", "field", "subfield"]:
                     gridcolor="lightgrey",
                     gridwidth=0.5,
                 ),
+                xaxis_title="Année",
                 yaxis_title="Publications",
                 legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5),
+                legend_title_text="",
             )
             reading.reading_line("ex_time_abs")
             st.plotly_chart(fig_abs, use_container_width=True)
@@ -656,6 +666,7 @@ if level in ["domain", "field", "subfield"]:
             for _trace in fig_stack.data:
                 _trace.customdata = [_hover_share[(_trace.name, int(x))] for x in _trace.x]
                 _trace.hovertemplate = hv.HOVERTEMPLATE
+                _trace.line.dash = _dash_map.get(_trace.name, "solid")
             fig_stack.update_layout(
                 height=400,
                 margin=dict(t=30, l=50, r=30, b=50),
@@ -665,8 +676,10 @@ if level in ["domain", "field", "subfield"]:
                     gridcolor="lightgrey",
                     gridwidth=0.5,
                 ),
+                xaxis_title="Année",
                 yaxis=dict(title="Part (%)", range=[0, 100]),
                 legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5),
+                legend_title_text="",
             )
             _share_ticks = [0, 20, 40, 60, 80, 100]
             fig_stack.update_yaxes(
