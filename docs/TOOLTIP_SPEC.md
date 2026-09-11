@@ -182,3 +182,18 @@ marques (barre grise et point bleu des membres du site, deux extrémités de l'h
 du périmètre I-SITE) : les deux marques portent la MÊME chaîne de survol. Autrement la marque
 secondaire perdrait un libellé inconditionnel et la conformité de constructeur échouerait sur un
 graphique pourtant correct à l'œil.
+
+**Note FIX-1 (lentille hostile, 2026-09-11).** Quatre libellés disaient plus que la donnée ne
+porte, et seuls les mots ont changé — les pages passent exactement les mêmes valeurs. « Travaux
+avec indicateur calculé » promettait, sur les trois graphiques de boîtes, une colonne qui
+n'existe pas : la table de portefeuille ne porte qu'un **compte brut**, et la ligne le dit
+désormais (« travaux du champ », « travaux du domaine »), plancher de réserve compris, qui
+s'énonce comme un plancher de comptage et non de couverture. Sur les structures de frontière,
+« part de frontière de la structure » se lisait comme le rapport des deux lignes voisines alors
+que son dénominateur est restreint aux sujets retenus : elle devient « part de frontière (sujets
+retenus) », et les trois lignes cessent de se donner pour un quotient. Sur la matrice des
+domaines, la part se calcule sur toutes les cellules, diagonale comprise et paires hors diagonale
+comptées deux fois — une base différente de celle du tableau au-dessus, que le libellé nomme
+maintenant. Enfin la ligne de lecture des structures de frontière annonçait un tri par volume
+alors que le panneau trie par part standardisée. Règle générale reconduite : quand la donnée ne
+peut pas porter le libellé, c'est le libellé qui cède, jamais la donnée qu'on rhabille.

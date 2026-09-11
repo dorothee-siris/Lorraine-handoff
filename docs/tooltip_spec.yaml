@@ -605,11 +605,16 @@ charts:
          when: "mediane calculee",
          note: "interdecile : un seul champ extreme aplatirait toutes les lignes sur une
            etendue complete"}
-      - {field: count, label: "travaux avec indicateur calculé", format: entier}
+      - {field: count, label: "travaux du champ", format: entier,
+         note: "compte BRUT des travaux du champ, et non les travaux porteurs d'un
+           indicateur calcule : aucune colonne de ce genre n'existe dans la table de
+           portefeuille (lens D1)"}
       - {field: no_indicator, label: "", format: drapeau, when: "mediane non calculee",
          note: "phrase affichee : « indicateur non calcule sur ce champ »"}
-      - {field: under_floor, label: "", format: drapeau, when: "compte sous dix travaux",
-         note: "phrase affichee : « sous le plancher de dix travaux »"}
+      - {field: under_floor, label: "", format: drapeau, when: "compte brut sous dix travaux",
+         note: "phrase affichee : « moins de dix travaux dans ce champ, distribution
+           indiquee et non affirmee » -- plancher pose sur le COMPTE BRUT, la seule
+           quantite que la page porte"}
 
   # ------------------------------- Page 4 -- Portefeuille thematique
   pf_treemap:
@@ -645,16 +650,21 @@ charts:
         - {field: p50, label: "FWCI médian (réf. France)", format: score_2d}
         - {field: p25_p75, label: "écart interquartile", format: intervalle_2d}
         - {field: p10_p90, label: "étendue affichée", format: intervalle_2d}
-        - {field: count, label: "travaux avec indicateur calculé", format: entier}
-        - {field: under_floor, label: "", format: drapeau, when: "compte sous dix travaux",
-           note: "phrase affichee : « sous le plancher de dix travaux »"}
+        - {field: count, label: "travaux du domaine", format: entier,
+            note: "compte BRUT des travaux du domaine, et non les travaux porteurs d'un
+           indicateur calcule : aucune colonne de ce genre n'existe dans la table de
+           portefeuille (lens D1)"}
+        - {field: under_floor, label: "", format: drapeau, when: "compte brut sous dix travaux",
+            note: "phrase affichee : « moins de dix travaux dans ce domaine, distribution
+           indiquee et non affirmee » -- plancher pose sur le COMPTE BRUT, la seule
+           quantite que la page porte"}
       extremes:
         - {field: domain_name, label: "", format: texte}
         - {field: p50, label: "FWCI médian (réf. France)", format: score_2d}
         - {field: p25_p75, label: "écart interquartile", format: intervalle_2d}
         - {field: p0_p100, label: "étendue complète", format: intervalle_2d}
-        - {field: count, label: "travaux avec indicateur calculé", format: entier}
-        - {field: under_floor, label: "", format: drapeau, when: "compte sous dix travaux"}
+        - {field: count, label: "travaux du domaine", format: entier}
+        - {field: under_floor, label: "", format: drapeau, when: "compte brut sous dix travaux"}
 
   pf_fwci_box_fields:
     view: portefeuille
@@ -668,15 +678,15 @@ charts:
         - {field: p50, label: "FWCI médian (réf. France)", format: score_2d}
         - {field: p25_p75, label: "écart interquartile", format: intervalle_2d}
         - {field: p10_p90, label: "étendue affichée", format: intervalle_2d}
-        - {field: count, label: "travaux avec indicateur calculé", format: entier}
-        - {field: under_floor, label: "", format: drapeau, when: "compte sous dix travaux"}
+        - {field: count, label: "travaux du champ", format: entier}
+        - {field: under_floor, label: "", format: drapeau, when: "compte brut sous dix travaux"}
       extremes:
         - {field: field_name, label: "", format: texte}
         - {field: p50, label: "FWCI médian (réf. France)", format: score_2d}
         - {field: p25_p75, label: "écart interquartile", format: intervalle_2d}
         - {field: p0_p100, label: "étendue complète", format: intervalle_2d}
-        - {field: count, label: "travaux avec indicateur calculé", format: entier}
-        - {field: under_floor, label: "", format: drapeau, when: "compte sous dix travaux"}
+        - {field: count, label: "travaux du champ", format: entier}
+        - {field: under_floor, label: "", format: drapeau, when: "compte brut sous dix travaux"}
 
   pf_lq_fields:
     view: portefeuille
@@ -735,7 +745,10 @@ charts:
     lines:
       - {field: lab, label: "", format: texte}
       - {field: frontier_works, label: "travaux de frontière", format: entier}
-      - {field: frontier_share, label: "part de frontière de la structure", format: pct_1d}
+      - {field: frontier_share, label: "part de frontière (sujets retenus)", format: pct_1d,
+         note: "denominateur : les travaux de la structure sur les SUJETS RETENUS, pas ses
+           travaux tous sujets confondus -- les trois lignes ne forment donc pas un rapport
+           (lens D2)"}
       - {field: works, label: "travaux de la structure", format: entier}
       - {field: isite_frontier_n, label: "dont périmètre I-SITE", format: entier,
          when: "affichage I-SITE actif"}
@@ -772,8 +785,11 @@ charts:
       - {field: pair_name, label: "", format: texte,
          note: "« domaine de la ligne x domaine de la colonne » ; customdata a deux dimensions (B3)"}
       - {field: co_works, label: "co-publications entre les deux domaines", format: entier}
-      - {field: share_of_pairs, label: "part de l'ensemble des paires", format: pct_1d,
-         note: "denominateur : la somme de la matrice, calculee sur la page"}
+      - {field: share_of_pairs, label: "part de la matrice entière (paires comptées deux fois)",
+         format: pct_1d,
+         note: "denominateur : la somme de TOUTES les cellules, diagonale comprise et paires
+           hors diagonale comptees deux fois -- ce n'est pas la base du tableau au-dessus,
+           qui compte chaque paire une fois (lens D5)"}
 
   # --------------------------------------- Page 6 -- Exploration thematique
   ex_time_abs:

@@ -499,9 +499,9 @@ READING: dict[str, dict[str, str]] = {
     },
     "pos_frontier_labs": {
         "default": (
-            "Une barre par structure, les plus fournies en tête : la longueur donne le nombre de "
-            "travaux de frontière et la colonne de droite le répète en chiffres. La teinte plus "
-            "sombre isole la part relevant du périmètre I-SITE."
+            "Une barre par structure, les mieux placées sur la part de frontière en tête : la "
+            "longueur donne, elle, le nombre de travaux de frontière, que la colonne de droite "
+            "répète en chiffres. La teinte plus sombre isole la part relevant du périmètre I-SITE."
         ),
     },
     "pos_div_spark": {
@@ -1363,7 +1363,7 @@ HOVER_LABELS: dict[str, dict[str, list[str]]] = {
             'FWCI médian (réf. France)',
             'écart interquartile',
             'étendue des moustaches',
-            'travaux avec indicateur calculé',
+            'travaux du champ',
             '',
             '',
         ],
@@ -1413,7 +1413,7 @@ HOVER_LABELS: dict[str, dict[str, list[str]]] = {
             'FWCI médian (réf. France)',
             'écart interquartile',
             'étendue affichée',
-            'travaux avec indicateur calculé',
+            'travaux du domaine',
             '',
         ],
         'extremes': [
@@ -1421,7 +1421,7 @@ HOVER_LABELS: dict[str, dict[str, list[str]]] = {
             'FWCI médian (réf. France)',
             'écart interquartile',
             'étendue complète',
-            'travaux avec indicateur calculé',
+            'travaux du domaine',
             '',
         ],
     },
@@ -1431,7 +1431,7 @@ HOVER_LABELS: dict[str, dict[str, list[str]]] = {
             'FWCI médian (réf. France)',
             'écart interquartile',
             'étendue affichée',
-            'travaux avec indicateur calculé',
+            'travaux du champ',
             '',
         ],
         'extremes': [
@@ -1439,7 +1439,7 @@ HOVER_LABELS: dict[str, dict[str, list[str]]] = {
             'FWCI médian (réf. France)',
             'écart interquartile',
             'étendue complète',
-            'travaux avec indicateur calculé',
+            'travaux du champ',
             '',
         ],
     },
@@ -1502,7 +1502,7 @@ HOVER_LABELS: dict[str, dict[str, list[str]]] = {
         'default': [
             '',
             'travaux de frontière',
-            'part de frontière de la structure',
+            'part de frontière (sujets retenus)',
             'travaux de la structure',
             'dont périmètre I-SITE',
         ],
@@ -1527,7 +1527,7 @@ HOVER_LABELS: dict[str, dict[str, list[str]]] = {
         'default': [
             '',
             'co-publications entre les deux domaines',
-            "part de l'ensemble des paires",
+            "part de la matrice entière (paires comptées deux fois)",
         ],
     },
     # ---- Page 6 -- Exploration thematique

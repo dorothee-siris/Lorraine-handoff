@@ -1351,6 +1351,11 @@ FWCI_HIGH = "#60CCAA"        # FWCI = 2+ (vert)
 FWCI_DIVERGING_SCALE = [[0.0, "#EC8773"], [0.5, "#8C9196"], [1.0, "#60CCAA"]]   # 0.5 == NEUTRAL_GREY
 assert FWCI_DIVERGING_SCALE[1][1] == NEUTRAL_GREY and FWCI_DIVERGING_SCALE[0][1] == FWCI_LOW
 SCALE_LOW_TINT = "#EAF3F1"   # bas de l'echelle sequentielle (light -> dark, page 4)
+# ---- pass 7b: many-series line/area charts (page 6 time series) -- NOT an identity palette.
+# Okabe-Ito (the family VIZ_SPEC SS1.1 draws from), 7 hues + neutral; a 9th+ series cycles the
+# hue with a dashed line (the page's job). Studio validation pending (7c gate) -- until then it
+# replaces px.colors.qualitative.Plotly, which pass 7b banned from pages (B6).
+SERIES_COLORS = ["#0072B2", "#E69F00", "#009E73", "#CC79A7", "#56B4E9", "#D55E00", "#F0E442"]
 CARD_BORDER = "#E3E6EA"      # 1 px border of the HTML identity cards / KPI tiles (chrome)
 TEXT_HEADLINE = "#3A3F44"    # == lib.overlay.GROUPED_LEGEND_INK : headline ink of the HTML cards
 TEXT_PRIMARY = "#333333"     # VIZ_SPEC SS1.6 primary text ink (median/guide lines drawn as text-ink chrome)
