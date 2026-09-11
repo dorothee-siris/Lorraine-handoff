@@ -499,7 +499,7 @@ READING: dict[str, dict[str, str]] = {
     },
     "pos_frontier_labs": {
         "default": (
-            "Une barre par structure, les mieux placées sur la part de frontière en tête : la "
+            "Une barre par structure, les mieux placées sur la part standardisée en tête : la "
             "longueur donne, elle, le nombre de travaux de frontière, que la colonne de droite "
             "répète en chiffres. La teinte plus sombre isole la part relevant du périmètre I-SITE."
         ),
@@ -594,9 +594,8 @@ READING: dict[str, dict[str, str]] = {
     "id_orcid_yearly": {
         "default": (
             "Une barre par année : la hauteur donne la part des travaux portant au moins un "
-            "auteur lorrain lié à un identifiant. Une barre en encre de réserve signale que la "
-            "liaison des identifiants est plus tardive que les travaux, et que le recul de la "
-            "dernière année tient à ce retard, non à un changement de pratique."
+            "auteur lorrain lié à un identifiant. Lorsqu'une barre est en encre de réserve, sa "
+            "dague marque une réserve de lecture sur cette année-là, que le survol détaille."
         ),
     },
     "id_orcid_fields": {
