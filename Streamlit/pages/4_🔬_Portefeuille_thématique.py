@@ -1507,7 +1507,7 @@ else:
     fig_t4.update_layout(
         xaxis=dict(type=_t4_axis_type, title=f"LQ vs France ({'linéaire' if _t4_axis_type == 'linear' else 'log'})"),
         yaxis=dict(title=""),
-        height=max(420, len(df_t4_field) * 26 + 100),
+        height=C.row_height_single(len(df_t4_field)),
         margin=dict(t=30, l=C.margin_left("champ"), r=10, b=40),
         template="plotly_white",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0) if not df_t4_isite.empty else None,
@@ -1584,7 +1584,7 @@ else:
             fig_t4_sub.update_layout(
                 xaxis=dict(type=_t4_sub_axis_type, title=f"LQ vs France ({'linéaire' if _t4_sub_axis_type == 'linear' else 'log'})"),
                 yaxis=dict(title=""),
-                height=max(320, len(df_t4_sub) * 24 + 80), margin=dict(t=20, l=C.margin_left("sous_champ"), r=10, b=30),
+                height=C.row_height_single(len(df_t4_sub)), margin=dict(t=20, l=C.margin_left("sous_champ"), r=10, b=30),
                 template="plotly_white",
             )
             reading_line("pf_lq_subfields", mode=_t4_sub_mode)
