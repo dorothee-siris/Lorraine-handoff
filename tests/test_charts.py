@@ -651,13 +651,10 @@ def test_balance_mirror_has_no_x_ticks_and_only_a_zero_line() -> None:
     assert fig.layout.margin.b == C.MIRROR_MARGIN_B
 
 
-def test_balance_fwci_mode_draws_a_parity_reference_per_row() -> None:
-    d = F.frame_balance("fwci", "field")
+def test_balance_fwci_mode_draws_no_parity_reference() -> None:
     fig = R.build_balance_fwci()
     dashed = [s for s in fig.layout.shapes if s.line is not None and s.line.dash == "dash"]
-    assert len(dashed) == len(d), "un tick de parite PAR LIGNE en mode fwci"
-    assert all(s.line.color == H.REFERENCE_RED for s in dashed)
-    assert all(s.x0 == s.x1 == C.FWCI_REFERENCE for s in dashed)
+    assert not dashed, "mode fwci : des FWCI medians, aucun repere de parite (la parite est une moyenne)"
     volume = R.build_balance_volume()
     assert not [s for s in volume.layout.shapes
                 if s.line is not None and s.line.dash == "dash"], (
@@ -719,11 +716,10 @@ def test_frontier_plane_origin_is_not_the_reference_red() -> None:
     assert set(C.QUADRANT_LABELS) <= labels, "les quatre quadrants sont libelles"
 
 
-def test_impact_plane_has_one_constant_fwci_parity_reference() -> None:
+def test_impact_plane_has_no_parity_reference_and_a_log_x_axis() -> None:
     fig = R.build_zoom_plane_impact()
     dashed = [s for s in fig.layout.shapes if s.line is not None and s.line.dash == "dash"]
-    assert len(dashed) == 1 and dashed[0].line.color == H.REFERENCE_RED
-    assert dashed[0].y0 == dashed[0].y1 == C.FWCI_REFERENCE
+    assert not dashed, "plan d'impact : FWCI median, aucun repere de parite"
     assert fig.layout.xaxis.type == "log", "l'axe des co-publications est logarithmique"
 
 

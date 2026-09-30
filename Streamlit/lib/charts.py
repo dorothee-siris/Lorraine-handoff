@@ -515,7 +515,9 @@ def bars_with_gutter(df: pd.DataFrame, *, family: str, label_col: str, value_col
 # ===========================================================================
 BALANCE_MODES = ("volume", "fwci", "phares")
 BALANCE_LEVELS = ("champ", "sous_champ")
-FWCI_REFERENCE = 1.0        # la parite : la seule reference que ce plan possede
+# Aucune reference FWCI ici : les FWCI de la paire sont des MEDIANES, et la parite
+# 1,0 de la France est une MOYENNE -- pas de repere sans valeur stockee de la meme
+# statistique.
 
 
 def _series_for_mode(d: pd.DataFrame, mode: str):
@@ -619,11 +621,8 @@ def balance_bars(df: pd.DataFrame, *, mode: str, level: str, partner_name: str) 
         textfont=dict(family=FONT_FAMILY, size=GUTTER_FONT_PX, color=inks),
         hoverinfo="skip", showlegend=False))
     fig.update_layout(barmode="overlay")
-
-    if mode == "fwci":
-        # tick rouge pointille a la parite, PAR LIGNE (§5.7) : la reference
-        # d'une ligne ne traverse pas la bande voisine.
-        _add_reference(fig, [FWCI_REFERENCE] * n, n)
+    # mode « fwci » : AUCUN tick de parite -- ce sont des FWCI medians, la
+    # parite 1,0 est une moyenne (le survol garde les valeurs).
 
     fig.update_xaxes(range=[x_left, x_right], showticklabels=False, showgrid=False,
                      zeroline=True, zerolinecolor=ZERO_LINE_COLOR,
@@ -858,9 +857,8 @@ def _mark_style(d: pd.DataFrame, n: int):
 
 def fig_plane_impact(df: pd.DataFrame) -> go.Figure:
     """§5.8 : `x = co_works` en LOG, `y = fwci_median`, aire = `co_works`,
-    couleur = domaine, teinte + anneau pointille sur un topic signale, UNE
-    reference rouge pointillee CONSTANTE a la parite du FWCI (la seule
-    reference que ce plan possede)."""
+    couleur = domaine, teinte + anneau pointille sur un topic signale. AUCUNE
+    reference : `fwci_median` est une mediane, la parite 1,0 une moyenne."""
     d = df.reset_index(drop=True)
     n = len(d)
     if n == 0:
@@ -876,9 +874,6 @@ def fig_plane_impact(df: pd.DataFrame) -> go.Figure:
                     sizemin=BUBBLE_MIN_PX,
                     line=dict(color=hues, width=widths)),
         customdata=hovers, hovertemplate=hv.HOVERTEMPLATE, showlegend=False))
-    fig.add_hline(y=FWCI_REFERENCE,
-                  line=dict(color=REFERENCE_RED, width=REFERENCE_WIDTH_PX,
-                            dash=REFERENCE_DASH))
     fig = _scatter_layout(fig, x_title=AX_CO_WORKS, y_title=AX_FWCI_MEDIAN)
     fig.update_xaxes(type="log", range=_padded_range(x, log=True))
     fig.update_yaxes(range=_padded_range(y))

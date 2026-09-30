@@ -135,9 +135,9 @@ READING: dict[str, dict[str, str]] = {
         ),
         "fwci|champ": (
             "Une ligne par champ : le FWCI médian des co-publications de la relation, face à "
-            "celui du portefeuille propre de l'UL, contre le repère de la référence française. "
-            "Le FWCI propre de {partenaire} n'étant pas disponible, la lecture est à un seul "
-            "côté."
+            "celui du portefeuille propre de l'UL (médiane des FWCI France par cellule, sans "
+            "repère de parité : la parité France est une moyenne). Le FWCI propre de {partenaire} "
+            "n'étant pas disponible, la lecture est à un seul côté."
         ),
         "fwci|sous_champ": (
             "Même lecture sur les sous-champs les plus fournis de la relation, où les strates "
@@ -160,9 +160,10 @@ READING: dict[str, dict[str, str]] = {
     "zoom_plane_impact": {
         "volume": (
             "Chaque bulle est un topic de la relation : l'axe horizontal donne le volume de "
-            "co-publications en échelle logarithmique, l'axe vertical le FWCI médian contre la "
-            "référence française. La sélection retient les topics de plus fort volume, et "
-            "l'aire de la bulle répète ce volume."
+            "co-publications en échelle logarithmique, l'axe vertical le FWCI médian (médiane "
+            "des FWCI France par cellule, sans repère de parité : la parité France est une moyenne). "
+            "La sélection retient les topics de plus fort volume, et l'aire de la bulle répète "
+            "ce volume."
         ),
         "fwci": (
             "Mêmes axes, sélection différente : les topics au FWCI médian le plus élevé. Un "

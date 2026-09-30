@@ -326,5 +326,59 @@ def test_vacuity_margin_relation_fails_when_off_by_one_px() -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# 5. Pas de repere de parite sous une MEDIANE. La parite FWCI 1,0 est une
+#    MOYENNE France : un graphique qui trace des FWCI medians ne porte aucun
+#    repere tant qu'aucune valeur stockee de la meme statistique n'existe.
+#    Les deux cotes sont prouves avec le MEME detecteur : les figures medianes
+#    n'ont rien, le mecanisme de reference et les panneaux de distribution des
+#    pages 2 et 4 (face a la parite moyenne) gardent leur trait.
+# ---------------------------------------------------------------------------
+def _fwci_parity_shapes(fig: go.Figure) -> list:
+    return [s for s in fig.layout.shapes
+            if s.line is not None and s.line.dash == "dash" and s.line.color == REFERENCE_RED
+            and (s.x0 == s.x1 == 1.0 or s.y0 == s.y1 == 1.0)]
+
+
+@pytest.mark.parametrize("build", ["build_balance_fwci", "build_zoom_plane_impact"])
+def test_median_fwci_figure_carries_no_reference_shape_and_keeps_its_hovers(build) -> None:
+    fig = getattr(_registry, build)()
+    assert not _fwci_parity_shapes(fig), f"{build} : repere 1,0 sous un FWCI median"
+    assert not [s for s in fig.layout.shapes if s.line is not None and s.line.color == REFERENCE_RED], (
+        f"{build} : aucune forme rouge-reference sur une mediane")
+    hovers = list(fig.data[0].customdata)
+    assert hovers and all(str(h).strip() for h in hovers), f"{build} : le survol doit rester"
+
+
+def test_reference_mechanism_still_draws_the_parity_line_when_given_one() -> None:
+    d = pd.DataFrame({"node_name": ["A", "B", "C"], "co_works": [3.0, 2.0, 1.0],
+                      "hover": ["a", "b", "c"]})
+    fig = C.bars_with_gutter(d, family="champ", label_col="node_name", value_col="co_works",
+                             color=H.UL_COLOR, reference=1.0)
+    assert len(_fwci_parity_shapes(fig)) == 1, "le detecteur doit voir un repere 1,0 quand il existe"
+
+
+def test_vacuity_detector_catches_the_two_removed_shapes() -> None:
+    """Les deux formes retirees, reappliquees telles qu'elles etaient tracees,
+    doivent faire echouer le test des medianes."""
+    bb = _registry.build_balance_fwci()
+    n = len(bb.data[0].y)
+    C._add_reference(bb, [1.0] * n, n)
+    assert len(_fwci_parity_shapes(bb)) == n
+    pl = _registry.build_zoom_plane_impact()
+    pl.add_hline(y=1.0, line=dict(color=REFERENCE_RED, width=C.REFERENCE_WIDTH_PX, dash=C.REFERENCE_DASH))
+    assert len(_fwci_parity_shapes(pl)) == 1
+
+
+def test_distribution_panels_beside_the_france_mean_keep_their_parity_line() -> None:
+    pages = ROOT / "Streamlit" / "pages"
+    p2 = next(pages.glob("2_*Laboratoires.py")).read_text(encoding="utf-8")
+    p4 = next(pages.glob("4_*Portefeuille_th*.py")).read_text(encoding="utf-8")
+    assert p2.count("fig.add_vline(x=1, line_dash=C.REFERENCE_DASH, line_color=REFERENCE_RED") == 1, (
+        "page 2 : la boite FWCI par champ garde sa parite")
+    assert p4.count("fig.add_hline(y=1.0, line_dash=C.REFERENCE_DASH, line_color=REFERENCE_RED") == 2, (
+        "page 4 : les deux panneaux de distribution FWCI gardent leur parite")
+
+
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
